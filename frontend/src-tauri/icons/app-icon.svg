@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="PCB QMS">
+  <defs>
+    <linearGradient id="surface" x1="64" y1="48" x2="450" y2="474" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#155eef"/>
+      <stop offset="1" stop-color="#004eeb"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#surface)"/>
+  <path d="M145 176c0-17 14-31 31-31h160c17 0 31 14 31 31v160c0 17-14 31-31 31H176c-17 0-31-14-31-31V176Z" fill="#fff" opacity=".16"/>
+  <path d="M184 192h104c40 0 72 29 72 64s-32 64-72 64h-43v49h-61V192Zm61 48v34h42c8 0 14-7 14-17s-6-17-14-17h-42Z" fill="#fff"/>
+  <circle cx="353" cy="353" r="37" fill="#12b76a" stroke="#fff" stroke-width="14"/>
+  <path d="m334 353 13 13 27-31" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="11"/>
+</svg>

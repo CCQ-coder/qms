@@ -1,0 +1,35 @@
+# Java
+target/
+*.class
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/src-tauri/gen/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local configuration and generated artifacts
+.env
+.env.*
+!.env.example
+!.env.onprem.example
+compose.local.yaml
+.m2/
+.maven-home/
+.postgres-17/
+.postgres-runtime/
+.postgres-data/
+postgres-extract.log
+uploads/
+data/
+exports/
+outputs/
+coverage/
+.DS_Store
+.idea/
+.vscode/
+*.iml

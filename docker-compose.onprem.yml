@@ -1,0 +1,65 @@
+# Per-customer on-premises deployment. Copy .env.onprem.example to .env.onprem and fill every secret.
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-qms}
+      MYSQL_USER: ${QMS_DB_USERNAME:-qms_app}
+      MYSQL_PASSWORD: ${QMS_DB_PASSWORD:?Set QMS_DB_PASSWORD in .env.onprem}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.onprem}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  ocr:
+    build:
+      context: ./ocr-service
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      QMS_DB_URL: ${QMS_DB_URL:-jdbc:mysql://mysql:3306/qms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+      QMS_DB_USERNAME: ${QMS_DB_USERNAME:-qms_app}
+      QMS_DB_PASSWORD: ${QMS_DB_PASSWORD:?Set QMS_DB_PASSWORD in .env.onprem}
+      QMS_GATEWAY_SHARED_TOKEN: ${QMS_GATEWAY_SHARED_TOKEN:?Set QMS_GATEWAY_SHARED_TOKEN in .env.onprem}
+      QMS_BTF_HESSIAN_ALLOWED_IPS: ${QMS_BTF_HESSIAN_ALLOWED_IPS:-}
+      QMS_BTF_HESSIAN_TENANT_CODE: ${QMS_BTF_HESSIAN_TENANT_CODE:?Set QMS_BTF_HESSIAN_TENANT_CODE in .env.onprem}
+      QMS_OCR_ENABLED: "true"
+      QMS_OCR_BASE_URL: http://ocr:8000
+      QMS_ATTACHMENT_LOCAL_ROOT: /app/uploads
+      QMS_SECURITY_DEVELOPMENT_MODE: "false"
+      QMS_LOCAL_PASSWORD_LOGIN_ENABLED: "true"
+      QMS_LOCAL_LOGIN_JWT_SECRET: ${QMS_LOCAL_LOGIN_JWT_SECRET:?Set QMS_LOCAL_LOGIN_JWT_SECRET in .env.onprem}
+      QMS_LOCAL_LOGIN_TOKEN_TTL_MINUTES: ${QMS_LOCAL_LOGIN_TOKEN_TTL_MINUTES:-480}
+      QMS_BOOTSTRAP_TENANT_CODE: ${QMS_BOOTSTRAP_TENANT_CODE:?Set QMS_BOOTSTRAP_TENANT_CODE in .env.onprem}
+      QMS_BOOTSTRAP_TENANT_NAME: ${QMS_BOOTSTRAP_TENANT_NAME:?Set QMS_BOOTSTRAP_TENANT_NAME in .env.onprem}
+      QMS_BOOTSTRAP_ADMIN_USERNAME: ${QMS_BOOTSTRAP_ADMIN_USERNAME:?Set QMS_BOOTSTRAP_ADMIN_USERNAME in .env.onprem}
+      QMS_BOOTSTRAP_ADMIN_PASSWORD: ${QMS_BOOTSTRAP_ADMIN_PASSWORD:?Set QMS_BOOTSTRAP_ADMIN_PASSWORD in .env.onprem}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ocr:
+        condition: service_started
+    volumes:
+      - attachments-data:/app/uploads
+
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${QMS_WEB_BIND_ADDRESS:-0.0.0.0}:${QMS_WEB_PORT:-8080}:80"
+
+volumes:
+  mysql-data:
+  attachments-data:

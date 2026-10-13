@@ -1,0 +1,73 @@
+package com.pcbqms.integration.api;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
+/** Standard work-order envelope emitted by an on-premise customer gateway. */
+public record GatewayWorkOrderRequest(
+    @NotBlank(message = "不能为空") String workOrderNo,
+    @NotBlank(message = "不能为空") String productCode,
+    String productName,
+    String specification,
+    @NotBlank(message = "不能为空") String currentProcessCode,
+    @NotBlank(message = "不能为空") String currentProcessName,
+    @NotNull(message = "不能为空") @PositiveOrZero(message = "不能小于 0") Integer plannedQuantity,
+    String batchNo,
+    @NotBlank(message = "不能为空") String sourceKey,
+    String sourceVersion,
+    String customerCode,
+    String internalProductNo,
+    String customerPartNo,
+    String processTechnology,
+    String material,
+    String boardThickness,
+    String copperThickness,
+    String warehouseStatus,
+    LocalDate releasedAt,
+    LocalDate materialInputDate,
+    BigDecimal pcsLength,
+    BigDecimal pcsWidth,
+    String materialNo,
+    String materialName,
+    String materialSpecification,
+    BigDecimal standardMaterialConsumption,
+    Integer cumulativeWarehouseQuantity,
+    LocalDate requiredDeliveryDate,
+    String productionNoticeNo,
+    LocalDate inputDate,
+    BigDecimal singlePcsArea,
+    BigDecimal aBoardLength,
+    BigDecimal aBoardWidth,
+    BigDecimal bBoardLength,
+    BigDecimal bBoardWidth,
+    String formingMethod,
+    Integer layerCount,
+    Integer productionNoticeQuantity,
+    String customerOrder,
+    String customerOrderNo,
+    Integer customerOrderQuantity,
+    BigDecimal materialArea,
+    BigDecimal productionNoticeArea,
+    BigDecimal customerOrderArea,
+    String priority,
+    String processRouteVersion,
+    String miVersion,
+    Integer totalPanelQuantity,
+    Integer aBoardPanelQuantity,
+    Integer bBoardPanelQuantity,
+    String panelizationNo,
+    BigDecimal estimatedYieldRate,
+    BigDecimal plannedMaterialIssueQuantity,
+    Integer materialInputQuantity,
+    Integer cumulativeScrapQuantity,
+    Integer cumulativeDefectQuantity,
+    BigDecimal pnlLength,
+    BigDecimal pnlWidth,
+    Integer productionNoticeOrderQuantity,
+    Integer unreceivedQuantity,
+    LocalDate lastWarehouseDate
+) {
+}

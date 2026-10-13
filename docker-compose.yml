@@ -1,0 +1,58 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-qms}
+      MYSQL_USER: ${MYSQL_USER:-qms}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  ocr:
+    build:
+      context: ./ocr-service
+    ports:
+      - "8000:8000"
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      QMS_DB_URL: ${QMS_DB_URL:-jdbc:mysql://mysql:3306/qms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+      QMS_DB_USERNAME: ${QMS_DB_USERNAME:-qms}
+      QMS_DB_PASSWORD: ${QMS_DB_PASSWORD:?Set QMS_DB_PASSWORD in .env}
+      QMS_GATEWAY_SHARED_TOKEN: ${QMS_GATEWAY_SHARED_TOKEN:?Set QMS_GATEWAY_SHARED_TOKEN in .env}
+      QMS_BTF_HESSIAN_ALLOWED_IPS: ${QMS_BTF_HESSIAN_ALLOWED_IPS:-}
+      QMS_BTF_HESSIAN_TENANT_CODE: ${QMS_BTF_HESSIAN_TENANT_CODE:-demo-pcb}
+      QMS_OCR_ENABLED: "true"
+      QMS_OCR_BASE_URL: http://ocr:8000
+      SPRING_PROFILES_ACTIVE: dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ocr:
+        condition: service_started
+    volumes:
+      - attachments-data:/app/uploads
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql-data:
+  attachments-data:

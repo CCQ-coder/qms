@@ -1,0 +1,81 @@
+spring:
+  application:
+    name: qms-api
+  datasource:
+    url: ${QMS_DB_URL:jdbc:mysql://localhost:3306/qms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${QMS_DB_USERNAME:root}
+    password: ${QMS_DB_PASSWORD:mysqlmima}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+  web:
+    resources:
+      add-mappings: false
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 16MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+qms:
+  tenancy:
+    default-code: demo-pcb
+  security:
+    development-mode: ${QMS_SECURITY_DEVELOPMENT_MODE:true}
+    local-password-login:
+      enabled: ${QMS_LOCAL_PASSWORD_LOGIN_ENABLED:false}
+      jwt-secret: ${QMS_LOCAL_LOGIN_JWT_SECRET:}
+      token-ttl-minutes: ${QMS_LOCAL_LOGIN_TOKEN_TTL_MINUTES:480}
+  bootstrap:
+    tenant-code: ${QMS_BOOTSTRAP_TENANT_CODE:}
+    tenant-name: ${QMS_BOOTSTRAP_TENANT_NAME:}
+    admin-user-name: ${QMS_BOOTSTRAP_ADMIN_USERNAME:}
+    admin-password: ${QMS_BOOTSTRAP_ADMIN_PASSWORD:}
+  attachment:
+    local-root: ${QMS_ATTACHMENT_LOCAL_ROOT:uploads}
+  integration:
+    gateway:
+      shared-token: ${QMS_GATEWAY_SHARED_TOKEN:}
+    btf-hessian:
+      # WorkingMonitor.exe cannot send a token or tenant identifier. Keep this endpoint closed
+      # until explicit source addresses are supplied, and bind it to one customer tenant.
+      allowed-ips: ${QMS_BTF_HESSIAN_ALLOWED_IPS:}
+      tenant-code: ${QMS_BTF_HESSIAN_TENANT_CODE:${qms.tenancy.default-code}}
+  equipment-telemetry:
+    # The runtime-status endpoint reports OFFLINE after this interval without a gateway message.
+    offline-after-seconds: ${QMS_EQUIPMENT_TELEMETRY_OFFLINE_AFTER_SECONDS:300}
+    retention:
+      # Preserve detailed, second-level snapshots only for recent fault tracing.
+      enabled: ${QMS_EQUIPMENT_TELEMETRY_RETENTION_ENABLED:true}
+      raw-days: ${QMS_EQUIPMENT_TELEMETRY_RAW_RETENTION_DAYS:7}
+      minute-summary-days: ${QMS_EQUIPMENT_TELEMETRY_MINUTE_RETENTION_DAYS:365}
+      cleanup-cron: "${QMS_EQUIPMENT_TELEMETRY_CLEANUP_CRON:0 15 * * * *}"
+      cleanup-batch-size: ${QMS_EQUIPMENT_TELEMETRY_CLEANUP_BATCH_SIZE:10000}
+      cleanup-max-batches: ${QMS_EQUIPMENT_TELEMETRY_CLEANUP_MAX_BATCHES:30}
+  ocr:
+    enabled: ${QMS_OCR_ENABLED:false}
+    base-url: ${QMS_OCR_BASE_URL:http://localhost:8000}
+  inspection:
+    auto-generation:
+      enabled: ${QMS_AUTO_INSPECTION_ENABLED:true}
+      fixed-delay-ms: ${QMS_AUTO_INSPECTION_DELAY_MS:300000}

@@ -1,0 +1,10 @@
+{
+  "name": "PCB QMS",
+  "short_name": "PCB QMS",
+  "lang": "zh-CN",
+  "display": "standalone",
+  "start_url": "/",
+  "theme_color": "#155eef",
+  "background_color": "#f7f9fc"
+}
+

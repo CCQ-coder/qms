@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: qms-gateway
+  datasource:
+    url: ${SOURCE_DB_URL:jdbc:mysql://localhost:3306/customer_erp?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${SOURCE_DB_USERNAME:readonly_qms}
+    password: ${SOURCE_DB_PASSWORD:change-me}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+gateway:
+  qms-base-url: ${QMS_API_BASE_URL:https://qms.example.com}
+  tenant-code: ${QMS_TENANT_CODE:customer-b}
+  shared-token: ${QMS_GATEWAY_SHARED_TOKEN:}
+  bearer-token: ${QMS_GATEWAY_BEARER_TOKEN:}
+  fixed-delay-ms: ${GATEWAY_FIXED_DELAY_MS:300000}
+  # Overlap protects late ERP rows that share a source_updated_at timestamp with the saved cursor.
+  cursor-overlap-seconds: ${GATEWAY_CURSOR_OVERLAP_SECONDS:10}
+  cursor-file: ${GATEWAY_CURSOR_FILE:./data/sync-cursor.txt}
+  # 客户 B 需按实际数据库表字段修改别名，输出字段名不得变化。
+  source-sql: ${GATEWAY_SOURCE_SQL:SELECT work_order_no, product_code, product_name, specification, current_process_code, current_process_name, planned_quantity, batch_no, id AS source_key, customer_code, internal_product_no, customer_part_no, process_technology, material, board_thickness, copper_thickness, warehouse_status, material_input_date, pcs_length, pcs_width, material_no, material_name, material_specification, standard_material_consumption, cumulative_warehouse_quantity, required_delivery_date, production_notice_no, input_date, single_pcs_area, a_board_length, a_board_width, b_board_length, b_board_width, forming_method, layer_count, production_notice_quantity, customer_order, customer_order_no, customer_order_quantity, material_area, production_notice_area, customer_order_area, updated_at AS source_updated_at FROM erp_work_order WHERE updated_at > ? ORDER BY updated_at ASC}
