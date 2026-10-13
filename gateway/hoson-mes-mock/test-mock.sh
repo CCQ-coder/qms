@@ -13,7 +13,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mcs -nologo -sdk:4 -target:exe -r:System.Web.Extensions.dll \
-    -out:"$temp_dir/HosonMesMock.exe" "$script_dir/HosonMesMock.cs"
+    -out:"$temp_dir/HosonMesMockCli.exe" "$script_dir/HosonMesMockCli.cs" "$script_dir/HosonMesServer.cs" "$script_dir/MesConfig.cs"
+mcs -nologo -sdk:4 -target:winexe -main:HosonMesMock -r:System.Web.Extensions.dll -r:System.Windows.Forms.dll -r:System.Drawing.dll \
+    -out:"$temp_dir/HosonMesMock.exe" "$script_dir/HosonMesMock.cs" "$script_dir/HosonMesMockCli.cs" "$script_dir/HosonMesServer.cs" "$script_dir/MesConfig.cs"
+mcs -nologo -sdk:4 -target:exe -r:System.Web.Extensions.dll \
+    -out:"$temp_dir/ServerTests.exe" "$script_dir/ServerTests.cs" "$script_dir/HosonMesServer.cs" "$script_dir/MesConfig.cs"
+mono "$temp_dir/ServerTests.exe"
 cp "$script_dir/mes_server_config.json" "$temp_dir/mes_server_config.json"
 mono "$temp_dir/HosonMesMock.exe" 127.0.0.1 16681 >"$temp_dir/server.log" 2>&1 &
 server_pid=$!

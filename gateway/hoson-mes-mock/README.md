@@ -1,16 +1,17 @@
 # 森泉 MES 独立 Mock 监听器
 
-`HosonMesMock.exe` 是独立的 Windows HTTP 测试服务，不依赖原 DEMO 的 `MesHttpServer.exe` 或 `jsoncpp.dll`。它监听 `POST /api/mes/invoke`，读取同目录下的 `mes_server_config.json`，按请求 JSON 的 `method` 返回对应的固定应答。配置文件直接取自提供的“MES服务端DEMO_V1.0.zip”，包含 12 个方法的示例应答。
+`HosonMesMock.exe` 是独立的 Windows 图形化 HTTP 测试服务，不依赖原 DEMO 的 `MesHttpServer.exe` 或 `jsoncpp.dll`。它监听 `POST /api/mes/invoke`，读取同目录下的 `mes_server_config.json`，按请求 JSON 的 `method` 返回对应应答。配置文件取自提供的“MES服务端DEMO_V1.0.zip”，包含 12 个方法的示例应答。
 
-这个版本仅模拟 MES 应答，不向 QMS 转发设备上报。窗口显示请求来源 IP、方法和 HTTP 状态；不会打印可能含密码的完整请求正文。
+窗口提供监听 IP 和端口、服务启动与停止、各方法的 JSON 应答编辑，以及请求和响应记录。它仅模拟 MES 应答，不向 QMS 转发设备上报。记录只保存在程序内存中，可能包含请求中的密码或令牌；关闭程序或点击“清空日志”即可清除。
 
 ## 使用
 
-1. 在 Windows 上双击 `start-mock.cmd`，输入本机监听 IPv4 和端口。直接回车分别使用 `127.0.0.1` 和 `6680`；设备从其他电脑访问时，填监听电脑的局域网 IP，或输入 `0.0.0.0` 监听所有网卡。
-2. 把森泉设备的 MES 地址设为 `http://<监听电脑IP>:6680/api/mes/invoke`，按设备实际端口调整。程序只接收 HTTP POST JSON。
-3. 在窗口中查看收到的 `method` 与 HTTP 状态。按 `Ctrl+C` 停止。
+1. 在 Windows 上双击 `start-mock.cmd` 或 `HosonMesMock.exe`。程序启动时不会自动监听；默认 IP 为 `0.0.0.0`、端口为 `6680`，可在窗口中修改后点击“启动服务”。
+2. 把森泉设备的 MES 地址设为 `http://<监听电脑IP>:6680/api/mes/invoke`，按实际端口调整。`0.0.0.0` 表示监听所有网卡，设备地址应填写这台电脑实际可访问的 IP。程序只接收 HTTP POST JSON。
+3. 在方法列表中选择接口，编辑右侧应答 JSON 后点击“保存修改”。新应答立即生效，并写入 `mes_server_config.json`；“恢复默认”只把当前方法的编辑框恢复到随程序附带的 `mes_server_defaults.json` 内容，还需点击“保存修改”才会生效。
+4. 下方列表显示收到的请求。点击一条记录可查看请求和响应正文；点击“停止服务”结束监听。
 
-也可直接执行 `HosonMesMock.exe 192.168.1.71 6680`。修改 `mes_server_config.json` 后，重启程序加载新的应答。应答中的 `id`、`timestamp`、工单、标签和路径均为 DEMO 固定示例值，不会自动替换为请求值。
+自动化测试或无图形界面的环境可运行 `HosonMesMockCli.exe 127.0.0.1 6680`，也可执行 `HosonMesMock.exe 127.0.0.1 6680` 或 `start-mock.cmd 127.0.0.1 6680`。带 IP 和端口参数时使用原有无界面监听模式，配置在启动时读取，修改后需重启。原始示例应答中的 `id`、`timestamp`、工单、标签和路径是固定值，不会自动替换为请求值。
 
 如果使用 `0.0.0.0`，首次启动可能需要以管理员身份运行以下命令，并放行入站端口：
 
@@ -25,4 +26,4 @@ netsh advfirewall firewall add rule name="Hoson MES Mock 6680" dir=in action=all
 
 ## 自行编译
 
-在安装 .NET Framework 4.x 的 Windows 电脑上运行 `build.cmd`，产物位于项目根目录的 `outputs\hoson-mes-mock`。`test-mock.sh` 可在有 Mono 和 curl 的环境中验证 HTTP 接口。
+在安装 .NET Framework 4.x 的 Windows 电脑上运行 `build.cmd`，产物位于项目根目录的 `outputs\hoson-mes-mock`。重复编译会保留该目录已有的 `mes_server_config.json` 修改。`test-mock.sh` 可在有 Mono 和 curl 的环境中验证 HTTP 接口及响应热更新。
