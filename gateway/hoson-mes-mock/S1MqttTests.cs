@@ -26,6 +26,9 @@ internal static class S1MqttTests
             RecipeAliasesMapToRecipeEvent();
             VersionInfoMapsSoftwareVersion();
             OutboxReloadsRetriesAcknowledgesAndSuppressesDuplicates(directory);
+            PublisherUsesDeviceCredentialsAndWaitsForPubAck(directory);
+            PublisherReschedulesFailuresAndCapsBackoff(directory);
+            PublisherReloadsUnacknowledgedMessages(directory);
             Console.WriteLine("S1 MQTT configuration and device-session checks passed.");
             return 0;
         }
@@ -269,6 +272,126 @@ internal static class S1MqttTests
         foreach (S1PublishMessage message in messages)
             if (message.Id == id) return message;
         return null;
+    }
+
+    private static void PublisherUsesDeviceCredentialsAndWaitsForPubAck(string directory)
+    {
+        S1DeviceMapping mapping = Mapping();
+        S1Outbox outbox = QueueMessage(directory, "publisher-ack", mapping);
+        FakeMqttSession fake = new FakeMqttSession();
+        S1MqttPublisher publisher = new S1MqttPublisher(Settings(mapping), outbox, delegate(S1DeviceMapping ignored) { return fake; });
+        DateTime now = DateTime.UtcNow;
+        publisher.RunOnce(now);
+        Assert(fake.ConnectedMapping == mapping && fake.ConnectedPassword == "password", "publisher connects with the mapping's own credentials");
+        Assert(fake.PublishedTopics.Count == 1 && fake.PublishedTopics[0] == "/42/S1-001/property/post", "publisher sends only the stored S1 topic using the QoS 1 session contract");
+        Assert(outbox.GetDue(now).Count == 1, "publisher retains a record before PUBACK");
+        fake.RaisePublished(1, true);
+        Assert(outbox.GetDue(now.AddHours(1)).Count == 0, "successful PUBACK removes the outbox record");
+        publisher.Stop(TimeSpan.Zero);
+    }
+
+    private static void PublisherReschedulesFailuresAndCapsBackoff(string directory)
+    {
+        S1DeviceMapping mapping = Mapping();
+        S1Outbox outbox = QueueMessage(directory, "publisher-retry", mapping);
+        FakeMqttSession fake = new FakeMqttSession();
+        S1MqttPublisher publisher = new S1MqttPublisher(Settings(mapping), outbox, delegate(S1DeviceMapping ignored) { return fake; });
+        DateTime now = DateTime.UtcNow;
+        publisher.RunOnce(now);
+        fake.RaisePublished(1, false);
+        S1PublishMessage retried = FindById(outbox.GetDue(now.AddSeconds(1)), "publisher-retry");
+        Assert(retried != null && retried.Attempts == 1 && retried.NextAttemptUtc <= now.AddSeconds(1).AddMilliseconds(10), "failed PUBACK schedules first retry after one second");
+
+        for (int i = 0; i < 5; i++) outbox.Reschedule("publisher-retry", now);
+        publisher.RunOnce(now);
+        fake.RaisePublished(2, false);
+        retried = FindById(outbox.GetDue(now.AddMinutes(1)), "publisher-retry");
+        Assert(retried != null && retried.Attempts == 7 && retried.NextAttemptUtc <= now.AddSeconds(60).AddMilliseconds(10), "retry delay is capped at sixty seconds");
+        publisher.Stop(TimeSpan.Zero);
+    }
+
+    private static void PublisherReloadsUnacknowledgedMessages(string directory)
+    {
+        S1DeviceMapping mapping = Mapping();
+        string path = Path.Combine(directory, "publisher-reload", "s1-pending-events.json");
+        S1Outbox initial = new S1Outbox(path);
+        string error;
+        Assert(initial.TryEnqueue(new S1PublishMessage[] { Message("publisher-reload", mapping) }, out error), "publisher reload fixture queues its message");
+        FakeMqttSession first = new FakeMqttSession();
+        S1MqttPublisher publisher = new S1MqttPublisher(Settings(mapping), initial, delegate(S1DeviceMapping ignored) { return first; });
+        publisher.RunOnce(DateTime.UtcNow);
+        Assert(first.PublishedTopics.Count == 1, "first publisher emits the unacknowledged message");
+        publisher.Stop(TimeSpan.Zero);
+
+        S1Outbox restored = new S1Outbox(path);
+        FakeMqttSession second = new FakeMqttSession();
+        S1MqttPublisher restarted = new S1MqttPublisher(Settings(mapping), restored, delegate(S1DeviceMapping ignored) { return second; });
+        restarted.RunOnce(DateTime.UtcNow);
+        Assert(second.PublishedTopics.Count == 1, "restarted publisher re-emits the unacknowledged message");
+        restarted.Stop(TimeSpan.Zero);
+    }
+
+    private static S1Outbox QueueMessage(string directory, string id, S1DeviceMapping mapping)
+    {
+        S1Outbox outbox = new S1Outbox(Path.Combine(directory, id, "s1-pending-events.json"));
+        string error;
+        Assert(outbox.TryEnqueue(new S1PublishMessage[] { Message(id, mapping) }, out error), "publisher fixture queues its message: " + error);
+        return outbox;
+    }
+
+    private static S1PublishMessage Message(string id, S1DeviceMapping mapping)
+    {
+        S1PublishMessage message = new S1PublishMessage();
+        message.Id = id;
+        message.SourceDeviceCode = mapping.SourceDeviceCode;
+        message.Topic = "/42/S1-001/property/post";
+        message.Payload = "[]";
+        message.NextAttemptUtc = DateTime.MinValue;
+        return message;
+    }
+
+    private static S1MqttSettings Settings(S1DeviceMapping mapping)
+    {
+        S1MqttSettings settings = new S1MqttSettings();
+        settings.Enabled = true;
+        settings.Host = "mqtt.example.test";
+        settings.Devices.Add(mapping);
+        return settings;
+    }
+
+    private sealed class FakeMqttSession : IS1MqttSession
+    {
+        internal S1DeviceMapping ConnectedMapping;
+        internal string ConnectedPassword;
+        internal readonly List<string> PublishedTopics = new List<string>();
+        public event Action<ushort, bool> Published;
+        public event Action<Exception> ConnectionClosed;
+
+        public void Connect(S1MqttSettings settings, S1DeviceMapping mapping, string password)
+        {
+            ConnectedMapping = mapping;
+            ConnectedPassword = password;
+        }
+
+        public ushort Publish(string topic, byte[] payload)
+        {
+            PublishedTopics.Add(topic);
+            return (ushort)PublishedTopics.Count;
+        }
+
+        public void Disconnect() { }
+
+        internal void RaisePublished(ushort messageId, bool success)
+        {
+            Action<ushort, bool> handler = Published;
+            if (handler != null) handler(messageId, success);
+        }
+
+        internal void RaiseConnectionClosed(Exception error)
+        {
+            Action<Exception> handler = ConnectionClosed;
+            if (handler != null) handler(error);
+        }
     }
 
     private static S1DeviceMapping Device(string deviceCode, long productId, string serialNumber, string clientId, string userName, string password)
