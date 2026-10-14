@@ -27,6 +27,13 @@ RuntimeBehaviorTests.exe
 set RESULT=%ERRORLEVEL%
 popd
 if not "%RESULT%" == "0" goto :cleanup
+"%CSC%" /nologo /target:exe /main:S1MqttTests /out:"%TEST_DIR%\S1MqttTests.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll "%SCRIPT_DIR%S1MqttTests.cs" "%SCRIPT_DIR%S1MqttConfiguration.cs" "%SCRIPT_DIR%HosonDeviceSessionStore.cs"
+if errorlevel 1 goto :cleanup
+pushd "%TEST_DIR%"
+S1MqttTests.exe
+set RESULT=%ERRORLEVEL%
+popd
+if not "%RESULT%" == "0" goto :cleanup
 "%CSC%" /nologo /target:exe /main:LayoutTests /out:"%TEST_DIR%\LayoutTests.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "%SCRIPT_DIR%LayoutTests.cs" "%SCRIPT_DIR%HosonMesMock.cs" "%SCRIPT_DIR%HosonMesMockCli.cs" "%SCRIPT_DIR%HosonMesServer.cs" "%SCRIPT_DIR%MesConfig.cs"
 if errorlevel 1 goto :cleanup
 pushd "%TEST_DIR%"
