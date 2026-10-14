@@ -43,6 +43,20 @@ internal static class MesResponseBuilder
         return new JavaScriptSerializer().Serialize(response);
     }
 
+    internal static string ReplaceLoginToken(string responseBody, string token)
+    {
+        Dictionary<string, object> response = new JavaScriptSerializer().DeserializeObject(responseBody) as Dictionary<string, object>;
+        if (response == null) throw new ArgumentException("Login response must be a JSON object.");
+        object success;
+        if (!response.TryGetValue("success", out success) || !(success is bool) || !(bool)success) return responseBody;
+        object dataValue;
+        Dictionary<string, object> data = response.TryGetValue("data", out dataValue) ? dataValue as Dictionary<string, object> : null;
+        if (data == null) data = new Dictionary<string, object>();
+        data["token"] = token;
+        response["data"] = data;
+        return new JavaScriptSerializer().Serialize(response);
+    }
+
     private static long NextGeneratedId()
     {
         while (true)
@@ -127,6 +141,7 @@ internal sealed class HosonMesServer
 
     internal event Action<MesExchange> ExchangeReceived;
     internal event Action<Exception> LogWriteFailed;
+    internal Func<MesExchange, string> BeforeResponse { get; set; }
     internal bool IsRunning { get { return listener != null; } }
 
     internal HosonMesServer() : this(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")) { }
@@ -302,7 +317,20 @@ internal sealed class HosonMesServer
                     {
                         item.DeviceCode = DeviceCode(requestBody);
                         string response = MesResponseBuilder.SelectTemplate(deviceResponses, item.DeviceCode, item.Method, responses);
-                        if (response != null) item.ResponseBody = MesResponseBuilder.Build(response, requestBody.TryGetValue("id", out value), value);
+                        if (response != null)
+                        {
+                            item.ResponseBody = MesResponseBuilder.Build(response, requestBody.TryGetValue("id", out value), value);
+                            Func<MesExchange, string> before = BeforeResponse;
+                            if (before != null)
+                            {
+                                string failure = before(item);
+                                if (!string.IsNullOrEmpty(failure))
+                                {
+                                    item.Status = 500;
+                                    item.ResponseBody = Error(failure);
+                                }
+                            }
+                        }
                         else
                         {
                             item.Status = 404;

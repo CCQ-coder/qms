@@ -22,6 +22,12 @@ internal static class ServerTests
         using (ManualResetEvent received = new ManualResetEvent(false))
         {
             server.ExchangeReceived += delegate(MesExchange item) { last = item; received.Set(); };
+            bool hookRan = false;
+            server.BeforeResponse = delegate(MesExchange item)
+            {
+                hookRan = item.Method == "login" && item.Status == 200 && !string.IsNullOrEmpty(item.ResponseBody);
+                return null;
+            };
             try
             {
                 server.Start("127.0.0.1", port,
@@ -31,11 +37,14 @@ internal static class ServerTests
                 Assert((int)initial["version"] == 9 && (string)initial["id"] == "REQ-1" && Convert.ToInt64(initial["timestamp"]) > 0, "device response uses current dynamic fields");
                 Assert(received.WaitOne(3000), "request log emitted");
                 Assert(last.Method == "login" && last.RequestBody.Contains("login") && last.ResponseBody.Contains("version"), "log details");
+                Assert(hookRan, "pre-response hook runs before the successful template is returned");
                 Assert(Status(port, "GET", "/api/mes/invoke") == 405, "bodyless API probe keeps method-not-allowed status");
                 Assert(Status(port, "GET", "/not-found") == 404, "bodyless unknown path keeps not-found status");
 
                 server.UpdateResponses(new Dictionary<string, string> { { "login", "{\"version\":2}" } });
                 Assert((int)Response(Post(port, "{\"method\":\"login\"}"))["version"] == 2, "edited response used without restart");
+                server.BeforeResponse = delegate(MesExchange item) { return "outbox write failed"; };
+                Assert(PostStatus(port, "{\"method\":\"login\"}") == 500, "pre-response failure becomes HTTP 500");
             }
             finally { server.Stop(); }
         }
@@ -79,6 +88,21 @@ internal static class ServerTests
             HttpWebResponse response = error.Response as HttpWebResponse;
             if (response == null) throw;
             using (response) return (int)response.StatusCode;
+        }
+    }
+
+    private static int PostStatus(int port, string body)
+    {
+        HttpWebRequest request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + "/api/mes/invoke");
+        request.Proxy = null;
+        request.Method = "POST";
+        byte[] bytes = Encoding.UTF8.GetBytes(body);
+        request.ContentLength = bytes.Length;
+        using (Stream output = request.GetRequestStream()) output.Write(bytes, 0, bytes.Length);
+        try { using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) return (int)response.StatusCode; }
+        catch (WebException error)
+        {
+            using (HttpWebResponse response = (HttpWebResponse)error.Response) return (int)response.StatusCode;
         }
     }
 

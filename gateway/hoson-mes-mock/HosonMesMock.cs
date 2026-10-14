@@ -51,15 +51,21 @@ internal sealed class MockForm : Form
     private readonly string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_config.json");
     private readonly string deviceConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_device_config.json");
     private readonly string defaultsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_defaults.json");
+    private readonly string s1ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "s1_mqtt_config.json");
     private readonly HosonMesServer server = new HosonMesServer();
+    private readonly HosonDeviceSessionStore deviceSessions = new HosonDeviceSessionStore();
     private Dictionary<string, string> templates;
     private Dictionary<string, Dictionary<string, string>> deviceTemplates;
+    private S1MqttSettings s1Settings;
+    private S1Outbox s1Outbox;
+    private S1MqttPublisher s1Publisher;
     private string selectedMethod;
     private bool editorDirty;
     private bool restoringSelection;
-    private TextBox urlBox, ipBox, portBox, responseEditor, requestDetails, responseDetails;
+    private TextBox urlBox, ipBox, portBox, responseEditor, requestDetails, responseDetails, s1HostBox, s1PortBox;
     private Button startButton, stopButton;
-    private Label statusLabel;
+    private Label statusLabel, s1StatusLabel;
+    private CheckBox s1EnabledBox, s1TlsBox;
     private ListBox methodsList;
     private DataGridView logGrid;
 
@@ -67,17 +73,22 @@ internal sealed class MockForm : Form
     {
         templates = MesConfig.Load(configPath);
         deviceTemplates = MesConfig.LoadDeviceResponses(deviceConfigPath);
-        Text = "MES HTTP 服务端 - HS通用协议 Mock";
+        s1Settings = S1MqttSettingsStore.Load(s1ConfigPath);
+        s1Outbox = new S1Outbox(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "s1-pending-events.json"));
+        s1Publisher = new S1MqttPublisher(s1Settings, s1Outbox);
+        Text = "LYR森泉监听软件";
         Font = new Font("Microsoft YaHei UI", 9F);
-        ClientSize = new Size(1560, 940);
+        ClientSize = new Size(1400, 850);
         MinimumSize = new Size(1000, 700);
         StartPosition = FormStartPosition.CenterScreen;
         BuildUi();
         server.ExchangeReceived += OnExchangeReceived;
         server.LogWriteFailed += OnLogWriteFailed;
+        server.BeforeResponse = PrepareS1Forwarding;
         FormClosing += OnFormClosing;
         UpdateUrl();
         if (methodsList.Items.Count > 0) methodsList.SelectedIndex = 0;
+        if (s1Settings.Enabled) s1Publisher.Start();
         StartService(false);
     }
 
@@ -87,14 +98,55 @@ internal sealed class MockForm : Form
         layout.Dock = DockStyle.Fill;
         layout.Padding = new Padding(20, 16, 20, 16);
         layout.ColumnCount = 1;
-        layout.RowCount = 3;
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 125));
+        layout.RowCount = 4;
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 115));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 120));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 48));
         Controls.Add(layout);
         layout.Controls.Add(BuildServiceGroup(), 0, 0);
-        layout.Controls.Add(BuildResponseGroup(), 0, 1);
-        layout.Controls.Add(BuildLogGroup(), 0, 2);
+        layout.Controls.Add(BuildS1Group(), 0, 1);
+        layout.Controls.Add(BuildResponseGroup(), 0, 2);
+        layout.Controls.Add(BuildLogGroup(), 0, 3);
+    }
+
+    private GroupBox BuildS1Group()
+    {
+        GroupBox group = Group("S1 MQTT服务器配置");
+        FlowLayoutPanel row = new FlowLayoutPanel();
+        row.Dock = DockStyle.Fill;
+        row.Padding = new Padding(12, 14, 12, 8);
+        row.WrapContents = false;
+        group.Controls.Add(row);
+        s1EnabledBox = new CheckBox();
+        s1EnabledBox.Text = "启用转发";
+        s1EnabledBox.Checked = s1Settings.Enabled;
+        row.Controls.Add(s1EnabledBox);
+        row.Controls.Add(Label("Broker:"));
+        s1HostBox = new TextBox();
+        s1HostBox.Width = 185;
+        s1HostBox.Text = s1Settings.Host;
+        row.Controls.Add(s1HostBox);
+        row.Controls.Add(Label("端口:"));
+        s1PortBox = new TextBox();
+        s1PortBox.Width = 70;
+        s1PortBox.Text = s1Settings.Port.ToString(CultureInfo.InvariantCulture);
+        row.Controls.Add(s1PortBox);
+        s1TlsBox = new CheckBox();
+        s1TlsBox.Text = "TLS";
+        s1TlsBox.Checked = s1Settings.UseTls;
+        row.Controls.Add(s1TlsBox);
+        Button mappings = Button("设备映射", 105);
+        mappings.Click += delegate { EditS1Mappings(); };
+        row.Controls.Add(mappings);
+        Button save = Button("保存S1配置", 105);
+        save.Click += delegate { SaveS1Settings(); };
+        row.Controls.Add(save);
+        s1StatusLabel = Label("待发: " + s1Publisher.PendingCount.ToString(CultureInfo.InvariantCulture));
+        s1StatusLabel.AutoSize = true;
+        s1StatusLabel.Margin = new Padding(14, 7, 0, 0);
+        row.Controls.Add(s1StatusLabel);
+        return group;
     }
 
     private GroupBox BuildServiceGroup()
@@ -406,6 +458,102 @@ internal sealed class MockForm : Form
         catch (Exception error) { MessageBox.Show(this, error.Message, "恢复默认失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
+    private string PrepareS1Forwarding(MesExchange exchange)
+    {
+        try
+        {
+            if (exchange.Status != 200) return null;
+            if (string.Equals(exchange.Method, "login", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(exchange.DeviceCode)) return null;
+                exchange.ResponseBody = MesResponseBuilder.ReplaceLoginToken(exchange.ResponseBody, deviceSessions.Register(exchange.DeviceCode, DateTime.UtcNow));
+            }
+            else
+            {
+                string token = RequestToken(exchange.RequestBody);
+                string deviceCode;
+                if (!deviceSessions.TryResolve(token, DateTime.UtcNow, out deviceCode))
+                {
+                    UpdateS1Status("S1未转发：未登录或 token 已过期");
+                    return null;
+                }
+                exchange.DeviceCode = deviceCode;
+            }
+            if (!s1Settings.Enabled) return null;
+            S1DeviceMapping mapping = FindS1Mapping(exchange.DeviceCode);
+            if (mapping == null)
+            {
+                UpdateS1Status("S1未转发：设备未映射");
+                return null;
+            }
+            List<S1PublishMessage> messages = S1EventMapper.Map(exchange, mapping);
+            if (messages.Count == 0) return null;
+            string error;
+            if (!s1Outbox.TryEnqueue(messages, out error)) return "S1待发队列写入失败。";
+            s1Publisher.Wake();
+            UpdateS1Status("S1待发: " + s1Publisher.PendingCount.ToString(CultureInfo.InvariantCulture));
+            return null;
+        }
+        catch (Exception error)
+        {
+            UpdateS1Status("S1处理失败：" + error.Message);
+            return "S1待发队列处理失败。";
+        }
+    }
+
+    private static string RequestToken(string requestBody)
+    {
+        Dictionary<string, object> request = new System.Web.Script.Serialization.JavaScriptSerializer().DeserializeObject(requestBody) as Dictionary<string, object>;
+        object value;
+        return request != null && request.TryGetValue("token", out value) && value != null ? Convert.ToString(value, CultureInfo.InvariantCulture) : "";
+    }
+
+    private S1DeviceMapping FindS1Mapping(string deviceCode)
+    {
+        foreach (S1DeviceMapping mapping in s1Settings.Devices)
+            if (string.Equals(mapping.SourceDeviceCode, deviceCode, StringComparison.OrdinalIgnoreCase)) return mapping;
+        return null;
+    }
+
+    private void UpdateS1Status(string text)
+    {
+        if (IsDisposed || !IsHandleCreated || s1StatusLabel == null) return;
+        try { BeginInvoke((MethodInvoker)delegate { if (!IsDisposed) s1StatusLabel.Text = text; }); }
+        catch (InvalidOperationException) { }
+    }
+
+    private void SaveS1Settings()
+    {
+        int port;
+        if (!int.TryParse(s1PortBox.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port))
+        {
+            MessageBox.Show(this, "S1端口必须为数字。", "配置无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            s1Settings.Enabled = s1EnabledBox.Checked;
+            s1Settings.Host = s1HostBox.Text.Trim();
+            s1Settings.Port = port;
+            s1Settings.UseTls = s1TlsBox.Checked;
+            S1MqttSettingsStore.Save(s1ConfigPath, s1Settings);
+            s1Publisher.Stop(TimeSpan.FromSeconds(2));
+            if (s1Settings.Enabled) s1Publisher.Start();
+            UpdateS1Status("S1配置已保存；待发: " + s1Publisher.PendingCount.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (Exception error) { MessageBox.Show(this, error.Message, "S1配置保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void EditS1Mappings()
+    {
+        using (S1DeviceMappingDialog dialog = new S1DeviceMappingDialog(s1Settings))
+        {
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            try { S1MqttSettingsStore.Save(s1ConfigPath, s1Settings); UpdateS1Status("S1设备映射已保存"); }
+            catch (Exception error) { MessageBox.Show(this, error.Message, "S1映射保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+    }
+
     private void OnExchangeReceived(MesExchange item)
     {
         if (IsDisposed || !IsHandleCreated) return;
@@ -464,5 +612,6 @@ internal sealed class MockForm : Form
     {
         if (!ConfirmEditorChanges()) { args.Cancel = true; return; }
         server.Stop();
+        s1Publisher.Stop(TimeSpan.FromSeconds(2));
     }
 }

@@ -18,13 +18,15 @@ internal static class LayoutTests
                 try
                 {
                     VerifyAutomaticDefaultStart(form);
-                    Assert(form.ClientSize == new Size(1560, 940), "default client size is preserved");
+                    Assert(form.Text == "LYR森泉监听软件", "window title identifies the LYR listener");
+                    Assert(form.ClientSize == new Size(1400, 850), "default client size matches the requested operator layout");
                     Assert(form.MinimumSize == new Size(1000, 700), "minimum window size is preserved");
-                    form.ClientSize = new Size(1560, 940);
+                    form.ClientSize = new Size(1400, 850);
                     form.CreateControl();
                     form.PerformLayout();
                     TableLayoutPanel layout = (TableLayoutPanel)form.Controls[0];
                     VerifyRowDistribution(form, layout, "default size");
+                    Assert(ContainsText(form.Controls, "S1 MQTT服务器配置"), "S1 MQTT configuration group is visible");
 
                     form.Size = form.MinimumSize;
                     form.PerformLayout();
@@ -82,9 +84,18 @@ internal static class LayoutTests
     private static void VerifyRowDistribution(MockForm form, TableLayoutPanel layout, string size)
     {
         int[] rows = layout.GetRowHeights();
-        int remainingHeight = rows[1] + rows[2];
+        int remainingHeight = rows[2] + rows[3];
         int expectedResponseHeight = (int)Math.Round(remainingHeight * 0.52d);
-        Assert(Math.Abs(rows[1] - expectedResponseHeight) <= 1, "response configuration uses 52% of remaining height at " + size);
-        Assert(rows[1] > 0 && rows[2] > 0, "response configuration and log remain usable at " + size);
+        Assert(Math.Abs(rows[2] - expectedResponseHeight) <= 1, "response configuration uses 52% of remaining height at " + size);
+        Assert(rows[2] > 0 && rows[3] > 0, "response configuration and log remain usable at " + size);
+    }
+
+    private static bool ContainsText(Control.ControlCollection controls, string text)
+    {
+        foreach (Control control in controls)
+        {
+            if (control.Text == text || ContainsText(control.Controls, text)) return true;
+        }
+        return false;
     }
 }

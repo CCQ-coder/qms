@@ -11,7 +11,7 @@ if not exist "%CSC%" (
   exit /b 1
 )
 
-"%CSC%" /nologo /target:winexe /main:HosonMesMock /platform:anycpu /optimize+ /win32icon:"%SCRIPT_DIR%lyr-mes.ico" /out:"%OUT_DIR%\HosonMesMock.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:"%SCRIPT_DIR%lib\M2Mqtt.dll" "%SCRIPT_DIR%HosonMesMock.cs" "%SCRIPT_DIR%HosonMesMockCli.cs" "%SCRIPT_DIR%HosonMesServer.cs" "%SCRIPT_DIR%MesConfig.cs" "%SCRIPT_DIR%S1MqttConfiguration.cs" "%SCRIPT_DIR%HosonDeviceSessionStore.cs" "%SCRIPT_DIR%S1MqttPipeline.cs" "%SCRIPT_DIR%S1MqttPublisher.cs"
+"%CSC%" /nologo /target:winexe /main:HosonMesMock /platform:anycpu /optimize+ /win32icon:"%SCRIPT_DIR%lyr-mes.ico" /out:"%OUT_DIR%\HosonMesMock.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:"%SCRIPT_DIR%lib\M2Mqtt.dll" "%SCRIPT_DIR%HosonMesMock.cs" "%SCRIPT_DIR%HosonMesMockCli.cs" "%SCRIPT_DIR%HosonMesServer.cs" "%SCRIPT_DIR%MesConfig.cs" "%SCRIPT_DIR%S1MqttConfiguration.cs" "%SCRIPT_DIR%HosonDeviceSessionStore.cs" "%SCRIPT_DIR%S1MqttPipeline.cs" "%SCRIPT_DIR%S1MqttPublisher.cs" "%SCRIPT_DIR%S1DeviceMappingDialog.cs"
 if errorlevel 1 exit /b %errorlevel%
 
 if not exist "%OUT_DIR%\mes_server_config.json" copy /Y "%SCRIPT_DIR%mes_server_config.json" "%OUT_DIR%\mes_server_config.json" >nul
