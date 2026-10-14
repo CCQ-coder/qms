@@ -20,5 +20,6 @@ if not exist "%OUT_DIR%\s1_mqtt_config.json" copy /Y "%SCRIPT_DIR%s1_mqtt_config
 copy /Y "%SCRIPT_DIR%mes_server_defaults.json" "%OUT_DIR%\mes_server_defaults.json" >nul
 copy /Y "%SCRIPT_DIR%start-mock.cmd" "%OUT_DIR%\start-mock.cmd" >nul
 copy /Y "%SCRIPT_DIR%README.md" "%OUT_DIR%\README.md" >nul
+copy /Y "%SCRIPT_DIR%S1_SETUP.md" "%OUT_DIR%\S1_SETUP.md" >nul
 copy /Y "%SCRIPT_DIR%lib\M2Mqtt.dll" "%OUT_DIR%\M2Mqtt.dll" >nul
 echo Build complete: %OUT_DIR%\HosonMesMock.exe

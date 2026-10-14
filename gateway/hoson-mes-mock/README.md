@@ -1,8 +1,8 @@
-# 森泉 MES 独立 Mock 监听器
+# LYR森泉监听软件
 
-`HosonMesMock.exe` 是独立的 Windows 图形化 HTTP 测试服务，不依赖原 DEMO 的 `MesHttpServer.exe` 或 `jsoncpp.dll`。它监听 `POST /api/mes/invoke`，读取同目录下的 `mes_server_config.json`，按请求 JSON 的 `method` 返回对应应答。配置文件取自提供的“MES服务端DEMO_V1.0.zip”，包含 12 个方法的示例应答。
+`HosonMesMock.exe` 是独立的 Windows 图形化森泉 HTTP 监听服务。它监听 `POST /api/mes/invoke`，按请求 JSON 的 `method` 返回 MES 应答，并可将处理后的设备数据用 MQTT QoS 1 发送到 S1。
 
-窗口提供监听 IP 和端口、服务启动与停止、各方法的 JSON 应答编辑，以及请求和响应记录。它仅模拟 MES 应答，不向 QMS 转发设备上报。界面日志只保留当前运行的最近 1000 条；每次请求同时追加到同目录的 `logs\yyyy-MM-dd.jsonl`，其中可能包含请求中的密码或令牌，应按现场安全要求保管。日志目录不可写时，服务仍会应答请求，但图形窗口会显示“日志写入失败”，无界面模式会将错误写到标准错误输出。
+窗口提供监听 IP 和端口、S1 MQTT 服务和逐设备映射、JSON 应答编辑，以及请求和响应记录。S1 配置为 `s1_mqtt_config.json`，待发队列为 `data\s1-pending-events.json`。完整原始 JSON 仍只记录在 `logs\yyyy-MM-dd.jsonl`。S1 建档与联调步骤见 [S1_SETUP.md](S1_SETUP.md)。
 
 ## 使用
 
