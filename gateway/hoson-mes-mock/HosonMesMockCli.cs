@@ -23,12 +23,17 @@ internal static class HosonMesMockCli
             if (!int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out port))
                 throw new ArgumentException("Invalid port.");
             string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_config.json");
+            string deviceConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_device_config.json");
             HosonMesServer server = new HosonMesServer();
             server.ExchangeReceived += delegate(MesExchange item)
             {
                 Console.WriteLine(item.Time.ToString("yyyy-MM-dd HH:mm:ss") + " " + item.ClientIp + " " + item.Method + " HTTP " + item.Status);
             };
-            server.Start(args[0], port, MesConfig.Load(configPath));
+            server.LogWriteFailed += delegate(Exception error)
+            {
+                Console.Error.WriteLine("Hoson MES mock log write failed: " + error.Message);
+            };
+            server.Start(args[0], port, MesConfig.Load(configPath), MesConfig.LoadDeviceResponses(deviceConfigPath));
             Console.WriteLine("Hoson MES mock listening on " + args[0] + ":" + port + "/api/mes/invoke");
             using (ManualResetEvent stopping = new ManualResetEvent(false))
             {

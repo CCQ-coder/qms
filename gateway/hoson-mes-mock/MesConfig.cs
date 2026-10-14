@@ -41,6 +41,30 @@ internal static class MesConfig
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
+    internal static Dictionary<string, Dictionary<string, string>> LoadDeviceResponses(string path)
+    {
+        Dictionary<string, Dictionary<string, string>> result = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        if (!File.Exists(path)) return result;
+        Dictionary<string, object> source = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(path, Encoding.UTF8)) as Dictionary<string, object>;
+        if (source == null) throw new ArgumentException("Device response config must be a JSON object.");
+        JavaScriptSerializer serializer = new JavaScriptSerializer();
+        foreach (KeyValuePair<string, object> device in source)
+        {
+            Dictionary<string, object> methods = device.Value as Dictionary<string, object>;
+            if (string.IsNullOrWhiteSpace(device.Key) || methods == null || methods.Count == 0)
+                throw new ArgumentException("Each device response entry must contain one or more method responses.");
+            Dictionary<string, string> templates = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, object> method in methods)
+            {
+                string response = method.Value as string ?? serializer.Serialize(method.Value);
+                ValidateResponse(response);
+                templates.Add(method.Key, response);
+            }
+            result.Add(device.Key, templates);
+        }
+        return result;
+    }
+
     internal static string Pretty(string json)
     {
         StringBuilder output = new StringBuilder();

@@ -49,9 +49,11 @@ internal sealed class MockForm : Form
     };
 
     private readonly string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_config.json");
+    private readonly string deviceConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_device_config.json");
     private readonly string defaultsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mes_server_defaults.json");
     private readonly HosonMesServer server = new HosonMesServer();
     private Dictionary<string, string> templates;
+    private Dictionary<string, Dictionary<string, string>> deviceTemplates;
     private string selectedMethod;
     private bool editorDirty;
     private bool restoringSelection;
@@ -64,6 +66,7 @@ internal sealed class MockForm : Form
     internal MockForm()
     {
         templates = MesConfig.Load(configPath);
+        deviceTemplates = MesConfig.LoadDeviceResponses(deviceConfigPath);
         Text = "MES HTTP 服务端 - HS通用协议 Mock";
         Font = new Font("Microsoft YaHei UI", 9F);
         ClientSize = new Size(1560, 940);
@@ -71,9 +74,11 @@ internal sealed class MockForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         BuildUi();
         server.ExchangeReceived += OnExchangeReceived;
+        server.LogWriteFailed += OnLogWriteFailed;
         FormClosing += OnFormClosing;
         UpdateUrl();
         if (methodsList.Items.Count > 0) methodsList.SelectedIndex = 0;
+        StartService(false);
     }
 
     private void BuildUi()
@@ -84,8 +89,8 @@ internal sealed class MockForm : Form
         layout.ColumnCount = 1;
         layout.RowCount = 3;
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 125));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 400));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 48));
         Controls.Add(layout);
         layout.Controls.Add(BuildServiceGroup(), 0, 0);
         layout.Controls.Add(BuildResponseGroup(), 0, 1);
@@ -124,12 +129,12 @@ internal sealed class MockForm : Form
         row.Controls.Add(ipBox);
         row.Controls.Add(Label("端口:"));
         portBox = new TextBox();
-        portBox.Text = "6680";
+        portBox.Text = "4523";
         portBox.Width = 105;
         portBox.TextChanged += delegate { UpdateUrl(); };
         row.Controls.Add(portBox);
         startButton = Button("启动服务", 115);
-        startButton.Click += delegate { StartService(); };
+        startButton.Click += delegate { StartService(true); };
         row.Controls.Add(startButton);
         stopButton = Button("停止服务", 115);
         stopButton.Enabled = false;
@@ -305,24 +310,30 @@ internal sealed class MockForm : Form
         urlBox.Text = "http://" + ipBox.Text.Trim() + ":" + portBox.Text.Trim() + "/api/mes/invoke";
     }
 
-    private void StartService()
+    private bool StartService(bool showError)
     {
         int port;
         if (!int.TryParse(portBox.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port) || port < 1 || port > 65535)
         {
-            MessageBox.Show(this, "端口必须在 1 至 65535 之间。", "无法启动", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            if (showError) MessageBox.Show(this, "端口必须在 1 至 65535 之间。", "无法启动", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
         }
         try
         {
-            server.Start(ipBox.Text.Trim(), port, templates);
+            server.Start(ipBox.Text.Trim(), port, templates, deviceTemplates);
             ipBox.Enabled = false;
             portBox.Enabled = false;
             startButton.Enabled = false;
             stopButton.Enabled = true;
             statusLabel.Text = "运行中";
+            return true;
         }
-        catch (Exception error) { MessageBox.Show(this, error.Message, "无法启动服务", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception error)
+        {
+            statusLabel.Text = "启动失败：" + error.Message;
+            if (showError) MessageBox.Show(this, error.Message, "无法启动服务", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
     }
 
     private void StopService()
@@ -415,6 +426,19 @@ internal sealed class MockForm : Form
                 logGrid.Rows[index].Tag = item;
                 logGrid.ClearSelection();
                 logGrid.Rows[pinnedIndex >= 0 ? pinnedIndex : index].Selected = true;
+            });
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    private void OnLogWriteFailed(Exception error)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            BeginInvoke((MethodInvoker)delegate
+            {
+                if (!IsDisposed && server.IsRunning) statusLabel.Text = "运行中（日志写入失败）";
             });
         }
         catch (InvalidOperationException) { }
