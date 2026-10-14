@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Web.Script.Serialization;
 
 internal static class S1MqttTests
 {
@@ -17,6 +18,14 @@ internal static class S1MqttTests
             DeviceTokensAreUniqueAndResolveToTheirDevice();
             DeviceTokensExpireAfterTwentyFourHoursOfInactivity();
             ClearingSessionsSimulatesRestart();
+            LoginMapsHostIpAndEvent();
+            DeviceStatusMapsAllSupportedStates();
+            FeedMaterialMapsWorkOrderAndStatus();
+            ScanResultTruncatesPropertyAndEventSummary();
+            PrintResultMapsStatusAndErrors();
+            RecipeAliasesMapToRecipeEvent();
+            VersionInfoMapsSoftwareVersion();
+            OutboxReloadsRetriesAcknowledgesAndSuppressesDuplicates(directory);
             Console.WriteLine("S1 MQTT configuration and device-session checks passed.");
             return 0;
         }
@@ -111,6 +120,155 @@ internal static class S1MqttTests
         string deviceCode;
         sessions.Clear();
         Assert(!sessions.TryResolve(token, now.AddMinutes(1), out deviceCode), "clearing in-memory sessions invalidates existing tokens");
+    }
+
+    private static void LoginMapsHostIpAndEvent()
+    {
+        List<S1PublishMessage> messages = S1EventMapper.Map(Exchange("login", "login-1", "{\"device_code\":\"DEVICE-001\",\"host_ip\":\"192.168.10.21\"}"), Mapping());
+        Assert(messages.Count == 2, "login creates one property and one event publication");
+        AssertValue(messages, PropertyTopic(), "host_ip", "192.168.10.21");
+        AssertValue(messages, EventTopic(), "device_login", "success");
+    }
+
+    private static void DeviceStatusMapsAllSupportedStates()
+    {
+        string[] statuses = { "1", "2", "3" };
+        foreach (string status in statuses)
+        {
+            List<S1PublishMessage> messages = S1EventMapper.Map(Exchange("device_status", "status-" + status,
+                "{\"status\":\"" + status + "\",\"time\":\"2026-10-14 12:00:00\",\"message\":\"报警\",\"error_info\":{\"error_code\":\"E-01\",\"message\":\"故障详情\"}}"), Mapping());
+            AssertValue(messages, PropertyTopic(), "run_status", status);
+            AssertValue(messages, PropertyTopic(), "alarm_code", "E-01");
+            AssertValue(messages, EventTopic(), "status_changed", status);
+        }
+    }
+
+    private static void FeedMaterialMapsWorkOrderAndStatus()
+    {
+        List<S1PublishMessage> messages = S1EventMapper.Map(Exchange("feed_material", "feed-1", "{\"lot_no\":\"LOT-100\",\"feed_status\":\"loaded\"}"), Mapping());
+        AssertValue(messages, PropertyTopic(), "work_order_no", "LOT-100");
+        AssertValue(messages, PropertyTopic(), "feed_status", "loaded");
+        AssertValue(messages, EventTopic(), "material_feed", "loaded");
+    }
+
+    private static void ScanResultTruncatesPropertyAndEventSummary()
+    {
+        string oversized = new string('X', 300);
+        List<S1PublishMessage> messages = S1EventMapper.Map(Exchange("scan_result", "scan-1", "{\"result\":\"pass\",\"scan_content\":\"" + oversized + "\"}"), Mapping());
+        AssertValue(messages, PropertyTopic(), "last_scan_result", "pass");
+        Assert(PayloadValue(messages, PropertyTopic(), "last_scan_content").Length == 64, "property values are capped at 64 characters");
+        Dictionary<string, object> item = PayloadItem(messages, EventTopic(), "scan_result");
+        Assert(Convert.ToString(item["remark"]).Length == 200, "event remarks are capped at 200 characters");
+    }
+
+    private static void PrintResultMapsStatusAndErrors()
+    {
+        List<S1PublishMessage> messages = S1EventMapper.Map(Exchange("return_labels_result", "print-1", "{\"print_result\":\"1\",\"lot_no\":\"LOT-200\",\"error_code\":\"P-01\",\"error_message\":\"打印故障\"}"), Mapping());
+        AssertValue(messages, PropertyTopic(), "work_order_no", "LOT-200");
+        AssertValue(messages, PropertyTopic(), "last_print_result", "1");
+        AssertValue(messages, PropertyTopic(), "alarm_code", "P-01");
+        AssertValue(messages, EventTopic(), "print_result", "1");
+    }
+
+    private static void RecipeAliasesMapToRecipeEvent()
+    {
+        foreach (string method in new string[] { "carft_param", "craft_param" })
+        {
+            List<S1PublishMessage> messages = S1EventMapper.Map(Exchange(method, method + "-1", "{\"recipe\":\"R-1\"}"), Mapping());
+            Assert(messages.Count == 1, "recipe reports do not create long-lived JSON properties");
+            AssertValue(messages, EventTopic(), "recipe_reported", "reported");
+        }
+    }
+
+    private static void VersionInfoMapsSoftwareVersion()
+    {
+        List<S1PublishMessage> messages = S1EventMapper.Map(Exchange("version_info", "version-1", "{\"software_version\":\"2.3.4\"}"), Mapping());
+        AssertValue(messages, PropertyTopic(), "software_version", "2.3.4");
+        AssertValue(messages, EventTopic(), "version_reported", "2.3.4");
+    }
+
+    private static void OutboxReloadsRetriesAcknowledgesAndSuppressesDuplicates(string directory)
+    {
+        string path = Path.Combine(directory, "data", "s1-pending-events.json");
+        List<S1PublishMessage> mapped = S1EventMapper.Map(Exchange("login", "outbox-1", "{\"device_code\":\"DEVICE-001\",\"host_ip\":\"192.168.10.21\"}"), Mapping());
+        string error;
+        S1Outbox outbox = new S1Outbox(path);
+        Assert(outbox.TryEnqueue(mapped, out error), "outbox persists mapped messages: " + error);
+        Assert(File.Exists(path), "outbox write creates its data file");
+        Assert(new S1Outbox(path).GetDue(DateTime.UtcNow).Count == 2, "outbox reload restores unacknowledged messages");
+
+        DateTime retryAt = DateTime.UtcNow.AddMinutes(5);
+        outbox.Reschedule(mapped[0].Id, retryAt);
+        S1PublishMessage retried = FindById(outbox.GetDue(retryAt), mapped[0].Id);
+        Assert(retried != null && retried.Attempts == 1 && retried.NextAttemptUtc == retryAt, "retry state is persisted on reschedule");
+        outbox.Acknowledge(mapped[1].Id);
+        Assert(FindById(outbox.GetDue(DateTime.UtcNow.AddHours(1)), mapped[1].Id) == null, "acknowledgement removes a published record");
+        Assert(outbox.TryEnqueue(mapped, out error), "replayed request is accepted without write error");
+        Assert(FindById(outbox.GetDue(DateTime.UtcNow.AddHours(1)), mapped[1].Id) == null, "completed request ID suppresses duplicate inbound publication");
+    }
+
+    private static S1DeviceMapping Mapping()
+    {
+        S1DeviceMapping mapping = new S1DeviceMapping();
+        mapping.SourceDeviceCode = "DEVICE-001";
+        mapping.ProductId = 42;
+        mapping.SerialNumber = "S1-001";
+        mapping.ClientId = "client";
+        mapping.UserName = "user";
+        mapping.ProtectedPassword = S1MqttSettingsStore.ProtectPassword("password");
+        return mapping;
+    }
+
+    private static MesExchange Exchange(string method, string id, string data)
+    {
+        MesExchange exchange = new MesExchange();
+        exchange.Time = new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc);
+        exchange.Method = method;
+        exchange.DeviceCode = "DEVICE-001";
+        exchange.RequestBody = "{\"id\":\"" + id + "\",\"timestamp\":1791979200000,\"method\":\"" + method + "\",\"data\":" + data + "}";
+        return exchange;
+    }
+
+    private static string PropertyTopic() { return "/42/S1-001/property/post"; }
+    private static string EventTopic() { return "/42/S1-001/event/post"; }
+
+    private static void AssertValue(List<S1PublishMessage> messages, string topic, string id, string expected)
+    {
+        Assert(PayloadValue(messages, topic, id) == expected, "payload item " + id + " uses expected value");
+    }
+
+    private static string PayloadValue(List<S1PublishMessage> messages, string topic, string id)
+    {
+        Dictionary<string, object> item = PayloadItem(messages, topic, id);
+        return item == null ? null : Convert.ToString(item["value"]);
+    }
+
+    private static Dictionary<string, object> PayloadItem(List<S1PublishMessage> messages, string topic, string id)
+    {
+        S1PublishMessage message = MessageFor(messages, topic);
+        Assert(message != null, "message for topic " + topic + " exists");
+        object[] items = new JavaScriptSerializer().DeserializeObject(message.Payload) as object[];
+        if (items != null)
+            foreach (object candidate in items)
+            {
+                Dictionary<string, object> item = candidate as Dictionary<string, object>;
+                if (item != null && Convert.ToString(item["id"]) == id) return item;
+            }
+        return null;
+    }
+
+    private static S1PublishMessage MessageFor(List<S1PublishMessage> messages, string topic)
+    {
+        foreach (S1PublishMessage message in messages)
+            if (message.Topic == topic) return message;
+        return null;
+    }
+
+    private static S1PublishMessage FindById(List<S1PublishMessage> messages, string id)
+    {
+        foreach (S1PublishMessage message in messages)
+            if (message.Id == id) return message;
+        return null;
     }
 
     private static S1DeviceMapping Device(string deviceCode, long productId, string serialNumber, string clientId, string userName, string password)
