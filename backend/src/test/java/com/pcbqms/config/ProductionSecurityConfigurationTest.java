@@ -1,5 +1,6 @@
 package com.pcbqms.config;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -13,6 +14,12 @@ import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.SpringBootConfiguration;
@@ -137,5 +144,52 @@ class ProductionSecurityMissingTenantConfigurationTest {
         mvc.perform(post("/api/v1/equipment/telemetry")
                 .header("X-Gateway-Token", "gateway-secret"))
             .andExpect(status().isServiceUnavailable());
+    }
+}
+
+@SpringBootTest(classes = ProductionSecurityConfigurationTest.TestApplication.class,
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "qms.security.development-mode=false",
+        "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration"
+    })
+class ProductionSecurityEmbeddedServerMissingTenantTest {
+    @Autowired private TestRestTemplate restTemplate;
+    @MockBean private JdbcTemplate jdbcTemplate;
+    @MockBean private JwtDecoder jwtDecoder;
+
+    @Test
+    void missingTenantRemains503AfterServletDispatch() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Gateway-Token", "gateway-secret");
+
+        ResponseEntity<String> response = restTemplate.exchange("/api/v1/equipment/telemetry",
+            HttpMethod.POST, new HttpEntity<>("{}", headers), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(503);
+    }
+}
+
+@SpringBootTest(classes = ProductionSecurityConfigurationTest.TestApplication.class,
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "qms.security.development-mode=false",
+        "qms.integration.gateway.telemetry-tenant-code=customer-b",
+        "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration"
+    })
+class ProductionSecurityEmbeddedServerInactiveTenantTest {
+    @Autowired private TestRestTemplate restTemplate;
+    @MockBean private JdbcTemplate jdbcTemplate;
+    @MockBean private JwtDecoder jwtDecoder;
+
+    @Test
+    void inactiveTenantRemains403AfterServletDispatch() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Gateway-Token", "gateway-secret");
+
+        ResponseEntity<String> response = restTemplate.exchange("/api/v1/equipment/telemetry",
+            HttpMethod.POST, new HttpEntity<>("{}", headers), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
     }
 }

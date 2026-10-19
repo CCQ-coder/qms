@@ -35,20 +35,20 @@ public class GatewayTelemetryTenantContextFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         if (!authentication.isConfigured() || !StringUtils.hasText(tenantCode)) {
-            response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
             return;
         }
         try {
             authentication.verify(request.getHeader("X-Gateway-Token"));
         } catch (AccessDeniedException error) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
         Integer activeTenantCount = jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM qms_tenant WHERE code = ? AND status = 'ACTIVE'",
             Integer.class, tenantCode);
         if (activeTenantCount == null || activeTenantCount == 0) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
         TenantContext.set(tenantCode, "gateway.telemetry");
