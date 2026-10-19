@@ -249,18 +249,18 @@ export const qmsApi = {
     return data.data
   },
 
-  async createEquipmentGatewayMapping(payload: { equipmentId?: string, machineName: string, ignored?: boolean }) {
+  async createEquipmentGatewayMapping(payload: { equipmentId: string, machineName: string }) {
     const { data } = await http.post<ApiResponse<EquipmentGatewayMapping>>('/api/v1/equipment/gateway-mappings', payload)
+    return data.data
+  },
+
+  async updateEquipmentGatewayMapping(id: string, payload: { equipmentId: string, machineName: string, username?: string }) {
+    const { data } = await http.put<ApiResponse<EquipmentGatewayMapping>>(`/api/v1/equipment/gateway-mappings/${id}`, payload)
     return data.data
   },
 
   async deleteEquipmentGatewayMapping(id: string) {
     await http.delete(`/api/v1/equipment/gateway-mappings/${id}`)
-  },
-
-  async updateEquipmentGatewayMapping(id: string, payload: { equipmentId?: string, machineName: string, username?: string, ignored?: boolean }) {
-    const { data } = await http.put<ApiResponse<EquipmentGatewayMapping>>(`/api/v1/equipment/gateway-mappings/${id}`, payload)
-    return data.data
   },
 
   async listEquipmentGatewayUnmatchedMessages() {

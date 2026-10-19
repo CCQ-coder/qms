@@ -58,14 +58,6 @@ const visibleMaintenance = computed(() => requestedMaintenanceType.value
 const equipmentPageStart = computed(() => equipmentTotal.value ? (equipmentCurrentPage.value - 1) * equipmentPageSize.value + 1 : 0)
 const equipmentPageEnd = computed(() => Math.min(equipmentCurrentPage.value * equipmentPageSize.value, equipmentTotal.value))
 
-function calibrationStatusText(status: Equipment['calibrationStatus']) {
-  return ({ NORMAL: '有效', DUE_SOON: '30 天内到期', OVERDUE: '已逾期', NOT_SET: '未设置' })[status]
-}
-
-function calibrationStatusType(status: Equipment['calibrationStatus']) {
-  return ({ NORMAL: 'success', DUE_SOON: 'warning', OVERDUE: 'danger', NOT_SET: 'info' })[status]
-}
-
 function maintenanceTypeText(type: string) {
   return ({ INSPECTION: '点检', MAINTENANCE: '保养', REPAIR: '维修', CALIBRATION: '校准/检定' })[type] ?? type
 }
@@ -279,10 +271,6 @@ onMounted(load)
         <el-table-column prop="equipmentType" label="设备类型" min-width="150" />
         <el-table-column prop="manufacturer" label="厂商" min-width="130" show-overflow-tooltip />
         <el-table-column prop="model" label="型号" min-width="130" show-overflow-tooltip />
-        <el-table-column label="成品测试监控" min-width="140"><template #default="scope"><el-tag v-if="scope.row.equipmentType === '成品测试设备'" type="success">自动展示</el-tag><span v-else class="helper-text">不展示</span></template></el-table-column>
-        <el-table-column prop="processName" label="关联工序" min-width="120" />
-        <el-table-column prop="responsibleName" label="责任人" min-width="110" />
-        <el-table-column label="校准/检定到期" min-width="180"><template #default="scope"><template v-if="scope.row.calibrationStatus === 'NOT_SET'"><el-tag size="small" :type="calibrationStatusType(scope.row.calibrationStatus)">{{ calibrationStatusText(scope.row.calibrationStatus) }}</el-tag></template><template v-else><div>{{ formatDateTime(scope.row.calibrationDueAt) }}</div><el-tag size="small" :type="calibrationStatusType(scope.row.calibrationStatus)">{{ calibrationStatusText(scope.row.calibrationStatus) }}</el-tag></template></template></el-table-column>
         <el-table-column label="状态" min-width="100"><template #default="scope"><el-tag :type="scope.row.status === 'ALARM' ? 'danger' : 'success'">{{ statusText(scope.row.status) }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="145" fixed="right"><template #default="scope"><el-button type="primary" link @click="openEditEquipment(scope.row)">编辑</el-button><el-button type="danger" link :loading="deletingEquipmentId === scope.row.id" @click="deleteEquipment(scope.row)">删除</el-button></template></el-table-column>
       </el-table>

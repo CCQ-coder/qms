@@ -324,15 +324,12 @@ export type EquipmentPage = {
 
 export type EquipmentGatewayMapping = {
   id: string
-  equipmentId: string
-  equipmentCode: string | null
-  equipmentName: string | null
+  equipmentId?: string
+  equipmentCode?: string
+  equipmentName?: string
   username?: string
   machineName?: string
   updatedAt: string
-  valid: boolean
-  ignored?: boolean
-  mappingIssue?: string
 }
 
 export type EquipmentGatewayUnmatchedMessage = {
@@ -352,22 +349,6 @@ export type EquipmentRuntimeStatus = {
   processCode?: string
   reportedStatus?: string
   effectiveStatus: string
-  online: boolean
-  programNo?: string
-  operatorName?: string
-  progressPercent?: number
-  spindleStatus?: string
-  alarmCode?: string
-  alarmMessage?: string
-  machiningCount?: number
-  lastDeviceTime?: string
-  lastReceivedAt?: string
-  programs?: EquipmentRuntimeProgram[]
-}
-
-export type EquipmentRuntimeProgram = {
-  sourceName: string
-  status?: string
   online: boolean
   programNo?: string
   operatorName?: string

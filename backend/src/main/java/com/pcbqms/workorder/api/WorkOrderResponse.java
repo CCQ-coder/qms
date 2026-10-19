@@ -128,7 +128,8 @@ public record WorkOrderResponse(
             workOrder.getSourceSystem(),
             workOrder.getSourceKey(),
             workOrder.getSourceVersion(),
-            workOrder.getStatus(),
+            "ACTIVE".equals(workOrder.getStatus()) && "CLOSED".equals(workOrder.getWarehouseStatus())
+                ? "COMPLETED" : workOrder.getStatus(),
             workOrder.getCustomerCode(),
             workOrder.getInternalProductNo(),
             workOrder.getCustomerPartNo(),

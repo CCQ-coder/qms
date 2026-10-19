@@ -1,50 +1,73 @@
 # PCB QMS 客户本地部署指南
 
-系统使用 QMS 自管账号密码登录，由后端签发 JWT。每家客户使用独立的部署目录、数据库卷、附件卷、租户编码和密钥。
+此部署包只服务**一家**客户。客户 A 与客户 B 必须使用不同的服务器目录、数据库卷、登录密钥和网关密钥；不要将多租户数据库直接复制为双方共用的本地实例。
 
 ## 部署前条件
 
-- 准备 Docker Engine、Docker Compose、客户域名和 HTTPS 反向代理。
-- 为数据库和附件准备每日备份位置，并安排恢复演练。
-- 确定首个租户编码、组织名称、管理员用户名及初始密码。
-- 生成 Base64 编码的随机 JWT 密钥，解码后至少 32 字节；可用 `openssl rand -base64 32`。不同客户使用不同密钥。
-- ERP 或设备网关按对应文档独立部署，配置本客户的身份和网关共享密钥。
+- Linux 服务器已安装 Docker Engine 与 Docker Compose v2。
+- 推荐基线：8 核 CPU、32 GB 内存、1 TB SSD；OCR 图片量较大时增加 CPU 或单独部署 OCR。
+- 已准备客户内部 DNS、HTTPS 反向代理和每日数据库备份位置。
+- 已确定首位 QMS 管理员用户名、至少 10 位的初始密码，以及本客户独立的租户编码和 Base64 编码的 JWT 密钥（解码后至少 32 字节）。
+- 客户 B 另有内网同步网关；QMS 服务器不连接客户 ERP 数据库。
 
 ## 首次部署
 
 ```bash
 cp .env.onprem.example .env.onprem
-# 填写数据库、JWT、网关密钥，以及首租户和管理员参数
+# 编辑 .env.onprem，替换所有密码、JWT 密钥、网关密钥和首管理员信息
 docker compose --env-file .env.onprem -f docker-compose.onprem.yml up -d --build
 docker compose --env-file .env.onprem -f docker-compose.onprem.yml ps
 ```
 
-`docker-compose.onprem.yml` 已启用账号密码登录和 JWT 验证。后端启动时执行 Flyway 迁移；数据库应用账号只用于 QMS schema，不使用 root。
+如果收到的是 `qms-onprem-*.zip`，先解压并进入 `qms-onprem` 目录再执行以上命令。部署包包含源码和构建文件；目标服务器首次构建需要访问 Maven、npm、PyPI 和 Docker 镜像仓库。部署包不包含数据库、附件或任何现场密钥。
 
-浏览器入口默认 `http://服务器地址:8080`，正式使用应由反向代理提供 HTTPS。配置后端允许的页面来源 `QMS_WEB_CORS_ALLOWEDORIGINS`，或正确传递同源请求的主机信息；来源需包含实际协议、主机和端口。MySQL、OCR 和 API 不直接发布到外部。
+系统会在 API 启动时执行 Flyway 数据库迁移。首次初始化 MySQL 卷时，容器会创建 `QMS_DB_USERNAME` 应用账号并仅授予 `MYSQL_DATABASE` 的访问权限；不要将 `root` 密码交给 API。浏览器入口默认为 `http://服务器地址:8080`；生产环境应由客户的反向代理提供 HTTPS，并将外部访问限制为该入口。MySQL、OCR 和 API 不对外发布端口。
 
-## 账号和权限
+> 不要把 `MYSQL_ROOT_PASSWORD` 对应的 `root` 账号用于 `QMS_DB_USERNAME`。QMS 依赖服务层的 `tenant_code` 隔离，因此必须限制应用账号只访问 QMS 数据库。
 
-1. 初始化参数为 `QMS_BOOTSTRAP_TENANT_CODE`、`QMS_BOOTSTRAP_TENANT_NAME`、`QMS_BOOTSTRAP_ADMIN_USERNAME` 和 `QMS_BOOTSTRAP_ADMIN_PASSWORD`。密码至少 10 位，建议使用独立随机值。
-2. 初始化器会创建租户和管理员，并将指定账号设为启用的平台管理员；仅在该账号没有密码哈希时写入初始密码。已有账号的密码不会被此参数重置。
-3. 首次初始化成功后，可从部署编排中移除四项初始化环境变量，避免后续启动再次设置该账号角色和状态。
-4. 登录后在用户管理中配置账号、角色和工序；不同客户使用不同 tenant code。
-5. 默认登录令牌有效期为 480 分钟，由 `QMS_LOCAL_LOGIN_TOKEN_TTL_MINUTES` 配置；过期后重新登录。
-6. JWT 认证模式下，`X-Tenant-Code`、`X-QMS-Actor` 不用于模拟登录身份。服务网关必须提供有效的本租户 Bearer Token，以及匹配的 `X-Gateway-Token`。
+## 身份与权限开通
+
+1. 此部署文件默认启用 QMS 本地账号密码登录，由 API 签发带 `tenant_code` 的 JWT。首次启动会创建租户和管理员；已有管理员密码不会被初始化参数覆盖。使用首位管理员登录后，在“用户与工序权限”中创建其他用户并分配角色与工序。
+2. 客户 B 服务账号的令牌必须具有本客户的 `tenant_code`，并在网关上配置相同的 `QMS_GATEWAY_SHARED_TOKEN`。
+3. 生产模式下不会使用 `X-Tenant-Code` 或 `X-QMS-Actor` 请求头模拟身份。
 
 ## 上线核验
 
-- 原账号密码登录、错误密码、退出和过期后重新登录。
-- 两个租户及不同角色之间的工单、附件、检验和报表权限隔离。
-- 带真实页面 Origin 的登录和 API 请求；跨域客户端还要验证 OPTIONS 预检。
-- 质量业务流程、离线补传、OCR 人工确认、现场网关及报表导出，按功能进度表逐项验收。
-- MySQL 与附件卷都进行备份恢复演练；SQL 备份不含附件文件。
+- 使用首位管理员登录，确认账号、角色与工序权限符合预期；不同客户使用独立部署和独立数据卷。
+- 从现场手机扫码并离线补传一条检验记录；确认超限数值自动判为不合格。
+- 客户 A 上传 ERP 截图并人工确认；客户 B 运行网关后确认工单同步及重叠窗口重试。
+- 导出日期范围质量报表，核对工序、缺陷排行和趋势。
+- 执行并演练一次 MySQL 卷与附件卷的备份恢复。
 
 ## 日常运维
 
 ```bash
 docker compose --env-file .env.onprem -f docker-compose.onprem.yml logs -f api
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml logs --since 1h web ocr mysql
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml exec api sh -c 'grep "rid:请求编号" /app/logs/qms-api.log'
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml pull
 docker compose --env-file .env.onprem -f docker-compose.onprem.yml up -d --build
 ```
 
-升级前备份数据库和附件，在维护窗口执行。当前 Mac 开发环境使用 `compose.local.yaml` / `dev.sh`，端口为 5174、8082、3307；不要与本文件的独立客户部署命令混用。
+API 返回 `X-Request-ID`，浏览器请求和 Nginx 访问日志使用同一个编号；API 日志行中的 `rid:` 可用于串联异常堆栈与请求状态、耗时。请求日志只记录方法、路径、状态码和耗时，不记录查询参数、令牌和请求体。`/actuator/health` 不写逐请求日志。API 文件日志保存在 `api-logs` 卷，按 20 MB、14 天和 1 GB 总量轮转；`.env.onprem` 可调整 `QMS_LOG_*`，临时将 `QMS_LOG_LEVEL` 设为 `DEBUG` 后需重新创建 API 容器。MySQL、OCR、Web 和 API 的容器日志由 Docker `local` 驱动各保留至多 5 个 20 MB 文件，可用 `docker compose logs` 查看。
+
+## 迁移现有数据
+
+在旧服务器上停写后，分别备份数据库和附件；将备份文件与部署包安全传到新服务器。以下命令在解压后的 `qms-onprem` 目录执行，`backups` 仅作迁移中转，不在部署包内：
+
+```bash
+mkdir -p backups
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml exec -T mysql sh -c 'exec mysqldump -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --single-transaction --routines --triggers "$MYSQL_DATABASE"' > backups/qms.sql
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml run --rm --no-deps -v "$PWD/backups:/backup" --entrypoint sh api -c 'tar -C /app/uploads -czf /backup/attachments.tar.gz .'
+```
+
+在新服务器上填写与该客户一致的 `.env.onprem`，先启动 MySQL 并等待其健康检查通过，再恢复数据和附件：
+
+```bash
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml up -d mysql
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml exec -T mysql sh -c 'exec mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backups/qms.sql
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml run --rm --no-deps -v "$PWD/backups:/backup:ro" --entrypoint sh api -c 'tar -C /app/uploads -xzf /backup/attachments.tar.gz'
+docker compose --env-file .env.onprem -f docker-compose.onprem.yml up -d --build
+```
+
+恢复前应核对 `.env.onprem` 的租户编码、认证密钥、数据库名与原部署一致。升级前先备份数据库和附件，在维护窗口执行；应用数据库账号不得使用 MySQL `root`，且只应拥有 QMS schema 的权限。日志卷可单独迁移以保留旧服务器排障记录，但不影响业务数据恢复。

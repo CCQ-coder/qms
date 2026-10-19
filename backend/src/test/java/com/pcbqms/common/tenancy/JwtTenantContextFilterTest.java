@@ -72,6 +72,18 @@ class JwtTenantContextFilterTest {
     }
 
     @Test
+    void allowsFrontendAssetsWithoutJwt() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chained = new AtomicBoolean();
+
+        filter.doFilter(new MockHttpServletRequest("GET", "/assets/index.js"), response,
+            (request, servletResponse) -> chained.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(chained).isTrue();
+    }
+
+    @Test
     void rejectsJwtWithoutTenantClaim() throws Exception {
         Jwt jwt = Jwt.withTokenValue("verified-token")
             .header("alg", "RS256")

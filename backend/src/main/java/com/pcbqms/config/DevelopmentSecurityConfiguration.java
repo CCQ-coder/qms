@@ -7,7 +7,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * This is intentionally restricted to local development. Use QMS password login with JWT verification for production deployment.
+ * This is intentionally restricted to local development. Replace it with OIDC/JWT before production deployment.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "qms.security", name = "development-mode", havingValue = "true")

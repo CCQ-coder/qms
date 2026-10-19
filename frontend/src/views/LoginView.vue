@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import type { LoginTenant } from '@/types/qms'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { isOidcEnabled, startLogin } from '@/auth/oidc'
 import { signInWithPassword } from '@/auth/local-session'
 import { qmsApi } from '@/api/qms'
 
@@ -14,8 +15,10 @@ const password = ref('')
 const loading = ref(false)
 const tenantLoading = ref(false)
 const tenants = ref<LoginTenant[]>([])
+const oidcEnabled = isOidcEnabled()
 
 async function loadTenants() {
+  if (oidcEnabled) return
   tenantLoading.value = true
   try {
     tenants.value = await qmsApi.listLoginTenants()
@@ -34,6 +37,10 @@ onMounted(loadTenants)
 async function signIn() {
   loading.value = true
   try {
+    if (oidcEnabled) {
+      await startLogin()
+      return
+    }
     const session = await qmsApi.loginWithPassword({ tenantCode: tenantCode.value, userName: userName.value, password: password.value })
     signInWithPassword(session)
     const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
@@ -59,8 +66,8 @@ async function signIn() {
       </div>
 
       <div class="login-form-wrap">
-        <div><p class="login-kicker">账号登录</p><h2>QMS 账号登录</h2><p>使用管理员创建并授权的 QMS 账号登录。</p></div>
-        <el-form label-position="top" @submit.prevent="signIn">
+        <div><p class="login-kicker">账号登录</p><h2>{{ oidcEnabled ? '企业统一身份认证' : 'QMS 账号登录' }}</h2><p>{{ oidcEnabled ? '将跳转至企业身份提供方完成登录。' : '使用管理员创建并授权的 QMS 账号登录。' }}</p></div>
+        <el-form v-if="!oidcEnabled" label-position="top" @submit.prevent="signIn">
           <el-form-item label="所属组织">
             <el-select v-model="tenantCode" :loading="tenantLoading" placeholder="请选择组织" style="width: 100%">
               <el-option v-for="tenant in tenants" :key="tenant.code" :label="tenant.name" :value="tenant.code" />
@@ -70,6 +77,7 @@ async function signIn() {
           <el-form-item label="密码"><el-input v-model="password" type="password" show-password autocomplete="current-password" placeholder="请输入密码" @keyup.enter="signIn" /></el-form-item>
           <el-button class="login-submit" type="primary" :loading="loading" @click="signIn">登录系统</el-button>
         </el-form>
+        <el-button v-else class="login-submit" type="primary" :loading="loading" @click="signIn">使用企业账号登录</el-button>
       </div>
     </section>
   </main>

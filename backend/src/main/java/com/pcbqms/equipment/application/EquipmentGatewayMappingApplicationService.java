@@ -43,7 +43,7 @@ public class EquipmentGatewayMappingApplicationService {
     @Transactional
     public EquipmentGatewayMappingResponse create(SaveEquipmentGatewayMappingRequest request) {
         requireGatewayMappingManagementAccess();
-        Equipment equipment = Boolean.TRUE.equals(request.ignored()) ? null : requireEquipment(request.equipmentId());
+        Equipment equipment = requireEquipment(request.equipmentId());
         String username = normalizeIdentifier(request.username());
         String machineName = normalizeIdentifier(request.machineName());
         if (username == null && machineName == null) {
@@ -57,8 +57,7 @@ public class EquipmentGatewayMappingApplicationService {
         EquipmentGatewayMapping mapping = new EquipmentGatewayMapping();
         mapping.setId(UUID.randomUUID().toString());
         mapping.setTenantCode(TenantContext.tenantCode());
-        mapping.setEquipmentId(equipment == null ? null : equipment.getId());
-        mapping.setIgnored(Boolean.TRUE.equals(request.ignored()));
+        mapping.setEquipmentId(equipment.getId());
         mapping.setSourceUsername(username);
         mapping.setMachineName(machineName);
         mapping.setCreatedBy(TenantContext.actor());
@@ -73,7 +72,7 @@ public class EquipmentGatewayMappingApplicationService {
     public EquipmentGatewayMappingResponse update(String id, SaveEquipmentGatewayMappingRequest request) {
         requireGatewayMappingManagementAccess();
         EquipmentGatewayMapping mapping = requireMapping(id);
-        Equipment equipment = Boolean.TRUE.equals(request.ignored()) ? null : requireEquipment(request.equipmentId());
+        Equipment equipment = requireEquipment(request.equipmentId());
         String username = normalizeIdentifier(request.username());
         String machineName = normalizeIdentifier(request.machineName());
         if (username == null && machineName == null) {
@@ -82,8 +81,7 @@ public class EquipmentGatewayMappingApplicationService {
         if (findMappings(username, machineName).stream().anyMatch(other -> !id.equals(other.getId()))) {
             throw new IllegalArgumentException("该网关设备标识已经映射到 QMS 设备");
         }
-        mapping.setEquipmentId(equipment == null ? null : equipment.getId());
-        mapping.setIgnored(Boolean.TRUE.equals(request.ignored()));
+        mapping.setEquipmentId(equipment.getId());
         mapping.setSourceUsername(username);
         mapping.setMachineName(machineName);
         mapping.setUpdatedAt(LocalDateTime.now());
@@ -118,18 +116,12 @@ public class EquipmentGatewayMappingApplicationService {
         if (matches.isEmpty()) {
             throw new MissingEquipmentGatewayMappingException("未找到网关设备映射，请先在 QMS 配置 username 或 machineName");
         }
-        if (matches.stream().anyMatch(mapping -> Boolean.TRUE.equals(mapping.getIgnored()))) {
-            throw new IgnoredEquipmentGatewayMappingException("该上报来源已设置为忽略");
-        }
         Set<String> equipmentIds = new HashSet<>();
         matches.forEach(mapping -> equipmentIds.add(mapping.getEquipmentId()));
         if (equipmentIds.size() != 1) {
             throw new IllegalArgumentException("username 与 machineName 映射到不同 QMS 设备");
         }
-        Equipment equipment = accessibleEquipment(equipmentIds.iterator().next());
-        if (equipment == null) {
-            throw new MissingEquipmentGatewayMappingException("映射失效：目标设备不存在或不属于当前租户，请重新配置映射");
-        }
+        Equipment equipment = requireEquipment(equipmentIds.iterator().next());
         EquipmentGatewayMapping mapping = matches.getFirst();
         return new ResolvedEquipment(equipment, mapping);
     }
@@ -177,14 +169,10 @@ public class EquipmentGatewayMappingApplicationService {
         return StringUtils.hasText(value) ? value.trim().toUpperCase(java.util.Locale.ROOT) : null;
     }
 
-    public static class IgnoredEquipmentGatewayMappingException extends IllegalArgumentException {
-        public IgnoredEquipmentGatewayMappingException(String message) { super(message); }
-    }
-
     public record ResolvedEquipment(Equipment equipment, EquipmentGatewayMapping mapping) {
     }
 
-    /** Missing mappings and unavailable target devices can be skipped without masking other validation errors. */
+    /** Identifies a source device that may be skipped by a protocol adapter without masking other validation errors. */
     public static class MissingEquipmentGatewayMappingException extends IllegalArgumentException {
         public MissingEquipmentGatewayMappingException(String message) {
             super(message);

@@ -40,8 +40,6 @@ public class BtfHessianMonitorApplicationService {
         .ofPattern("uuuu-MM-dd HH:mm:ss", Locale.ROOT)
         .withResolverStyle(ResolverStyle.STRICT);
 
-    private final java.util.concurrent.atomic.AtomicLong lastMissingAlarmTextLog = new java.util.concurrent.atomic.AtomicLong();
-
     private final ObjectMapper objectMapper;
     private final EquipmentTelemetryApplicationService telemetryApplicationService;
     private final EquipmentGatewayMappingApplicationService gatewayMappingService;
@@ -66,21 +64,17 @@ public class BtfHessianMonitorApplicationService {
         try {
             gatewayMappingService.resolve(event.username(), event.machineName());
             return true;
-        } catch (EquipmentGatewayMappingApplicationService.IgnoredEquipmentGatewayMappingException exception) {
-            return false;
         } catch (EquipmentGatewayMappingApplicationService.MissingEquipmentGatewayMappingException exception) {
             unmatchedMessageApplicationService.record(
-                event.username(), event.machineName(), event.deviceTime(), serialize(event, exception.getMessage()));
-            log.debug("Skipped unmapped BTF monitor snapshot for machineName={}: {}", event.machineName(), exception.getMessage());
+                event.username(), event.machineName(), event.deviceTime(), serialize(event));
+            log.debug("Skipped unmapped BTF monitor snapshot for machineName={}", event.machineName());
             return false;
         }
     }
 
-    private String serialize(EquipmentTelemetryEventRequest event, String mappingIssue) {
+    private String serialize(EquipmentTelemetryEventRequest event) {
         try {
-            var payload = objectMapper.valueToTree(event);
-            ((com.fasterxml.jackson.databind.node.ObjectNode) payload).put("mappingIssue", mappingIssue);
-            return objectMapper.writeValueAsString(payload);
+            return objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("无法保存未映射设备的现场报文", exception);
         }
@@ -138,17 +132,6 @@ public class BtfHessianMonitorApplicationService {
         putIfPresent(attributes, "legacyId", optionalText(snapshot, "id", index, 160));
         putIfPresent(attributes, "legacyMachineType", optionalText(snapshot, "machinetype", index, 80));
         putIfPresent(attributes, "legacyScreenText", screenText);
-        attributes.put("legacyScreenTextState", screenText != null ? "PRESENT"
-            : snapshot.hasNonNull("screentext") ? "EMPTY" : "MISSING");
-        if ("ALARM".equals(state.qmsStatus) && screenText == null) {
-            long now = System.currentTimeMillis();
-            long last = lastMissingAlarmTextLog.get();
-            if (now - last >= 60_000 && lastMissingAlarmTextLog.compareAndSet(last, now)) {
-                log.warn("BTF alarm without reason: machineName={}, state={}, screentext={}, fields={}",
-                    machineName, legacyState, attributes.get("legacyScreenTextState"), snapshot.properties().stream()
-                        .map(java.util.Map.Entry::getKey).toList());
-            }
-        }
         if (runtime != null) {
             attributes.put("runtimeSeconds", parseNonNegativeDecimal(runtime, "runtime", index));
         }

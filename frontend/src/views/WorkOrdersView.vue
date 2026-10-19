@@ -25,6 +25,7 @@ const filtersCollapsed = ref(false)
 const pageStart = computed(() => total.value ? (currentPage.value - 1) * pageSize.value + 1 : 0)
 const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, total.value))
 const latestSyncTime = computed(() => rows.value[0]?.updatedAt ? formatDateTime(rows.value[0].updatedAt) : '暂无数据')
+const showBatchColumn = computed(() => rows.value.some(row => row.batches.some(batch => !!batch.batchNo?.trim())))
 
 function value(value: string | number | undefined | null) {
   return value === undefined || value === null || value === '' ? '—' : value
@@ -35,7 +36,11 @@ function batchText(row: WorkOrder) {
 }
 
 function workOrderStatusText(value?: string) {
-  return ({ ACTIVE: '进行中', SUSPENDED: '已暂停', COMPLETED: '已完成', CANCELLED: '已取消' } as Record<string, string>)[value ?? ''] ?? value ?? '—'
+  return ({ ACTIVE: '进行中', SUSPENDED: '已暂停', COMPLETED: '已完成', CANCELLED: '已取消', INACTIVE: '已停用' } as Record<string, string>)[value ?? ''] ?? value ?? '—'
+}
+
+function processLabel(row: WorkOrder) {
+  return row.sourceSystem === 'ERP_EXCEL' ? '表面处理' : '当前工序'
 }
 
 function qualityStatusText(value?: string) {
@@ -138,7 +143,7 @@ onMounted(() => { void load() })
           <label class="work-order-filter-field work-order-keyword-field"><span>快速查询</span><el-input v-model="keyword" clearable placeholder="指令号、厂内编号、客户料号、订单号" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>生产批次</span><el-input v-model="batchNo" clearable placeholder="输入批次号" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>客户编号</span><el-input v-model="customerCode" clearable placeholder="输入客户编号" @keyup.enter="load(1)" /></label>
-          <label class="work-order-filter-field"><span>当前工序</span><el-input v-model="currentProcess" clearable placeholder="工序名称或编码" @keyup.enter="load(1)" /></label>
+          <label class="work-order-filter-field"><span>工序信息</span><el-input v-model="currentProcess" clearable placeholder="工序或表面处理名称" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>入库状态</span><el-select v-model="warehouseStatus" placeholder="全部" clearable><el-option label="待入库" value="PENDING" /><el-option label="已入库" value="RECEIVED" /><el-option label="已结批" value="CLOSED" /></el-select></label>
           <label class="work-order-filter-field"><span>优先级</span><el-select v-model="priority" placeholder="全部" clearable><el-option label="低" value="LOW" /><el-option label="普通" value="NORMAL" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="URGENT" /></el-select></label>
           <label class="work-order-filter-field work-order-date-field"><span>输入日期</span><el-date-picker v-model="inputDateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" /></label>
@@ -153,13 +158,13 @@ onMounted(() => { void load() })
         <div><h2>生产指令列表</h2><p>默认显示现场排产、投料和入库信息；板材、尺寸与工艺明细请点击生产指令号查看。</p></div>
       </div>
 
-      <div class="work-order-table-wrap work-order-summary-table-wrap">
+      <div class="work-order-table-wrap work-order-summary-table-wrap" :class="{ 'no-batch-column': !showBatchColumn }">
         <el-table v-loading="loading" class="work-order-data-table" :data="rows" stripe>
           <el-table-column label="生产指令号" min-width="150"><template #default="{ row }"><el-button class="work-order-detail-link" link type="primary" @click="openDetail(row)">{{ row.workOrderNo }}</el-button></template></el-table-column>
-          <el-table-column label="生产批次" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ batchText(row) }}</template></el-table-column>
+          <el-table-column v-if="showBatchColumn" label="生产批次" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ batchText(row) }}</template></el-table-column>
           <el-table-column label="产品 / 厂内编号" min-width="170"><template #default="{ row }"><div>{{ value(row.internalProductNo ?? row.productCode) }}</div><small>{{ value(row.customerPartNo) }}</small></template></el-table-column>
           <el-table-column label="客户" min-width="100"><template #default="{ row }">{{ value(row.customerCode) }}</template></el-table-column>
-          <el-table-column label="当前工序" min-width="135"><template #default="{ row }">{{ value(row.currentProcessName) }}</template></el-table-column>
+          <el-table-column label="工序信息" min-width="135"><template #default="{ row }"><div>{{ value(row.currentProcessName) }}</div><small v-if="row.sourceSystem === 'ERP_EXCEL'">表面处理</small></template></el-table-column>
           <el-table-column label="订单 / 投料 / 完工 / 入库" min-width="180"><template #default="{ row }">{{ value(row.customerOrderQuantity) }} / {{ value(row.plannedQuantity) }} / {{ value(row.completedQuantity) }} / {{ value(row.cumulativeWarehouseQuantity) }}</template></el-table-column>
           <el-table-column label="投料信息" min-width="145"><template #default="{ row }"><div>{{ value(row.materialArea) }} m²</div><small>预投率 {{ value(row.estimatedYieldRate) }}% · 计划领料 {{ value(row.plannedMaterialIssueQuantity) }}</small></template></el-table-column>
           <el-table-column label="总 / A / B PNL" min-width="130"><template #default="{ row }"><div>{{ value(row.totalPanelQuantity) }} / {{ value(row.aBoardPanelQuantity) }} / {{ value(row.bBoardPanelQuantity) }}</div><small>{{ value(row.panelizationNo) }}</small></template></el-table-column>
@@ -197,7 +202,7 @@ onMounted(() => { void load() })
           <div><span>投料数量</span><strong>{{ value(selected.materialInputQuantity ?? selected.plannedQuantity) }}</strong></div>
           <div><span>完工数量</span><strong>{{ value(selected.completedQuantity) }}</strong></div>
           <div><span>累计入库数</span><strong>{{ value(selected.cumulativeWarehouseQuantity) }}</strong></div>
-          <div><span>当前工序</span><strong>{{ value(selected.currentProcessName) }}</strong></div>
+          <div><span>{{ processLabel(selected) }}</span><strong>{{ value(selected.currentProcessName) }}</strong></div>
           <div><span>优先级</span><strong>{{ priorityText(selected.priority) }}</strong></div>
         </div>
 
@@ -206,7 +211,7 @@ onMounted(() => { void load() })
             <section class="work-order-detail-section">
               <div class="work-order-detail-section-heading"><h3>生产执行</h3><span>生产进度、质量与入库状态</span></div>
               <el-descriptions :column="3" border>
-                <el-descriptions-item label="当前工序">{{ value(selected.currentProcessName) }}（{{ value(selected.currentProcessCode) }}）</el-descriptions-item>
+                <el-descriptions-item :label="processLabel(selected)">{{ value(selected.currentProcessName) }}（{{ value(selected.currentProcessCode) }}）</el-descriptions-item>
                 <el-descriptions-item label="工单状态"><el-tag :type="workOrderTagType(selected.status)" effect="light">{{ workOrderStatusText(selected.status) }}</el-tag></el-descriptions-item>
                 <el-descriptions-item label="质量状态"><el-tag :type="qualityTagType(selected.qualityStatus)" effect="light">{{ qualityStatusText(selected.qualityStatus) }}</el-tag></el-descriptions-item>
                 <el-descriptions-item label="优先级">{{ priorityText(selected.priority) }}</el-descriptions-item>
@@ -286,6 +291,7 @@ onMounted(() => { void load() })
 .work-order-filter-toggle { margin: 0; }
 .work-order-filter-toggle .el-icon { margin-right: 4px; }
 .work-order-summary-table-wrap .el-table { min-width: 1370px; }
+.work-order-summary-table-wrap.no-batch-column .el-table { min-width: 1225px; }
 .work-order-data-table small { color: #667085; font-size: 11px; }
 .work-order-detail-link { font-weight: 650; }
 .work-order-detail-dialog .el-dialog__header { margin-right: 0; padding: 20px 28px 16px; border-bottom: 1px solid #e5edf7; }

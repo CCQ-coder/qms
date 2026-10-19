@@ -12,16 +12,32 @@ spring:
     default-property-inclusion: non_null
   web:
     resources:
-      add-mappings: false
+      add-mappings: ${QMS_SERVE_FRONTEND:false}
   servlet:
     multipart:
       max-file-size: 15MB
       max-request-size: 16MB
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${QMS_OIDC_ISSUER_URI:}
 
 server:
   port: ${SERVER_PORT:8080}
   error:
     include-message: never
+
+logging:
+  pattern:
+    level: "%5p [rid:%X{requestId:-}]"
+  level:
+    com.pcbqms: ${QMS_LOG_LEVEL:INFO}
+  logback:
+    rollingpolicy:
+      max-file-size: ${QMS_LOG_MAX_FILE_SIZE:20MB}
+      max-history: ${QMS_LOG_MAX_HISTORY:14}
+      total-size-cap: ${QMS_LOG_TOTAL_SIZE_CAP:1GB}
 
 management:
   endpoints:

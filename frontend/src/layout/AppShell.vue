@@ -9,6 +9,7 @@ import {
   SetUp
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { authenticatedSubject, isOidcEnabled, logout, startLogin } from '@/auth/oidc'
 import { localSession, signOutLocal } from '@/auth/local-session'
 import { isMenuGroupVisible, isMenuVisible, menuAccess, refreshMenuAccess } from '@/navigation/menu'
 import {
@@ -21,7 +22,10 @@ import {
 const route = useRoute()
 const router = useRouter()
 const asideCollapsed = ref(false)
+const oidcEnabled = isOidcEnabled()
+const oidcSubject = ref(authenticatedSubject())
 const currentLocalSession = ref(localSession())
+const signingIn = ref(false)
 const desktopApplication = isDesktopApplication()
 const desktopConnectionDialogVisible = ref(false)
 const desktopApiUrl = ref(desktopApiBaseUrl())
@@ -30,9 +34,27 @@ const actorLabel = computed(() => currentLocalSession.value?.displayName ?? 'QMS
 const platformAdministrator = computed(() => menuAccess.value?.roleCode === 'PLATFORM_ADMIN'
   || (!menuAccess.value && currentLocalSession.value?.roleCode === 'PLATFORM_ADMIN'))
 const tenantAdministrator = computed(() => platformAdministrator.value || menuAccess.value?.roleCode === 'TENANT_ADMIN'
-  || (!menuAccess.value && currentLocalSession.value?.roleCode === 'TENANT_ADMIN'))
+  || (!menuAccess.value && (oidcEnabled || currentLocalSession.value?.roleCode === 'TENANT_ADMIN')))
 
 const pageTitle = computed(() => route.meta.title ?? 'PCB QMS')
+
+async function signIn() {
+  signingIn.value = true
+  try {
+    await startLogin()
+  } catch (error) {
+    signingIn.value = false
+    window.alert(error instanceof Error ? error.message : '无法开始 OIDC 登录')
+  }
+}
+
+async function signOut() {
+  try {
+    await logout()
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : '退出登录失败')
+  }
+}
 
 async function signOutLocalSession() {
   signOutLocal()
@@ -134,8 +156,17 @@ onMounted(() => {
         </div>
         <div class="header-actions">
           <el-button v-if="desktopApplication" plain @click="openDesktopConnectionDialog">服务地址</el-button>
-          <div class="user-chip">{{ actorLabel }}</div>
-          <el-button link type="primary" @click="signOutLocalSession">退出登录</el-button>
+          <template v-if="oidcEnabled">
+            <el-button v-if="!oidcSubject" type="primary" :loading="signingIn" @click="signIn">OIDC 登录</el-button>
+            <template v-else>
+              <div class="user-chip">{{ oidcSubject }}</div>
+              <el-button link type="primary" @click="signOut">退出登录</el-button>
+            </template>
+          </template>
+          <template v-else>
+            <div class="user-chip">{{ actorLabel }}</div>
+            <el-button link type="primary" @click="signOutLocalSession">退出登录</el-button>
+          </template>
         </div>
       </el-header>
       <el-main class="app-main"><router-view /></el-main>

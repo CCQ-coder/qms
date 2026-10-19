@@ -28,6 +28,7 @@ import com.pcbqms.equipment.infrastructure.persistence.EquipmentMaintenanceMappe
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMaintenanceTemplateItemMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -37,6 +38,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +49,7 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class EquipmentApplicationService {
     private static final Set<String> MAINTENANCE_TYPES = Set.of("INSPECTION", "MAINTENANCE", "REPAIR", "CALIBRATION");
+    private static final Pattern ASSET_NUMBER_SUFFIX = Pattern.compile("^(.*?)(\\d+)$");
     private final EquipmentMapper equipmentMapper;
     private final EquipmentMaintenanceMapper maintenanceMapper;
     private final EquipmentMaintenanceTemplateItemMapper maintenanceTemplateItemMapper;
@@ -56,10 +60,10 @@ public class EquipmentApplicationService {
     public List<EquipmentResponse> listEquipment() {
         var access = inspectionAccessScopeService.currentAccess();
         return equipmentMapper.selectList(Wrappers.lambdaQuery(Equipment.class)
-                .eq(Equipment::getTenantCode, TenantContext.tenantCode())
-                .orderByAsc(Equipment::getAssetNo))
+                .eq(Equipment::getTenantCode, TenantContext.tenantCode()))
             .stream()
             .filter(equipment -> canAccessEquipment(equipment, access))
+            .sorted((left, right) -> compareAssetNo(left.getAssetNo(), right.getAssetNo()))
             .map(EquipmentResponse::from)
             .toList();
     }
@@ -75,9 +79,10 @@ public class EquipmentApplicationService {
             query.eq(Equipment::getStatus, request.status().trim().toUpperCase(Locale.ROOT));
         }
         String keyword = StringUtils.hasText(request.keyword()) ? request.keyword().trim().toLowerCase(Locale.ROOT) : null;
-        List<EquipmentResponse> matches = equipmentMapper.selectList(query.orderByAsc(Equipment::getAssetNo)).stream()
+        List<EquipmentResponse> matches = equipmentMapper.selectList(query).stream()
             .filter(equipment -> canAccessEquipment(equipment, access))
             .filter(equipment -> matchesKeyword(equipment, keyword))
+            .sorted((left, right) -> compareAssetNo(left.getAssetNo(), right.getAssetNo()))
             .map(EquipmentResponse::from)
             .toList();
         long total = matches.size();
@@ -391,6 +396,20 @@ public class EquipmentApplicationService {
 
     private String normalizeOptional(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private static int compareAssetNo(String left, String right) {
+        Matcher leftSuffix = ASSET_NUMBER_SUFFIX.matcher(left);
+        Matcher rightSuffix = ASSET_NUMBER_SUFFIX.matcher(right);
+        if (leftSuffix.matches() && rightSuffix.matches()
+            && leftSuffix.group(1).equalsIgnoreCase(rightSuffix.group(1))) {
+            int numberOrder = new BigInteger(leftSuffix.group(2)).compareTo(new BigInteger(rightSuffix.group(2)));
+            if (numberOrder != 0) {
+                return numberOrder;
+            }
+        }
+        int textOrder = left.compareToIgnoreCase(right);
+        return textOrder != 0 ? textOrder : left.compareTo(right);
     }
 
     private void requireFullEquipmentAccess() {

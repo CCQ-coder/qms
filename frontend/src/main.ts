@@ -37,6 +37,7 @@ import {
 } from 'element-plus'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
+import { finishLoginCallback } from './auth/oidc'
 import { initializeDesktopConnection, isDesktopApplication } from './desktop/connection'
 import router from './router'
 import './styles.css'
@@ -46,6 +47,12 @@ async function bootstrap() {
     await initializeDesktopConnection()
   } catch (error) {
     console.error('桌面端服务地址初始化失败', error)
+  }
+
+  try {
+    await finishLoginCallback()
+  } catch (error) {
+    console.error('OIDC 登录初始化失败', error)
   }
 
   const app = createApp(App)

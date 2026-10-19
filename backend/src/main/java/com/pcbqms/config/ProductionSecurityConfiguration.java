@@ -36,6 +36,8 @@ public class ProductionSecurityConfiguration {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health", "/actuator/info", "/hessian/monitor").permitAll()
+                .requestMatchers(HttpMethod.GET, "/", "/index.html", "/assets/**", "/favicon.svg",
+                    "/manifest.webmanifest", "/runtime-config.js", "/sw.js").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/auth/tenants").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                 .anyRequest().authenticated())

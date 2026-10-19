@@ -4,20 +4,15 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.api.EquipmentRuntimeStatusResponse;
-import com.pcbqms.equipment.api.EquipmentRuntimeProgramResponse;
 import com.pcbqms.equipment.domain.Equipment;
-import com.pcbqms.equipment.domain.EquipmentRuntimeChannel;
 import com.pcbqms.equipment.domain.EquipmentRuntimeStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
-import com.pcbqms.equipment.infrastructure.persistence.EquipmentRuntimeChannelMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentRuntimeStatusMapper;
 import com.pcbqms.inspection.domain.SystemParameter;
 import com.pcbqms.inspection.infrastructure.persistence.SystemParameterMapper;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -30,7 +25,6 @@ public class EquipmentRuntimeStatusApplicationService {
     private static final long MIN_OFFLINE_AFTER_SECONDS = 30;
     private static final long MAX_OFFLINE_AFTER_SECONDS = 86_400;
     private final EquipmentRuntimeStatusMapper runtimeStatusMapper;
-    private final EquipmentRuntimeChannelMapper runtimeChannelMapper;
     private final EquipmentMapper equipmentMapper;
     private final SystemParameterMapper systemParameterMapper;
     private final InspectionAccessScopeService inspectionAccessScopeService;
@@ -40,25 +34,18 @@ public class EquipmentRuntimeStatusApplicationService {
     public List<EquipmentRuntimeStatusResponse> list() {
         var access = inspectionAccessScopeService.currentAccess();
         LocalDateTime now = LocalDateTime.now();
-        long offlineSeconds = resolveOfflineAfterSeconds();
-        Map<String, List<EquipmentRuntimeChannel>> channels = runtimeChannelMapper.selectList(
-                Wrappers.lambdaQuery(EquipmentRuntimeChannel.class)
-                    .eq(EquipmentRuntimeChannel::getTenantCode, TenantContext.tenantCode())
-                    .orderByAsc(EquipmentRuntimeChannel::getSourceName))
-            .stream().collect(Collectors.groupingBy(EquipmentRuntimeChannel::getEquipmentId));
         return runtimeStatusMapper.selectList(Wrappers.lambdaQuery(EquipmentRuntimeStatus.class)
                 .eq(EquipmentRuntimeStatus::getTenantCode, TenantContext.tenantCode())
                 .orderByAsc(EquipmentRuntimeStatus::getEquipmentId))
             .stream()
-            .map(status -> toResponse(status, channels.getOrDefault(status.getEquipmentId(), List.of()), access, now, offlineSeconds))
+            .map(status -> toResponse(status, access, now))
             .filter(java.util.Objects::nonNull)
             .toList();
     }
 
     private EquipmentRuntimeStatusResponse toResponse(EquipmentRuntimeStatus status,
-                                                       List<EquipmentRuntimeChannel> channels,
                                                        InspectionAccessScopeService.InspectionAccess access,
-                                                       LocalDateTime now, long offlineSeconds) {
+                                                       LocalDateTime now) {
         Equipment equipment = equipmentMapper.selectById(status.getEquipmentId());
         if (equipment == null || !TenantContext.tenantCode().equals(equipment.getTenantCode())
             || (!access.fullDataAccess() && (!StringUtils.hasText(equipment.getProcessCode())
@@ -66,12 +53,8 @@ public class EquipmentRuntimeStatusApplicationService {
             return null;
         }
         boolean online = status.getLastReceivedAt() != null
-            && Duration.between(status.getLastReceivedAt(), now).getSeconds() < offlineSeconds;
-        List<EquipmentRuntimeProgramResponse> programs = channels.stream()
-            .map(channel -> EquipmentRuntimeProgramResponse.from(channel, channel.getLastReceivedAt() != null
-                && Duration.between(channel.getLastReceivedAt(), now).getSeconds() < offlineSeconds))
-            .toList();
-        return EquipmentRuntimeStatusResponse.from(equipment, status, online, programs);
+            && Duration.between(status.getLastReceivedAt(), now).getSeconds() < resolveOfflineAfterSeconds();
+        return EquipmentRuntimeStatusResponse.from(equipment, status, online);
     }
 
     /** Tenant administrators may adjust this operational threshold without redeploying the QMS service. */

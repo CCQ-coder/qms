@@ -48,6 +48,8 @@ foreach ($variableName in $requiredEnvironmentVariables) {
 
 $env:QMS_SECURITY_DEVELOPMENT_MODE = 'false'
 $env:QMS_LOCAL_PASSWORD_LOGIN_ENABLED = 'true'
+$env:QMS_WEB_CORS_ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,http://192.168.1.71:5173,http://tauri.localhost'
+Remove-Item Env:QMS_OIDC_ISSUER_URI -ErrorAction SilentlyContinue
 
 function Test-HttpAvailable([string]$url) {
   try {
@@ -84,7 +86,7 @@ if (Test-HttpAvailable $frontendUrl) {
   throw "A frontend is already listening at $frontendUrl. Stop it before starting the secure environment."
 } else {
   Start-Process -FilePath 'npm.cmd' `
-    -ArgumentList @('run', 'dev', '--', '--host', '127.0.0.1') `
+    -ArgumentList @('run', 'dev', '--', '--host', '0.0.0.0') `
     -WorkingDirectory $frontendDirectory `
     -WindowStyle Hidden `
     -RedirectStandardOutput (Join-Path $frontendDirectory 'run-qms-frontend.out.log') `

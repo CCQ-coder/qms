@@ -1,8 +1,15 @@
 # Per-customer on-premises deployment. Copy .env.onprem.example to .env.onprem and fill every secret.
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
+    logging: *bounded-logging
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-qms}
       MYSQL_USER: ${QMS_DB_USERNAME:-qms_app}
@@ -20,12 +27,19 @@ services:
     build:
       context: ./ocr-service
     restart: unless-stopped
+    logging: *bounded-logging
 
   api:
     build:
       context: ./backend
     restart: unless-stopped
+    logging: *bounded-logging
     environment:
+      LOGGING_FILE_NAME: /app/logs/qms-api.log
+      QMS_LOG_LEVEL: ${QMS_LOG_LEVEL:-INFO}
+      QMS_LOG_MAX_FILE_SIZE: ${QMS_LOG_MAX_FILE_SIZE:-20MB}
+      QMS_LOG_MAX_HISTORY: ${QMS_LOG_MAX_HISTORY:-14}
+      QMS_LOG_TOTAL_SIZE_CAP: ${QMS_LOG_TOTAL_SIZE_CAP:-1GB}
       QMS_DB_URL: ${QMS_DB_URL:-jdbc:mysql://mysql:3306/qms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
       QMS_DB_USERNAME: ${QMS_DB_USERNAME:-qms_app}
       QMS_DB_PASSWORD: ${QMS_DB_PASSWORD:?Set QMS_DB_PASSWORD in .env.onprem}
@@ -50,11 +64,13 @@ services:
         condition: service_started
     volumes:
       - attachments-data:/app/uploads
+      - api-logs:/app/logs
 
   web:
     build:
       context: ./frontend
     restart: unless-stopped
+    logging: *bounded-logging
     depends_on:
       - api
     ports:
@@ -63,3 +79,4 @@ services:
 volumes:
   mysql-data:
   attachments-data:
+  api-logs:

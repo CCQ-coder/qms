@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import { equipmentAlarmReasonText, formatDateTime, formatUtcDateTime, legacyStateText, spindleStatusText, statusText, telemetryEventTypeText } from '@/utils/display-text'
-import type { Equipment, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeProgram, EquipmentRuntimeStatus, EquipmentTelemetryRecord } from '@/types/qms'
-
-const router = useRouter()
+import { formatDateTime, legacyStateText, statusText } from '@/utils/display-text'
+import type { Equipment, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord } from '@/types/qms'
 
 const parameterKeys = {
   refreshSeconds: 'equipment.monitor.auto-refresh-seconds',
@@ -35,15 +32,12 @@ const selectedRecord = ref<EquipmentTelemetryRecord>()
 const selectedUnmatchedMessage = ref<EquipmentGatewayUnmatchedMessage>()
 const rawPayloadDialog = ref(false)
 const unmatchedPayloadDialog = ref(false)
-const unmatchedExpanded = ref(false)
 const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const telemetryRecords = ref<EquipmentTelemetryRecord[]>([])
 const mappings = ref<EquipmentGatewayMapping[]>([])
 const unmatchedMessages = ref<EquipmentGatewayUnmatchedMessage[]>([])
 const equipment = ref<Equipment[]>([])
-const validMappingCount = computed(() => mappings.value.filter((mapping) => mapping.valid && !mapping.ignored).length)
-const invalidMappingCount = computed(() => mappings.value.filter((mapping) => !mapping.valid && !mapping.ignored).length)
-const mappingForm = reactive({ equipmentId: '', machineName: '', ignored: false })
+const mappingForm = reactive({ equipmentId: '', machineName: '' })
 const config = reactive({
   refreshSeconds: 5,
   offlineSeconds: 300,
@@ -60,7 +54,7 @@ const config = reactive({
 let refreshTimer: number | undefined
 
 const mappingRules: FormRules = {
-  equipmentId: [{ validator: (_rule, value, callback) => callback(mappingForm.ignored || value ? undefined : new Error('请选择 QMS 设备')), trigger: 'change' }],
+  equipmentId: [{ required: true, message: '请选择 QMS 设备', trigger: 'change' }],
   machineName: [{ required: true, message: '请输入现场监控软件上报的设备名', trigger: 'blur' }]
 }
 
@@ -71,10 +65,18 @@ const equipmentOptions = computed(() => runtimeStatuses.value.map((item) => ({
 const visibleRuntimeStatuses = computed(() => selectedEquipmentId.value
   ? runtimeStatuses.value.filter((item) => item.equipmentId === selectedEquipmentId.value)
   : runtimeStatuses.value)
-// One card represents one physical machine; each source is one concurrently opened program.
-const visibleFlowStatuses = computed(() => [...visibleRuntimeStatuses.value]
-  .sort((left, right) => (right.lastReceivedAt || '').localeCompare(left.lastReceivedAt || ''))
-  .slice(0, config.displayRows * config.displayColumns))
+// History is returned newest-first. The data-flow cards are a live equipment overview,
+// so show only the newest record for each device; the full sequence remains below.
+const visibleFlowRecords = computed(() => {
+  const displayedEquipmentIds = new Set<string>()
+  return telemetryRecords.value
+    .filter((record) => {
+      if (displayedEquipmentIds.has(record.equipmentId)) return false
+      displayedEquipmentIds.add(record.equipmentId)
+      return true
+    })
+    .slice(0, config.displayRows * config.displayColumns)
+})
 const onlineCount = computed(() => runtimeStatuses.value.filter((item) => item.online).length)
 const alarmCount = computed(() => runtimeStatuses.value.filter((item) => item.effectiveStatus === 'ALARM').length)
 const endpoint = computed(() => {
@@ -96,9 +98,9 @@ function normalizePath(value: string) {
 
 function localDateTimeBefore(days: number) {
   const time = new Date()
-  time.setUTCDate(time.getUTCDate() - days)
+  time.setDate(time.getDate() - days)
   const pad = (value: number) => String(value).padStart(2, '0')
-  return `${time.getUTCFullYear()}-${pad(time.getUTCMonth() + 1)}-${pad(time.getUTCDate())}T${pad(time.getUTCHours())}:${pad(time.getUTCMinutes())}:${pad(time.getUTCSeconds())}`
+  return `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}T${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}`
 }
 
 function statusType(status?: string) {
@@ -106,30 +108,8 @@ function statusType(status?: string) {
 }
 
 function runtimeStatusText(item: EquipmentRuntimeStatus) {
-  if (item.programs?.length) return statusText(item.effectiveStatus)
   const latest = telemetryRecords.value.find((record) => record.equipmentId === item.equipmentId)
-  if (item.effectiveStatus === 'OFFLINE') return statusText(item.effectiveStatus)
   return latest?.legacyState ? legacyStateText(latest.legacyState) : statusText(item.effectiveStatus)
-}
-
-function programsFor(item: EquipmentRuntimeStatus): EquipmentRuntimeProgram[] {
-  if (item.programs?.length) return item.programs
-  return [{
-    sourceName: item.equipmentCode, status: item.effectiveStatus, online: item.online,
-    programNo: item.programNo, operatorName: item.operatorName, progressPercent: item.progressPercent,
-    spindleStatus: item.spindleStatus, alarmCode: item.alarmCode, alarmMessage: item.alarmMessage,
-    machiningCount: item.machiningCount, lastDeviceTime: item.lastDeviceTime, lastReceivedAt: item.lastReceivedAt
-  }]
-}
-
-function latestRecordFor(item: EquipmentRuntimeStatus, program: EquipmentRuntimeProgram) {
-  return telemetryRecords.value.find((record) => record.equipmentId === item.equipmentId
-    && (record.machineName || record.sourceUsername || '').toUpperCase() === program.sourceName.toUpperCase())
-}
-
-function inspectProgram(item: EquipmentRuntimeStatus, program: EquipmentRuntimeProgram) {
-  const record = latestRecordFor(item, program)
-  if (record) inspectRecord(record)
 }
 
 function telemetryStatusText(item: EquipmentTelemetryRecord) {
@@ -143,19 +123,6 @@ function formatRawPayload(item?: { rawPayload?: string }) {
   } catch {
     return item.rawPayload
   }
-}
-
-function unmatchedIssue(message: EquipmentGatewayUnmatchedMessage) {
-  try {
-    const issue = JSON.parse(message.rawPayload).mappingIssue
-    if (typeof issue === 'string' && issue.trim()) return issue
-  } catch { /* Older records may not contain structured issue details. */ }
-  return '未配置设备映射，请绑定到正确的 QMS 设备'
-}
-
-function hasInvalidMapping(machineName?: string) {
-  return !!machineName && mappings.value.some((mapping) => !mapping.valid
-    && mapping.machineName?.trim().toUpperCase() === machineName.trim().toUpperCase())
 }
 
 async function loadConfiguration() {
@@ -231,7 +198,7 @@ async function refreshAll() {
 
 function restartAutoRefresh() {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer)
-  refreshTimer = window.setInterval(() => { void refreshAll() }, config.refreshSeconds * 1000)
+  refreshTimer = window.setInterval(() => { void loadLiveData() }, config.refreshSeconds * 1000)
 }
 
 async function saveConfiguration() {
@@ -263,13 +230,7 @@ async function saveConfiguration() {
 }
 
 function openMapping(machineName = '') {
-  if (hasInvalidMapping(machineName)) {
-    const mapping = mappings.value.find((item) => !item.valid
-      && item.machineName?.trim().toUpperCase() === machineName.trim().toUpperCase())
-    void router.push({ path: '/equipment/gateway-mappings', query: { edit: mapping?.id } })
-    return
-  }
-  Object.assign(mappingForm, { equipmentId: equipment.value[0]?.id ?? '', machineName, ignored: false })
+  Object.assign(mappingForm, { equipmentId: equipment.value[0]?.id ?? '', machineName })
   mappingDialog.value = true
 }
 
@@ -278,10 +239,10 @@ async function saveMapping() {
   if (!valid) return
   mappingSaving.value = true
   try {
-    await qmsApi.createEquipmentGatewayMapping({ equipmentId: mappingForm.ignored ? undefined : mappingForm.equipmentId, machineName: mappingForm.machineName.trim(), ignored: mappingForm.ignored })
+    await qmsApi.createEquipmentGatewayMapping({ equipmentId: mappingForm.equipmentId, machineName: mappingForm.machineName.trim() })
     mappingDialog.value = false
     await loadMappings()
-    ElMessage.success(mappingForm.ignored ? '已忽略该来源，后续上报将跳过入库' : '设备映射已保存，后续上报将进入对应设备的数据流')
+    ElMessage.success('设备映射已保存，下一次现场上报将自动进入对应设备的数据流')
   } catch {
     ElMessage.error('设备映射保存失败，请检查上报设备名是否重复')
   } finally {
@@ -315,66 +276,48 @@ onBeforeUnmount(() => {
 <template>
   <section class="page-stack equipment-data-workbench" v-loading="loading">
     <div class="hero-card data-workbench-hero">
-      <div><p class="eyebrow">现场接入 · 实时可追溯</p><h2>精雕/锣机设备数据流工作台</h2><p>查看设备数据如何经过监听服务器采集并进入 QMS；支持在本页直接维护运行与接入配置。</p></div>
+      <div><p class="eyebrow">现场接入 · 实时可追溯</p><h2>精雕/锣机设备数据流工作台</h2><p>查看每一条现场数据如何经过接收、设备映射并进入 QMS；支持在本页直接维护运行与接入配置。</p></div>
       <div class="data-workbench-actions"><el-button plain @click="openMapping">新增设备映射</el-button><el-button type="primary" @click="configurationDialog = true">接入配置</el-button></div>
     </div>
 
     <el-card shadow="never" class="content-card data-flow-card">
       <template #header><div class="card-header"><span>实时数据流</span><div class="data-flow-toolbar"><el-select v-model="selectedEquipmentId" clearable filterable placeholder="全部映射设备" style="width: 240px"><el-option v-for="item in equipmentOptions" :key="item.id" :label="item.label" :value="item.id" /></el-select><el-button :loading="refreshing" @click="refreshAll">刷新</el-button></div></div></template>
+      <el-alert title="数据来自现场旧监控软件的 Hessian Monitor 上报；只有已配置映射的设备会入库。来源 IP 白名单由部署安全配置维护。" type="info" :closable="false" show-icon />
       <div class="flow-overview">
         <article class="flow-stage"><span class="flow-stage-number">1</span><div><small>现场精雕/锣机</small><strong>{{ telemetryRecords.length }} 条近期上报</strong><em>上报周期：{{ config.reportIntervalSeconds }} 秒</em></div></article><span class="flow-arrow">→</span>
-        <article class="flow-stage"><span class="flow-stage-number">2</span><div><small>监听服务器</small><strong>采集设备运行与加工信息</strong><em>转发设备实时数据至 QMS</em></div></article><span class="flow-arrow">→</span>
-        <article class="flow-stage"><span class="flow-stage-number">3</span><div><small>QMS</small><strong>{{ onlineCount }} 台在线 · {{ alarmCount }} 台告警</strong><em>{{ validMappingCount }} 条有效映射 · {{ invalidMappingCount }} 条失效 · {{ unmatchedMessages.length }} 个来源待处理</em><em>离线阈值：{{ config.offlineSeconds }} 秒</em></div></article>
+        <article class="flow-stage"><span class="flow-stage-number">2</span><div><small>QMS 接收端</small><strong>{{ endpoint }}</strong><em>方法：{{ config.gatewayMethod }}</em></div></article><span class="flow-arrow">→</span>
+        <article class="flow-stage"><span class="flow-stage-number">3</span><div><small>设备映射</small><strong>{{ mappings.length }} 台已配置 · {{ unmatchedMessages.length }} 台待配置</strong><em>将 machinename 匹配到设备台账</em></div></article><span class="flow-arrow">→</span>
+        <article class="flow-stage"><span class="flow-stage-number">4</span><div><small>QMS 业务状态</small><strong>{{ onlineCount }} 台在线 · {{ alarmCount }} 台告警</strong><em>离线阈值：{{ config.offlineSeconds }} 秒</em></div></article>
       </div>
-      <div class="flow-record-heading"><strong>各设备最新数据</strong><span>展示 {{ visibleFlowStatuses.length }} 台设备；同一设备的多个工程分别列出。历史查询范围：{{ sourceTimeWindow }}</span></div>
-      <div v-if="visibleFlowStatuses.length" class="live-flow-grid" :style="{ gridTemplateColumns: `repeat(${config.displayColumns}, minmax(0, 1fr))` }">
-        <article v-for="item in visibleFlowStatuses" :key="item.equipmentId" class="live-flow-record">
-          <div class="live-flow-record-head"><strong>{{ item.equipmentCode }} · {{ item.equipmentName }}</strong><el-tag size="small" :type="statusType(item.effectiveStatus)">{{ runtimeStatusText(item) }}</el-tag></div>
-          <div class="live-flow-route"><span>现场设备</span><b>→</b><span>监听服务器</span><b>→</b><span>QMS</span></div>
-          <div class="program-list-heading">当前工程文件（{{ programsFor(item).length }}）</div>
-          <div v-for="program in programsFor(item)" :key="program.sourceName" class="program-summary">
-            <div class="program-summary-head"><strong>{{ program.sourceName }}</strong><el-tag size="small" :type="statusType(program.status)">{{ statusText(program.status) }}</el-tag></div>
-            <div class="program-name">{{ program.programNo || '未上报工程文件名' }}</div>
-            <div class="program-metrics"><span>进度 {{ program.progressPercent == null ? '—' : `${program.progressPercent}%` }}</span><span>加工数 {{ program.machiningCount ?? '—' }}</span></div>
-            <div class="program-footer"><span>{{ formatDateTime(program.lastDeviceTime) }}</span><el-button v-if="latestRecordFor(item, program)" link type="primary" size="small" @click="inspectProgram(item, program)">查看报文</el-button></div>
-          </div>
-        </article>
+      <div class="flow-record-heading"><strong>各设备最新数据</strong><span>展示 {{ visibleFlowRecords.length }} 台设备的最新上报；历史查询范围：{{ sourceTimeWindow }}</span></div>
+      <div v-if="visibleFlowRecords.length" class="live-flow-grid" :style="{ gridTemplateColumns: `repeat(${config.displayColumns}, minmax(0, 1fr))` }">
+        <button v-for="record in visibleFlowRecords" :key="record.id" class="live-flow-record" type="button" @click="inspectRecord(record)"><div class="live-flow-record-head"><strong>{{ record.machineName || '未命名设备' }}</strong><el-tag size="small" :type="statusType(record.status)">{{ telemetryStatusText(record) }}</el-tag></div><div class="live-flow-route"><span>{{ record.sourceUsername || '现场监控' }}</span><b>→</b><span>{{ record.equipmentCode }} · {{ record.equipmentName }}</span><b>→</b><span>QMS</span></div><dl><div><dt>设备时间</dt><dd>{{ formatDateTime(record.deviceTime) }}</dd></div><div><dt>接收时间</dt><dd>{{ formatDateTime(record.receivedAt) }}</dd></div><div><dt>程序 / 工单</dt><dd>{{ record.programNo || '—' }}</dd></div><div><dt>进度 / 完成数</dt><dd>{{ record.progressPercent == null ? '—' : `${record.progressPercent}%` }} / {{ record.machiningCount ?? '—' }}</dd></div></dl><span class="inspect-hint">点击查看原始报文与解析结果</span></button>
       </div>
       <el-empty v-else description="暂无已入库现场数据；请先添加设备映射并确认旧监控软件正在上报" :image-size="72" />
     </el-card>
 
     <el-card v-if="unmatchedMessages.length" shadow="never" class="content-card unmatched-message-card">
-      <template #header><div class="card-header"><span>已跳过、待处理的现场数据（{{ unmatchedMessages.length }} 个来源）</span><el-button link type="primary" :aria-expanded="unmatchedExpanded" @click="unmatchedExpanded = !unmatchedExpanded">{{ unmatchedExpanded ? '收起' : '展开' }}</el-button><small>保留最新报文和接收次数；修正映射后，后续上报会正常入库。</small></div></template>
-      <el-table v-if="unmatchedExpanded" :data="unmatchedMessages" empty-text="暂无待映射现场数据">
+      <template #header><div class="card-header"><span>已接收、待映射的现场数据</span><small>这些数据已安全到达 QMS；选择“配置映射”即可让后续上报自动进入设备台账。</small></div></template>
+      <el-table :data="unmatchedMessages" empty-text="暂无待映射现场数据">
         <el-table-column prop="machineName" label="现场设备名" min-width="150" />
-        <el-table-column label="跳过原因" min-width="280"><template #default="scope"><el-tag type="warning" size="small">{{ hasInvalidMapping(scope.row.machineName) ? '映射失效' : '未配置映射' }}</el-tag><div class="field-help">{{ unmatchedIssue(scope.row) }}</div></template></el-table-column>
+        <el-table-column prop="sourceUsername" label="来源用户" min-width="130" />
         <el-table-column label="最后设备时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.lastDeviceTime) }}</template></el-table-column>
-        <el-table-column label="最后接收时间" min-width="180"><template #default="scope">{{ formatUtcDateTime(scope.row.lastReceivedAt) }}</template></el-table-column>
+        <el-table-column label="最后接收时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.lastReceivedAt) }}</template></el-table-column>
         <el-table-column prop="occurrenceCount" label="已接收次数" min-width="110" />
-        <el-table-column label="操作" width="180" fixed="right"><template #default="scope"><el-button type="primary" link @click="inspectUnmatchedMessage(scope.row)">查看报文</el-button><el-button type="success" link @click="openMapping(scope.row.machineName)">{{ hasInvalidMapping(scope.row.machineName) ? '修复映射' : '配置映射' }}</el-button></template></el-table-column>
+        <el-table-column label="操作" width="180" fixed="right"><template #default="scope"><el-button type="primary" link @click="inspectUnmatchedMessage(scope.row)">查看报文</el-button><el-button type="success" link @click="openMapping(scope.row.machineName)">配置映射</el-button></template></el-table-column>
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="content-card"><template #header><div class="card-header"><span>设备实时状态</span><small>一台实体设备占一行；展开后查看每个工程的独立状态、进度和报警。</small></div></template>
-      <el-table :data="visibleRuntimeStatuses" empty-text="暂无设备实时状态">
-        <el-table-column type="expand" width="48"><template #default="scope"><el-table :data="programsFor(scope.row)" class="program-detail-table" size="small" border><el-table-column prop="sourceName" label="现场来源 / 工程槽位" min-width="150" /><el-table-column prop="programNo" label="工程文件" min-width="175" /><el-table-column label="状态" min-width="90"><template #default="detail"><el-tag size="small" :type="statusType(detail.row.status)">{{ statusText(detail.row.status) }}</el-tag></template></el-table-column><el-table-column label="进度" min-width="95"><template #default="detail">{{ detail.row.progressPercent == null ? '—' : `${detail.row.progressPercent}%` }}</template></el-table-column><el-table-column prop="machiningCount" label="加工数量" min-width="100" /><el-table-column label="主轴选择" min-width="150"><template #default="detail">{{ spindleStatusText(detail.row.spindleStatus) }}</template></el-table-column><el-table-column label="报警原因" min-width="250"><template #default="detail">{{ equipmentAlarmReasonText(detail.row) }}</template></el-table-column><el-table-column label="最后接收" min-width="180"><template #default="detail">{{ formatUtcDateTime(detail.row.lastReceivedAt) }}</template></el-table-column></el-table></template></el-table-column>
-        <el-table-column prop="equipmentCode" label="设备编号" min-width="125" /><el-table-column prop="equipmentName" label="设备名称" min-width="150" />
-        <el-table-column label="整机状态" min-width="110"><template #default="scope"><el-tag :type="statusType(scope.row.effectiveStatus)">{{ runtimeStatusText(scope.row) }}</el-tag></template></el-table-column>
-        <el-table-column label="当前工程文件" min-width="270"><template #default="scope"><div class="program-name-list"><span v-for="program in programsFor(scope.row)" :key="program.sourceName">{{ program.sourceName }}：{{ program.programNo || '未上报文件名' }}</span></div></template></el-table-column>
-        <el-table-column label="工程数" min-width="85"><template #default="scope">{{ programsFor(scope.row).length }}</template></el-table-column>
-        <el-table-column label="报警原因" min-width="250" show-overflow-tooltip><template #default="scope">{{ equipmentAlarmReasonText(scope.row) }}</template></el-table-column>
-        <el-table-column label="最后接收时间" min-width="180"><template #default="scope">{{ formatUtcDateTime(scope.row.lastReceivedAt) }}</template></el-table-column>
-      </el-table>
-    </el-card>
+    <el-card shadow="never" class="content-card"><template #header><div class="card-header"><span>设备实时状态</span><small>按配置的离线阈值实时判定；修改阈值后无需重启服务。</small></div></template><el-table :data="visibleRuntimeStatuses" empty-text="暂无设备实时状态"><el-table-column prop="equipmentCode" label="设备编号" min-width="125" /><el-table-column prop="equipmentName" label="设备名称" min-width="150" /><el-table-column label="状态" min-width="105"><template #default="scope"><el-tag :type="statusType(scope.row.effectiveStatus)">{{ runtimeStatusText(scope.row) }}</el-tag></template></el-table-column><el-table-column prop="programNo" label="当前程序" min-width="160" show-overflow-tooltip /><el-table-column prop="operatorName" label="操作员" min-width="115" /><el-table-column prop="machiningCount" label="加工数量" min-width="105" /><el-table-column label="进度" min-width="90"><template #default="scope">{{ scope.row.progressPercent == null ? '—' : `${scope.row.progressPercent}%` }}</template></el-table-column><el-table-column prop="spindleStatus" label="主轴状态" min-width="105" /><el-table-column label="最后接收时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.lastReceivedAt) }}</template></el-table-column></el-table></el-card>
 
-    <el-card shadow="never" class="content-card"><template #header><div class="card-header"><span>近期上报明细</span><small>每条数据均可展开查看来源字段、解析后的结构化值和原始 JSON。</small></div></template><el-table :data="telemetryRecords" empty-text="暂无设备上报历史"><el-table-column label="接收时间" min-width="180"><template #default="scope">{{ formatUtcDateTime(scope.row.receivedAt) }}</template></el-table-column><el-table-column prop="machineName" label="上报设备名" min-width="145" /><el-table-column prop="equipmentName" label="设备名称" min-width="150" show-overflow-tooltip /><el-table-column label="状态" min-width="100"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ telemetryStatusText(scope.row) }}</el-tag></template></el-table-column><el-table-column label="报警原因" min-width="250" show-overflow-tooltip><template #default="scope">{{ equipmentAlarmReasonText(scope.row) }}</template></el-table-column><el-table-column label="事件类型" min-width="170"><template #default="scope"><el-tooltip :content="scope.row.eventType || '未上报'" placement="top"><span>{{ telemetryEventTypeText(scope.row.eventType) }}</span></el-tooltip></template></el-table-column><el-table-column prop="programNo" label="程序" min-width="150" show-overflow-tooltip /><el-table-column label="进度 / 完成数" min-width="135"><template #default="scope">{{ scope.row.progressPercent == null ? '—' : `${scope.row.progressPercent}%` }} / {{ scope.row.machiningCount ?? '—' }}</template></el-table-column><el-table-column label="操作" width="100" fixed="right"><template #default="scope"><el-button type="primary" link @click="inspectRecord(scope.row)">查看数据</el-button></template></el-table-column></el-table></el-card>
+    <el-card shadow="never" class="content-card"><template #header><div class="card-header"><span>近期上报明细</span><small>每条数据均可展开查看来源字段、解析后的结构化值和原始 JSON。</small></div></template><el-table :data="telemetryRecords" empty-text="暂无设备上报历史"><el-table-column label="接收时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column><el-table-column prop="sourceUsername" label="来源用户" min-width="110" /><el-table-column prop="machineName" label="上报设备名" min-width="145" /><el-table-column prop="equipmentCode" label="QMS 设备" min-width="125" /><el-table-column label="状态" min-width="100"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ telemetryStatusText(scope.row) }}</el-tag></template></el-table-column><el-table-column prop="eventType" label="事件类型" min-width="170" show-overflow-tooltip /><el-table-column prop="programNo" label="程序" min-width="150" show-overflow-tooltip /><el-table-column label="进度 / 完成数" min-width="135"><template #default="scope">{{ scope.row.progressPercent == null ? '—' : `${scope.row.progressPercent}%` }} / {{ scope.row.machiningCount ?? '—' }}</template></el-table-column><el-table-column label="操作" width="100" fixed="right"><template #default="scope"><el-button type="primary" link @click="inspectRecord(scope.row)">查看数据</el-button></template></el-table-column></el-table></el-card>
 
     <el-dialog v-model="configurationDialog" title="精雕/锣机接入配置" width="min(780px, 94vw)" :close-on-click-modal="false" v-loading="configurationLoading"><el-alert title="“现场上报地址”用于复制到旧监控客户端；QMS 服务监听端口由部署配置管理，保存地址不会更改服务器端口。刷新、离线判定、展示数量和历史范围会立即生效。" type="warning" :closable="false" show-icon /><el-tabs style="margin-top: 18px"><el-tab-pane label="数据展示与判定"><el-form label-position="top" class="config-form-grid"><el-form-item label="自动刷新间隔（秒）"><el-input-number v-model="config.refreshSeconds" :min="3" :max="60" :step="1" /></el-form-item><el-form-item label="设备离线阈值（秒）"><el-input-number v-model="config.offlineSeconds" :min="30" :max="86400" :step="30" /></el-form-item><el-form-item label="实时数据展示列数"><el-input-number v-model="config.displayColumns" :min="1" :max="4" :step="1" /></el-form-item><el-form-item label="实时数据展示行数"><el-input-number v-model="config.displayRows" :min="1" :max="6" :step="1" /></el-form-item><el-form-item label="上报明细读取条数"><el-input-number v-model="config.historyLimit" :min="20" :max="300" :step="10" /></el-form-item><el-form-item label="历史查询范围（天）"><el-input-number v-model="config.historyDays" :min="1" :max="90" :step="1" /></el-form-item></el-form></el-tab-pane><el-tab-pane label="现场上报参数"><el-form label-position="top" class="config-form-grid"><el-form-item label="QMS 服务地址"><el-input v-model="config.gatewayHost" placeholder="例如：192.168.1.71" /></el-form-item><el-form-item label="QMS 服务端口"><el-input v-model="config.gatewayPort" inputmode="numeric" placeholder="8080" /></el-form-item><el-form-item label="接口路径"><el-input v-model="config.gatewayPath" placeholder="/hessian/monitor" /></el-form-item><el-form-item label="调用方法"><el-input v-model="config.gatewayMethod" placeholder="Monitor" /></el-form-item><el-form-item label="现场上报间隔（秒）"><el-input-number v-model="config.reportIntervalSeconds" :min="1" :max="600" :step="1" /></el-form-item></el-form><div class="endpoint-preview"><span>供现场端填写</span><code>{{ endpoint }}</code><small>方法：{{ config.gatewayMethod }}；建议上报间隔：{{ config.reportIntervalSeconds }} 秒</small></div></el-tab-pane></el-tabs><template #footer><el-button @click="configurationDialog = false">取消</el-button><el-button type="primary" :loading="configurationSaving" @click="saveConfiguration">保存配置</el-button></template></el-dialog>
 
-    <el-dialog v-model="mappingDialog" title="新增现场设备映射" width="min(560px, 94vw)" :close-on-click-modal="false"><el-alert title="填写旧监控软件实际上报的 machinename。保存后，后续数据会自动匹配到对应 QMS 设备。" type="info" :closable="false" show-icon /><el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top" style="margin-top: 18px"><el-form-item label="映射状态"><el-radio-group v-model="mappingForm.ignored"><el-radio :value="false">接收数据</el-radio><el-radio :value="true">忽略</el-radio></el-radio-group><div v-if="mappingForm.ignored" class="field-help">正常回应上报，跳过入库和待处理记录。可在设备网关映射中恢复接收。</div></el-form-item><el-form-item v-if="!mappingForm.ignored" label="QMS 设备" prop="equipmentId"><el-select v-model="mappingForm.equipmentId" filterable class="full-width" placeholder="请选择设备台账"><el-option v-for="item in equipment" :key="item.id" :label="`${item.assetNo} · ${item.name}`" :value="item.id" /></el-select></el-form-item><el-form-item label="现场上报设备名（machinename）" prop="machineName"><el-input v-model="mappingForm.machineName" maxlength="160" show-word-limit placeholder="例如：CNC-15" /><div class="field-help">名称会自动忽略英文大小写和首尾空格；同一名称不可映射到多个设备。</div></el-form-item></el-form><template #footer><el-button @click="mappingDialog = false">取消</el-button><el-button type="primary" :loading="mappingSaving" @click="saveMapping">保存映射</el-button></template></el-dialog>
+    <el-dialog v-model="mappingDialog" title="新增现场设备映射" width="min(560px, 94vw)" :close-on-click-modal="false"><el-alert title="填写旧监控软件实际上报的 machinename。保存后，后续数据会自动匹配到对应 QMS 设备。" type="info" :closable="false" show-icon /><el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top" style="margin-top: 18px"><el-form-item label="QMS 设备" prop="equipmentId"><el-select v-model="mappingForm.equipmentId" filterable class="full-width" placeholder="请选择设备台账"><el-option v-for="item in equipment" :key="item.id" :label="`${item.assetNo} · ${item.name}`" :value="item.id" /></el-select></el-form-item><el-form-item label="现场上报设备名（machinename）" prop="machineName"><el-input v-model="mappingForm.machineName" maxlength="160" show-word-limit placeholder="例如：CNC-15" /><div class="field-help">名称会自动忽略英文大小写和首尾空格；同一名称不可映射到多个设备。</div></el-form-item></el-form><template #footer><el-button @click="mappingDialog = false">取消</el-button><el-button type="primary" :loading="mappingSaving" @click="saveMapping">保存映射</el-button></template></el-dialog>
 
-    <el-dialog v-model="rawPayloadDialog" title="设备上报数据详情" width="min(920px, 96vw)"><div v-if="selectedRecord" class="record-detail-grid"><div><span>数据流</span><strong>{{ selectedRecord.equipmentName || selectedRecord.machineName || '未命名设备' }} → 监听服务器 → QMS</strong></div><div><span>解析状态</span><strong>{{ telemetryStatusText(selectedRecord) }} · {{ telemetryEventTypeText(selectedRecord.eventType) }}</strong></div><div><span>报警原因</span><strong>{{ equipmentAlarmReasonText(selectedRecord) }}</strong></div><div><span>设备时间</span><strong>{{ formatDateTime(selectedRecord.deviceTime) }}</strong></div><div><span>QMS 接收时间</span><strong>{{ formatUtcDateTime(selectedRecord.receivedAt) }}</strong></div></div><el-table v-if="selectedRecord" :data="[selectedRecord]" border style="margin-top: 18px"><el-table-column prop="programNo" label="程序" min-width="160" /><el-table-column prop="operatorName" label="操作员" min-width="120" /><el-table-column prop="machiningCount" label="完成数量" min-width="110" /><el-table-column label="进度" min-width="95"><template #default="scope">{{ scope.row.progressPercent == null ? '—' : `${scope.row.progressPercent}%` }}</template></el-table-column><el-table-column label="主轴选择" min-width="175"><template #default="scope"><el-tooltip :content="`原始主轴掩码：${scope.row.spindleStatus || '未上报'}；表示主轴选择，不表示运行或报警状态。`" placement="top"><span>{{ spindleStatusText(scope.row.spindleStatus) }}</span></el-tooltip></template></el-table-column><el-table-column label="屏幕/报警文字" min-width="250" show-overflow-tooltip><template #default="scope">{{ scope.row.screenText || equipmentAlarmReasonText(scope.row) }}</template></el-table-column></el-table><div class="raw-payload"><span>原始入库报文（已脱敏、结构化保存）</span><pre>{{ formatRawPayload(selectedRecord) }}</pre></div><template #footer><el-button type="primary" @click="rawPayloadDialog = false">关闭</el-button></template></el-dialog>
-    <el-dialog v-model="unmatchedPayloadDialog" title="待映射现场报文" width="min(860px, 96vw)"><div v-if="selectedUnmatchedMessage" class="record-detail-grid"><div><span>现场设备名</span><strong>{{ selectedUnmatchedMessage.machineName || '—' }}</strong></div><div><span>最后设备时间</span><strong>{{ formatDateTime(selectedUnmatchedMessage.lastDeviceTime) }}</strong></div><div><span>已接收次数</span><strong>{{ selectedUnmatchedMessage.occurrenceCount }}</strong></div></div><div class="raw-payload"><span>原始接收报文</span><pre>{{ formatRawPayload(selectedUnmatchedMessage) }}</pre></div><template #footer><el-button @click="unmatchedPayloadDialog = false">关闭</el-button><el-button type="primary" @click="unmatchedPayloadDialog = false; openMapping(selectedUnmatchedMessage?.machineName)">使用此设备名配置映射</el-button></template></el-dialog>
+    <el-dialog v-model="rawPayloadDialog" title="设备上报数据详情" width="min(920px, 96vw)"><div v-if="selectedRecord" class="record-detail-grid"><div><span>数据流</span><strong>{{ selectedRecord.sourceUsername || '现场监控' }} → {{ selectedRecord.machineName || '未命名设备' }} → {{ selectedRecord.equipmentCode }} · {{ selectedRecord.equipmentName }}</strong></div><div><span>解析状态</span><strong>{{ telemetryStatusText(selectedRecord) }} · {{ selectedRecord.eventType || '—' }}</strong></div><div><span>设备时间</span><strong>{{ formatDateTime(selectedRecord.deviceTime) }}</strong></div><div><span>QMS 接收时间</span><strong>{{ formatDateTime(selectedRecord.receivedAt) }}</strong></div></div><el-table v-if="selectedRecord" :data="[selectedRecord]" border style="margin-top: 18px"><el-table-column prop="programNo" label="程序" min-width="160" /><el-table-column prop="operatorName" label="操作员" min-width="120" /><el-table-column prop="machiningCount" label="完成数量" min-width="110" /><el-table-column label="进度" min-width="95"><template #default="scope">{{ scope.row.progressPercent == null ? '—' : `${scope.row.progressPercent}%` }}</template></el-table-column><el-table-column prop="spindleStatus" label="主轴状态" min-width="120" /><el-table-column prop="screenText" label="屏幕/报警文字" min-width="180" show-overflow-tooltip /></el-table><div class="raw-payload"><span>原始入库报文（已脱敏、结构化保存）</span><pre>{{ formatRawPayload(selectedRecord) }}</pre></div><template #footer><el-button type="primary" @click="rawPayloadDialog = false">关闭</el-button></template></el-dialog>
+    <el-dialog v-model="unmatchedPayloadDialog" title="待映射现场报文" width="min(860px, 96vw)"><div v-if="selectedUnmatchedMessage" class="record-detail-grid"><div><span>来源用户</span><strong>{{ selectedUnmatchedMessage.sourceUsername || '—' }}</strong></div><div><span>现场设备名</span><strong>{{ selectedUnmatchedMessage.machineName || '—' }}</strong></div><div><span>最后设备时间</span><strong>{{ formatDateTime(selectedUnmatchedMessage.lastDeviceTime) }}</strong></div><div><span>已接收次数</span><strong>{{ selectedUnmatchedMessage.occurrenceCount }}</strong></div></div><div class="raw-payload"><span>原始接收报文</span><pre>{{ formatRawPayload(selectedUnmatchedMessage) }}</pre></div><template #footer><el-button @click="unmatchedPayloadDialog = false">关闭</el-button><el-button type="primary" @click="unmatchedPayloadDialog = false; openMapping(selectedUnmatchedMessage?.machineName)">使用此设备名配置映射</el-button></template></el-dialog>
   </section>
 </template>
 
@@ -382,7 +325,6 @@ onBeforeUnmount(() => {
 .data-workbench-hero, .data-workbench-actions, .data-flow-toolbar, .flow-overview, .live-flow-record-head, .live-flow-route, .flow-record-heading, .record-detail-grid, .endpoint-preview { display: flex; }
 .data-workbench-hero { align-items: center; justify-content: space-between; gap: 24px; }.data-workbench-actions, .data-flow-toolbar { flex-wrap: wrap; gap: 10px; }.flow-overview { align-items: stretch; gap: 12px; margin: 20px 0; overflow-x: auto; }.flow-stage { display: flex; flex: 1 0 190px; gap: 11px; min-width: 190px; padding: 14px; border: 1px solid #cfe4f5; border-radius: 10px; background: #f8fcff; }.flow-stage-number { display: grid; flex: 0 0 27px; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #fff; font-weight: 700; background: #2f93e8; }.flow-stage div { display: grid; gap: 4px; min-width: 0; }.flow-stage small, .flow-stage em { color: #718096; font-size: 12px; font-style: normal; }.flow-stage strong { overflow: hidden; color: #214e78; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.flow-arrow { display: grid; place-items: center; flex: 0 0 auto; color: #70b7e9; font-size: 24px; }
 .flow-record-heading { align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 12px; color: #6c849a; font-size: 12px; }.flow-record-heading strong { color: #214e78; font-size: 14px; }.live-flow-grid { display: grid; gap: 12px; }.live-flow-record { display: grid; gap: 11px; min-width: 0; padding: 15px; border: 1px solid #d5e8f6; border-radius: 10px; color: inherit; text-align: left; background: #fbfdff; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease; }.live-flow-record:hover { border-color: #55a9e6; box-shadow: 0 6px 16px rgb(47 147 232 / 12%); }.live-flow-record-head { align-items: center; justify-content: space-between; gap: 10px; }.live-flow-record-head strong { overflow: hidden; color: #1f4f7d; text-overflow: ellipsis; white-space: nowrap; }.live-flow-route { flex-wrap: wrap; align-items: center; gap: 6px; color: #4c789d; font-size: 12px; }.live-flow-route b { color: #2f93e8; }.live-flow-record dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }.live-flow-record dl div { min-width: 0; }.live-flow-record dt { color: #8295a8; font-size: 11px; }.live-flow-record dd { overflow: hidden; margin: 3px 0 0; color: #315b80; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.inspect-hint { color: #2f93e8; font-size: 12px; }
-.program-list-heading { color: #597999; font-size: 12px; font-weight: 650; }.program-summary { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid #d9eaf8; border-radius: 8px; background: white; }.program-summary-head, .program-metrics, .program-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }.program-summary-head strong { color: #214e78; font-size: 13px; }.program-name { overflow: hidden; color: #315b80; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }.program-metrics, .program-footer { color: #718096; font-size: 11px; }.program-name-list { display: grid; gap: 4px; font-size: 12px; }.program-detail-table { margin: 8px 16px 12px 48px; width: calc(100% - 64px); }
 .config-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }.config-form-grid :deep(.el-input-number) { width: 100%; }.endpoint-preview { flex-direction: column; gap: 8px; padding: 14px; border: 1px solid #cfe4f5; border-radius: 9px; background: #f7fcff; }.endpoint-preview span, .endpoint-preview small { color: #718096; font-size: 12px; }.endpoint-preview code { color: #176eaf; font-weight: 650; }.record-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }.record-detail-grid > div { display: grid; gap: 4px; padding: 11px; border-radius: 8px; background: #f7fbfe; }.record-detail-grid span { color: #718096; font-size: 12px; }.record-detail-grid strong { color: #315b80; font-size: 13px; }.raw-payload { display: grid; gap: 8px; margin-top: 18px; }.raw-payload > span { color: #496f90; font-size: 13px; font-weight: 650; }.raw-payload pre { max-height: 330px; margin: 0; padding: 14px; overflow: auto; border-radius: 8px; color: #d6ecff; background: #102a43; font: 12px/1.55 Consolas, 'Courier New', monospace; white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 900px) { .data-workbench-hero { align-items: flex-start; flex-direction: column; }.flow-arrow { display: none; }.flow-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }.flow-stage { min-width: 0; }.config-form-grid, .record-detail-grid { grid-template-columns: 1fr; } } @media (max-width: 600px) { .flow-overview { grid-template-columns: 1fr; }.live-flow-record dl { grid-template-columns: 1fr; } }
 </style>

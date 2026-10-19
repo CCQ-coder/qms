@@ -5,6 +5,7 @@ import com.pcbqms.integration.application.OcrWorkOrderImportService;
 import com.pcbqms.workorder.api.WorkOrderResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
+@ConditionalOnProperty(prefix = "qms.ocr", name = "enabled", havingValue = "true")
 @RequestMapping("/api/v1/ocr/work-orders")
 @RequiredArgsConstructor
 public class OcrWorkOrderImportController {

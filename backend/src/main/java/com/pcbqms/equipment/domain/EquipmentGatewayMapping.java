@@ -14,9 +14,7 @@ public class EquipmentGatewayMapping {
     @TableId
     private String id;
     private String tenantCode;
-    @com.baomidou.mybatisplus.annotation.TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     private String equipmentId;
-    private Boolean ignored;
     private String sourceUsername;
     private String machineName;
     private String createdBy;

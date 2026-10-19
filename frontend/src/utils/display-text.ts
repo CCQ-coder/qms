@@ -81,14 +81,6 @@ export function formatDateTime(value?: string | Date | null): string {
   return Number.isNaN(date.getTime()) ? normalized : formatBrowserDate(date, true)
 }
 
-/** QMS 容器以 UTC 保存的无时区接收时间，展示时换算为浏览器本地时间。 */
-export function formatUtcDateTime(value?: string | Date | null): string {
-  if (typeof value !== 'string') return formatDateTime(value)
-  const normalized = value.trim()
-  const utcMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)$/)
-  return formatDateTime(utcMatch ? `${utcMatch[1]}T${utcMatch[2]}Z` : normalized)
-}
-
 export function statusText(value?: string): string {
   if (!value) return '—'
   return statusLabels[value] ?? value
@@ -102,51 +94,6 @@ export function taskTypeText(value?: string): string {
 export function legacyStateText(value?: string): string {
   if (!value) return '—'
   return legacyStateLabels[value] ?? value
-}
-
-export function telemetryEventTypeText(value?: string | null): string {
-  if (!value?.trim()) return '—'
-  const labels: Record<string, string> = {
-    LEGACY_MONITOR_SNAPSHOT: '设备实时数据上报',
-    TELEMETRY: '设备数据上报',
-    STATUS_CHANGED: '工作状态变更',
-    ALARM: '报警信息',
-    ALARM_RAISED: '报警发生',
-    ALARM_CLEARED: '报警解除',
-    MACHINING_COMPLETED: '加工完成',
-    HEARTBEAT: '设备心跳',
-    PRODUCTION_PARAMETERS: '加工参数上报',
-    OEE_REPORTED: '设备利用率上报',
-    MODE_CHANGED: '工作模式变更',
-    EXPOSURE_RESULT: '曝光结果上报'
-  }
-  return labels[value.trim()] ?? '其他设备事件'
-}
-
-export function equipmentAlarmReasonText(item: {
-  status?: string
-  effectiveStatus?: string
-  reportedStatus?: string
-  legacyState?: string
-  alarmMessage?: string | null
-  screenText?: string | null
-  alarmCode?: string | null
-}): string {
-  const alarm = item.status === 'ALARM' || item.effectiveStatus === 'ALARM'
-    || item.reportedStatus === 'ALARM' || item.legacyState === 'ALAM'
-  if (!alarm) return '—'
-  return item.alarmMessage?.trim() || item.screenText?.trim()
-    || (item.alarmCode?.trim() ? `报警代码：${item.alarmCode.trim()}` : '设备已报警，但未上报报警文字')
-}
-
-/** 主轴选择掩码不代表设备的加工、报警等运行状态。 */
-export function spindleStatusText(value?: string | null): string {
-  const mask = value?.trim()
-  if (!mask) return '—'
-  // Only decode binary masks; retain unfamiliar gateway values for diagnosis.
-  if (!/^[01]+$/.test(mask)) return `未知主轴信息（${mask}）`
-  const selected = [...mask].filter((bit) => bit === '1').length
-  return selected === 0 ? `未选择主轴（0/${mask.length}）` : `已选择 ${selected}/${mask.length} 个主轴`
 }
 
 export function formatDurationSeconds(value?: number | null): string {

@@ -22,19 +22,9 @@ public interface EquipmentTelemetryRecordMapper {
             #{eventType}, #{equipmentStatus}, #{programNo}, #{programVersion}, #{materialNo}, #{workOrderNo}, #{batchNo},
             #{operatorName}, #{progressPercent}, #{spindleStatus}, #{alarmCode}, #{alarmMessage}, #{machiningCount},
             #{sourceRecordNo}, #{deduplicationKey}, #{rawPayload}, #{createdAt}
-        )
+        ) ON DUPLICATE KEY UPDATE id = id
         """)
-    int insert(EquipmentTelemetryRecord record);
-
-    @Select("""
-        SELECT COUNT(*) FROM qms_equipment_telemetry
-        WHERE tenant_code = #{tenantCode}
-          AND equipment_id = #{equipmentId}
-          AND deduplication_key = #{deduplicationKey}
-        """)
-    int countByDeduplicationKey(@Param("tenantCode") String tenantCode,
-                                @Param("equipmentId") String equipmentId,
-                                @Param("deduplicationKey") String deduplicationKey);
+    int insertIfAbsent(EquipmentTelemetryRecord record);
 
     @Select("""
         SELECT id, tenant_code, equipment_id, source_username, machine_name, device_time, received_at,

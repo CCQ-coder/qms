@@ -47,10 +47,9 @@ public class BtfHessianMonitorServlet extends HttpServlet {
             if (!"Monitor".equals(invocation.method())) {
                 throw new RejectedRequestException("不支持的 Hessian 方法：" + invocation.method());
             }
-            var result = applicationService.receive(invocation.payload());
+            applicationService.receive(invocation.payload());
             writeSuccess(response, version);
-            log.info("Accepted BTF legacy monitor snapshot from {}: accepted={}, duplicates={}",
-                remoteAddress, result.acceptedCount(), result.duplicateCount());
+            log.info("Accepted BTF legacy monitor snapshot from {}", remoteAddress);
         } catch (RejectedRequestException exception) {
             logClientFailure("request", remoteAddress, exception.getMessage());
             writeFault(response, version, "请求已拒绝");

@@ -36,7 +36,8 @@ public class DashboardApplicationService {
         Set<String> workOrderIds = tasks.stream().map(InspectionTask::getWorkOrderId).collect(java.util.stream.Collectors.toUnmodifiableSet());
         long activeWorkOrders = access.fullDataAccess()
             ? workOrderMapper.selectCount(Wrappers.lambdaQuery(WorkOrder.class)
-                .eq(WorkOrder::getTenantCode, tenantCode).eq(WorkOrder::getStatus, "ACTIVE"))
+                .eq(WorkOrder::getTenantCode, tenantCode).eq(WorkOrder::getStatus, "ACTIVE")
+                .ne(WorkOrder::getWarehouseStatus, "CLOSED"))
             : countActiveScopedWorkOrders(tenantCode, workOrderIds);
         long pendingTasks = tasks.stream().filter(task -> "PENDING".equals(task.getStatus())).count();
         long completedTasks = tasks.stream().filter(task -> "COMPLETED".equals(task.getStatus())).count();
@@ -57,6 +58,7 @@ public class DashboardApplicationService {
         return workOrderMapper.selectCount(Wrappers.lambdaQuery(WorkOrder.class)
             .eq(WorkOrder::getTenantCode, tenantCode)
             .eq(WorkOrder::getStatus, "ACTIVE")
+            .ne(WorkOrder::getWarehouseStatus, "CLOSED")
             .in(WorkOrder::getId, workOrderIds));
     }
 

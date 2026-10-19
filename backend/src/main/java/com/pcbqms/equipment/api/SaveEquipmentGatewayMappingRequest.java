@@ -1,23 +1,10 @@
 package com.pcbqms.equipment.api;
 
+import jakarta.validation.constraints.NotBlank;
 
 public record SaveEquipmentGatewayMappingRequest(
-    String equipmentId,
+    @NotBlank(message = "不能为空") String equipmentId,
     String username,
-    String machineName,
-    Boolean ignored
+    String machineName
 ) {
-    public SaveEquipmentGatewayMappingRequest {
-        ignored = Boolean.TRUE.equals(ignored);
-    }
-
-    @com.fasterxml.jackson.annotation.JsonIgnore
-    @jakarta.validation.constraints.AssertTrue(message = "接收数据时必须选择 QMS 设备")
-    public boolean isTargetValid() {
-        return Boolean.TRUE.equals(ignored) || org.springframework.util.StringUtils.hasText(equipmentId);
-    }
-
-    public SaveEquipmentGatewayMappingRequest(String equipmentId, String username, String machineName) {
-        this(equipmentId, username, machineName, false);
-    }
 }

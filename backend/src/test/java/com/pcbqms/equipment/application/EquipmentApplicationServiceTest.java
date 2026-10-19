@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.api.EquipmentResponse;
+import com.pcbqms.equipment.api.EquipmentQueryRequest;
 import com.pcbqms.equipment.api.EquipmentTypeResponse;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentAlertMapper;
@@ -17,8 +18,10 @@ import com.pcbqms.equipment.infrastructure.persistence.EquipmentMaintenanceMappe
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMaintenanceTemplateItemMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +58,31 @@ class EquipmentApplicationServiceTest {
     }
 
     @Test
+    void paginatesEquipmentByNumericAssetSuffix() {
+        TenantContext.set("customer-b", "admin");
+        var databaseOrder = IntStream.rangeClosed(1, 28).mapToObj(number -> {
+            Equipment item = equipment("eq-" + number, "FQC");
+            item.setAssetNo("WTD-" + number);
+            return item;
+        }).sorted(Comparator.comparing(Equipment::getAssetNo)).toList();
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(databaseOrder);
+        EquipmentApplicationService service = service();
+
+        var firstPage = service.pageEquipment(new EquipmentQueryRequest(null, null, null, 1L, 10L));
+        var thirdPage = service.pageEquipment(new EquipmentQueryRequest(null, null, null, 3L, 10L));
+
+        assertThat(firstPage.total()).isEqualTo(28);
+        assertThat(firstPage.records()).extracting(EquipmentResponse::assetNo)
+            .containsExactlyElementsOf(IntStream.rangeClosed(1, 10).mapToObj(number -> "WTD-" + number).toList());
+        assertThat(thirdPage.records()).extracting(EquipmentResponse::assetNo)
+            .containsExactlyElementsOf(IntStream.rangeClosed(21, 28).mapToObj(number -> "WTD-" + number).toList());
+        assertThat(service.listEquipment()).extracting(EquipmentResponse::assetNo)
+            .containsExactlyElementsOf(IntStream.rangeClosed(1, 28).mapToObj(number -> "WTD-" + number).toList());
+    }
+
+    @Test
     void returnsDueSoonAndOverdueCalibrationStatus() {
         assertThat(EquipmentResponse.from(equipment("eq-1", "FQC")).calibrationStatus()).isEqualTo("DUE_SOON");
         Equipment overdue = equipment("eq-2", "FQC");
@@ -78,8 +106,6 @@ class EquipmentApplicationServiceTest {
         Equipment equipment = equipment("eq-1", "FQC");
         when(equipmentMapper.selectById("eq-1")).thenReturn(equipment);
         when(maintenanceMapper.selectCount(any())).thenReturn(0L);
-        when(inspectionAccessScopeService.currentAccess()).thenReturn(
-            new InspectionAccessScopeService.InspectionAccess("admin.a", "TENANT_ADMIN", true, Set.of()));
         EquipmentApplicationService service = service();
 
         service.deleteEquipment("eq-1");
@@ -93,8 +119,6 @@ class EquipmentApplicationServiceTest {
         Equipment equipment = equipment("eq-1", "FQC");
         when(equipmentMapper.selectById("eq-1")).thenReturn(equipment);
         when(maintenanceMapper.selectCount(any())).thenReturn(1L);
-        when(inspectionAccessScopeService.currentAccess()).thenReturn(
-            new InspectionAccessScopeService.InspectionAccess("admin.a", "TENANT_ADMIN", true, Set.of()));
         EquipmentApplicationService service = service();
 
         assertThatIllegalArgumentException().isThrownBy(() -> service.deleteEquipment("eq-1"))

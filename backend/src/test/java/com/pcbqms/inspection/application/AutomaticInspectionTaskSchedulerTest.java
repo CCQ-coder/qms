@@ -10,10 +10,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.workorder.domain.WorkOrder;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.util.List;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +40,9 @@ class AutomaticInspectionTaskSchedulerTest {
 
     @Test
     void createsTasksWithinEachTenantContextAndClearsItAfterwards() {
+        Configuration configuration = new Configuration();
+        configuration.setMapUnderscoreToCamelCase(true);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), WorkOrder.class);
         WorkOrder workOrder = new WorkOrder();
         workOrder.setWorkOrderNo("WO-100");
         when(jdbcTemplate.queryForList(anyString(), eq(String.class))).thenReturn(List.of("customer-a"));

@@ -49,60 +49,6 @@ class BtfHessianMonitorApplicationServiceTest {
     }
 
     @Test
-    void preservesAlarmScreenTextAsTheAlarmReason() {
-        when(telemetryApplicationService.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
-        service.receive(payload("ALAM", "42.5").replace("\"screentext\":\"\"", "\"screentext\":\"主轴过热报警！\""));
-        var request = ArgumentCaptor.forClass(EquipmentTelemetryRequest.class);
-        verify(telemetryApplicationService).receive(request.capture());
-        var event = request.getValue().events().getFirst();
-        assertThat(event.status()).isEqualTo("ALARM");
-        assertThat(event.alarmMessage()).isEqualTo("主轴过热报警！");
-        assertThat(event.attributes()).containsEntry("legacyScreenText", "主轴过热报警！")
-            .containsEntry("legacyScreenTextState", "PRESENT");
-    }
-
-    @Test
-    void identifiesAnEmptyAlarmScreenTextWithoutInventingAReason() {
-        when(telemetryApplicationService.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
-        service.receive(payload("ALAM", "42.5"));
-        var request = ArgumentCaptor.forClass(EquipmentTelemetryRequest.class);
-        verify(telemetryApplicationService).receive(request.capture());
-        var event = request.getValue().events().getFirst();
-        assertThat(event.alarmMessage()).isNull();
-        assertThat(event.attributes()).containsEntry("legacyScreenTextState", "EMPTY");
-    }
-
-    @Test
-    void identifiesAMissingAlarmScreenTextField() {
-        when(telemetryApplicationService.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
-        service.receive(payload("ALAM", "42.5").replaceAll(",\\s*\"screentext\":\"\"", ""));
-        var request = ArgumentCaptor.forClass(EquipmentTelemetryRequest.class);
-        verify(telemetryApplicationService).receive(request.capture());
-        assertThat(request.getValue().events().getFirst().attributes()).containsEntry("legacyScreenTextState", "MISSING");
-    }
-
-    @Test
-    void generatesTheSameDeduplicationRecordForAnIdenticalRetry() {
-        when(telemetryApplicationService.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
-        service.receive(payload("WORK", "42.5"));
-        service.receive(payload("WORK", "42.5"));
-        var requests = ArgumentCaptor.forClass(EquipmentTelemetryRequest.class);
-        verify(telemetryApplicationService, org.mockito.Mockito.times(2)).receive(requests.capture());
-        var records = requests.getAllValues();
-        assertThat(records.get(0).events().getFirst().recordNo())
-            .isEqualTo(records.get(1).events().getFirst().recordNo());
-    }
-
-    @Test
-    void acknowledgesIgnoredSourcesWithoutCreatingPendingMessagesOrTelemetry() {
-        when(gatewayMappingService.resolve(isNull(), eq("L001")))
-            .thenThrow(new EquipmentGatewayMappingApplicationService.IgnoredEquipmentGatewayMappingException("已忽略"));
-        assertThat(service.receive(payload("WORK", "42.5"))).isEqualTo(new EquipmentTelemetryResponse(0, 0));
-        verify(telemetryApplicationService, never()).receive(any());
-        verify(unmatchedMessageApplicationService, never()).record(any(), any(), any(), any());
-    }
-
-    @Test
     void convertsLegacyWorkSnapshotAndBindsConfiguredTenant() {
         when(telemetryApplicationService.receive(any())).thenAnswer(invocation -> {
             assertThat(TenantContext.tenantCode()).isEqualTo("btf-customer");
@@ -189,48 +135,6 @@ class BtfHessianMonitorApplicationServiceTest {
 
         assertThat(result).isEqualTo(new EquipmentTelemetryResponse(0, 0));
         verify(telemetryApplicationService, never()).receive(any());
-    }
-
-    @Test
-    void processesValidDevicesBeforeAndAfterABrokenMappingAndRecordsTheIssue() throws Exception {
-        when(gatewayMappingService.resolve(isNull(), eq("CNC-15"))).thenReturn(null);
-        when(gatewayMappingService.resolve(isNull(), eq("CNC-17"))).thenReturn(null);
-        when(gatewayMappingService.resolve(isNull(), eq("OLD-PC")))
-            .thenThrow(new EquipmentGatewayMappingApplicationService.MissingEquipmentGatewayMappingException("映射失效：目标设备不存在"));
-        when(gatewayMappingService.resolve(isNull(), eq("EQP001")))
-            .thenThrow(new EquipmentGatewayMappingApplicationService.MissingEquipmentGatewayMappingException("未配置映射"));
-        when(telemetryApplicationService.receive(any())).thenReturn(new EquipmentTelemetryResponse(2, 0));
-
-        var result = service.receive("""
-            [
-              {"type":"RealtimeInf"},
-              {"machinename":"CNC-15","state":"WORK","updateCurTime":"2026-10-09 15:30:00","finHole":"10","finper":"20"},
-              {"machinename":"OLD-PC","state":"IDLE","updateCurTime":"2026-10-09 15:30:00","finHole":"0","finper":"0"},
-              {"machinename":"EQP001","state":"IDLE","updateCurTime":"2026-10-09 15:30:00","finHole":"0","finper":"0"},
-              {"machinename":"CNC-17","state":"WORK","updateCurTime":"2026-10-09 15:30:00","finHole":"20","finper":"40"}
-            ]
-            """);
-
-        assertThat(result).isEqualTo(new EquipmentTelemetryResponse(2, 0));
-        var request = ArgumentCaptor.forClass(EquipmentTelemetryRequest.class);
-        verify(telemetryApplicationService).receive(request.capture());
-        assertThat(request.getValue().events()).extracting(event -> event.machineName()).containsExactly("CNC-15", "CNC-17");
-        var rawPayload = ArgumentCaptor.forClass(String.class);
-        verify(unmatchedMessageApplicationService).record(isNull(), eq("OLD-PC"), any(), rawPayload.capture());
-        assertThat(new ObjectMapper().readTree(rawPayload.getValue()).path("mappingIssue").asText()).contains("目标设备不存在");
-        verify(unmatchedMessageApplicationService).record(isNull(), eq("EQP001"), any(), any());
-        assertThatThrownBy(TenantContext::tenantCode).isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void doesNotHideUnexpectedMappingFailures() {
-        when(gatewayMappingService.resolve(isNull(), eq("L001"))).thenThrow(new IllegalStateException("database unavailable"));
-
-        assertThatThrownBy(() -> service.receive(payload("WORK", "42.5")))
-            .isInstanceOf(IllegalStateException.class).hasMessage("database unavailable");
-        verify(telemetryApplicationService, never()).receive(any());
-        verify(unmatchedMessageApplicationService, never()).record(any(), any(), any(), any());
-        assertThatThrownBy(TenantContext::tenantCode).isInstanceOf(IllegalStateException.class);
     }
 
     private String payload(String state, String percent) {

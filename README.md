@@ -16,8 +16,8 @@ QMS_V1_需求与技术架构方案.md
 
 ## 当前已实现的基础能力
 
-- 多租户上下文：本地开发通过 `X-Tenant-Code` 请求头模拟，默认租户为 `demo-pcb`；前端使用 QMS 账号密码登录，后端签发 JWT，后续请求发送 Bearer Token。MyBatis 执行前会强制要求租户上下文，服务层的所有业务查询按 `tenant_code` 隔离数据。
-- 工序权限：租户管理员和主管可查看全部检验任务；检验员仅能读取、扫码查看和提交被授权工序的数据。启用正式认证后，未配置 QMS 权限的用户会被拒绝。
+- 多租户上下文：本地开发通过 `X-Tenant-Code` 请求头模拟，默认租户为 `demo-pcb`；生产前端使用 OIDC 授权码 + PKCE 登录并发送 Bearer Token。MyBatis 执行前会强制要求租户上下文，服务层的所有业务查询按 `tenant_code` 隔离数据。
+- 工序权限：租户管理员和主管可查看全部检验任务；检验员仅能读取、扫码查看和提交被授权工序的数据。生产环境中未配置权限的 OIDC 用户会被拒绝。
 - 用户权限维护：租户管理员可在“检验标准配置 → 用户与工序权限”中新增、停用和编辑用户角色与检验工序范围；产品、工序、检验模板、自动派单规则及租户质量参数也仅允许租户管理员修改。
 - 工单与生产批次：主管/管理员可创建和维护；检验员只会查询到有授权检验任务的工单，扫码批次时只返回该批次、该工序的待检任务。客户 B 网关经专用受信接口同步，不依赖人工用户权限。
 - 基础资料：每个客户独立维护产品、工序及启停状态；工单与 OCR 确认可直接选择并回填这些资料。
@@ -76,9 +76,9 @@ docker compose up --build
 
 开发环境中的 ERP 截图附件保存在 API 容器的 `uploads` 数据卷。正式部署时应将该本地适配器替换为客户自有的 S3/MinIO/NAS 存储适配器，并落实备份策略。
 
-> `QMS_SECURITY_DEVELOPMENT_MODE=true` 仅用于模拟用户的开发演示。实际账号登录应设为 `false`，启用本地密码登录并配置 JWT 密钥；客户部署需落实数据库、附件与密钥的管理。
+> `dev` 配置仅用于开发演示，会通过请求头模拟租户和用户。生产环境必须接入 JWT/OIDC、移除开发安全配置，并将数据库、对象存储和密钥改为受管服务。
 
-系统采用 QMS 自管账号密码和 JWT 认证。设置 `QMS_SECURITY_DEVELOPMENT_MODE=false`、`QMS_LOCAL_PASSWORD_LOGIN_ENABLED=true`，并将 `QMS_LOCAL_LOGIN_JWT_SECRET` 配置为至少 32 字节随机值的 Base64 编码。QMS 只在 JWT 验签成功后从 `tenant_code` 建立租户上下文，开发模拟请求头不生效。网关除相同的 `QMS_GATEWAY_SHARED_TOKEN` 外，还需有效的 QMS 服务账号 Bearer Token。MySQL 应用账号只授予 QMS 数据库的必要权限，不应使用 `root`。本机启动前将 `compose.local.example.yaml` 复制为 `compose.local.yaml`，配置现场 IP、租户及 `.env` 中的密钥，然后运行 `./dev.sh start`；独立客户部署参见 `ONPREM_DEPLOYMENT.md`。
+生产模式已提供 JWT/OIDC Resource Server 骨架：访问令牌需要包含 `tenant_code` 与可选 `roles` 声明；QMS 仅在验签成功后才从令牌建立租户上下文，开发请求头不会生效。网关需使用客户 B 服务账号令牌，并且无论运行环境都必须配置相同的 `QMS_GATEWAY_SHARED_TOKEN`，否则同步入口会拒绝请求。启用生产模式时设置 `QMS_SECURITY_DEVELOPMENT_MODE=false` 与 `QMS_OIDC_ISSUER_URI`。MySQL 应用账号仅授予 QMS 数据库的必要权限，不应使用 `root` 账号；租户隔离由应用层的租户条件与 MyBatis 租户上下文守卫共同保障。
 
 ## CNC 网关接口
 
@@ -136,8 +136,6 @@ QMS 面向现场网关提供 HTTPS JSON 接口；不实现、不暴露也不需�
 为兼容不能改造的 `WorkingMonitor.exe`，API 还提供 `POST /hessian/monitor`。这是一个 Hessian 1/2 兼容入口，只接受 `Monitor(String)`；字符串为旧软件发送的设备快照 JSON。软件端填写 QMS 主机 IP、服务端口、URL `/hessian/monitor`、Method `Monitor` 即可。
 
 部署前必须设置 `QMS_BTF_HESSIAN_ALLOWED_IPS` 为监控电脑的精确 IPv4/IPv6 地址（逗号分隔）；空值会拒绝所有请求。旧协议没有租户和令牌字段，因此还必须把 `QMS_BTF_HESSIAN_TENANT_CODE` 设为现场所属租户。每台锣机需先通过设备网关映射登记，其 `machineName` 与旧软件的 `machinename` 一致。该接口不信任 `X-Forwarded-For`，也不接受 `X-Gateway-Token` 代替白名单。
-
-同一批上报中，未配置映射或映射目标已不存在/不属于当前租户的设备会跳过，其他有效设备继续入库。被跳过的来源保留最新报文、跳过原因与累计接收次数，可在“设备数据接入”查看；“设备网关映射”支持直接编辑目标设备和现场设备名，失效映射可通过“编辑”修复，保存时校验当前租户设备与来源标识冲突。“设备数据接入”的“修复映射”会直接打开对应编辑窗口。修复映射后处理后续上报，不自动重放历史未匹配数据。其他数据校验错误或存储故障仍会报错，不会被当成映射问题忽略。
 
 旧状态的转换规则为：`WORK` 到 `PROCESSING`、`ALAM` 到 `ALARM`、`STOP` 到 `STOPPED`、`IDLE` 到 `IDLE`；`WAIT` 和 `OFFLINE` 作为 `IDLE` 写入并保留原始状态。现场监控软件、QMS 与数据库之间必须使用同一时区；接口收到的是 `yyyy-MM-dd HH:mm:ss` 的本地时间。
 

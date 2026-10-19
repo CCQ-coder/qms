@@ -1,9 +1,10 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
+import { accessToken } from '@/auth/oidc'
 import { localSession } from '@/auth/local-session'
 import { firstVisibleMenuPath, loadMenuAccess } from '@/navigation/menu'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: import.meta.env.VITE_ROUTER_HASH === 'true' ? createWebHashHistory() : createWebHistory(),
   routes: [
     { path: '/', redirect: '/dashboard' },
     { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { public: true, title: '登录' } },
@@ -45,7 +46,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   if (to.meta.public) return true
-  if (!localSession()) {
+  if (!accessToken() && !localSession()) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (to.meta.platformOnly) {
@@ -57,27 +58,6 @@ router.beforeEach(async (to) => {
     }
   }
   return true
-})
-
-// An open tab can still hold the previous release's router after deployment.
-// Its lazy-loaded view URL no longer exists, so reload the requested route
-// once to pick up the new index and module graph without losing the login.
-const chunkRecoveryKey = 'qms:chunk-recovery-path'
-router.onError((error, to) => {
-  if (!/failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module/i.test(String(error))) return
-  try {
-    if (sessionStorage.getItem(chunkRecoveryKey) === to.fullPath) return
-    sessionStorage.setItem(chunkRecoveryKey, to.fullPath)
-  } catch {
-    // Private browsing can disable session storage; the browser can still reload.
-  }
-  window.location.replace(to.fullPath)
-})
-
-router.afterEach((_to, _from, failure) => {
-  if (!failure) {
-    try { sessionStorage.removeItem(chunkRecoveryKey) } catch { /* Storage may be disabled. */ }
-  }
 })
 
 export default router
