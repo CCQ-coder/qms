@@ -22,9 +22,16 @@ public class JwtTenantContextFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getRequestURI().startsWith("/actuator/")
-            || request.getRequestURI().equals("/hessian/monitor")
-            || request.getRequestURI().startsWith("/api/v1/auth/");
+        String path = request.getRequestURI();
+        return path.startsWith("/actuator/")
+            || path.equals("/hessian/monitor")
+            || path.startsWith("/api/v1/auth/")
+            || (request.getMethod().equals("POST") && path.equals("/api/v1/equipment/telemetry")
+                && request.getHeader("Authorization") == null)
+            || (request.getMethod().equals("GET") && (
+                path.equals("/") || path.equals("/index.html") || path.startsWith("/assets/")
+                    || path.equals("/favicon.svg") || path.equals("/manifest.webmanifest")
+                    || path.equals("/runtime-config.js") || path.equals("/sw.js")));
     }
 
     @Override
