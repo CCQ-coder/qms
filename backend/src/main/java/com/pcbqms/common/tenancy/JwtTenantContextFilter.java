@@ -26,6 +26,8 @@ public class JwtTenantContextFilter extends OncePerRequestFilter {
         return path.startsWith("/actuator/")
             || path.equals("/hessian/monitor")
             || path.startsWith("/api/v1/auth/")
+            || (request.getMethod().equals("POST") && path.equals("/api/v1/equipment/telemetry")
+                && request.getHeader("Authorization") == null)
             || (request.getMethod().equals("GET") && (
                 path.equals("/") || path.equals("/index.html") || path.startsWith("/assets/")
                     || path.equals("/favicon.svg") || path.equals("/manifest.webmanifest")

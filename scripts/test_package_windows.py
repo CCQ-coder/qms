@@ -13,6 +13,15 @@ from package_windows import create_archive
 
 
 class PackageWindowsTest(unittest.TestCase):
+    def test_windows_example_and_upgrade_guide_cover_telemetry_gateway(self):
+        windows = Path(__file__).resolve().parents[1] / "deploy" / "windows"
+        example = (windows / ".env.windows.example").read_text(encoding="utf-8")
+        guide = (windows / "WINDOWS_DEPLOYMENT.md").read_text(encoding="utf-8")
+        self.assertIn("QMS_GATEWAY_SHARED_TOKEN=REPLACE_WITH_SHARED_TOKEN", example)
+        self.assertIn("QMS_GATEWAY_TELEMETRY_TENANT_CODE=REPLACE_WITH_ACTIVE_TENANT_CODE", example)
+        self.assertIn("QMS_GATEWAY_TELEMETRY_TENANT_CODE", guide)
+        self.assertIn("Bearer Token", guide)
+
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell 5.1 test")
     def test_documented_jwt_command_generates_32_byte_secret_in_windows_powershell(self):
         document = (Path(__file__).resolve().parents[1] / "deploy" / "windows" /

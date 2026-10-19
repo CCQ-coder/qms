@@ -72,9 +72,29 @@ class JwtTenantContextFilterTest {
     }
 
     @Test
-    void allowsFrontendAssetsWithoutJwt() throws Exception {
-        MockHttpServletResponse response = new MockHttpServletResponse();
+    void skipsOnlyTelemetryPostWithoutAuthorization() throws Exception {
         AtomicBoolean chained = new AtomicBoolean();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(new MockHttpServletRequest("POST", "/api/v1/equipment/telemetry"), response,
+            (request, servletResponse) -> chained.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(chained).isTrue();
+
+        MockHttpServletRequest basicRequest = new MockHttpServletRequest("POST", "/api/v1/equipment/telemetry");
+        basicRequest.addHeader("Authorization", "Basic example");
+        chained.set(false);
+        response = new MockHttpServletResponse();
+        filter.doFilter(basicRequest, response, (request, servletResponse) -> chained.set(true));
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chained).isFalse();
+    }
+
+    @Test
+    void allowsFrontendAssetsWithoutJwt() throws Exception {
+        AtomicBoolean chained = new AtomicBoolean();
+        MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(new MockHttpServletRequest("GET", "/assets/index.js"), response,
             (request, servletResponse) -> chained.set(true));

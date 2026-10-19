@@ -17,6 +17,7 @@ import org.springframework.util.StringUtils;
 public class BtfHessianProperties {
     private String allowedIps = "";
     private String tenantCode;
+    private int maxConcurrentRequests = 1;
     private List<InetAddress> allowedAddresses = List.of();
 
     public String getAllowedIps() {
@@ -35,10 +36,21 @@ public class BtfHessianProperties {
         this.tenantCode = tenantCode;
     }
 
+    public int getMaxConcurrentRequests() {
+        return maxConcurrentRequests;
+    }
+
+    public void setMaxConcurrentRequests(int maxConcurrentRequests) {
+        this.maxConcurrentRequests = maxConcurrentRequests;
+    }
+
     @PostConstruct
     public void validateAndInitialize() {
         if (!StringUtils.hasText(tenantCode)) {
             throw new IllegalStateException("必须配置 qms.integration.btf-hessian.tenant-code");
+        }
+        if (maxConcurrentRequests < 1 || maxConcurrentRequests > 8) {
+            throw new IllegalStateException("qms.integration.btf-hessian.max-concurrent-requests 必须在 1 到 8 之间");
         }
         tenantCode = tenantCode.trim();
         if (!StringUtils.hasText(allowedIps)) {

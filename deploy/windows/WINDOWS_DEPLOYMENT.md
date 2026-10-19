@@ -36,6 +36,12 @@
 
 5. 如需局域网访问，在管理员 PowerShell 中按实际端口建立 Windows 防火墙入站规则。若跨不可信网络使用，请在前面配置 HTTPS 反向代理并限制访问来源，不要直接公开 HTTP 端口。
 
+## 飞针机网关认证
+
+飞针机采集器通过 `POST /api/v1/equipment/telemetry` 上报。在 QMS **实际使用的** `.env.windows` 中设置 `QMS_GATEWAY_SHARED_TOKEN` 和 `QMS_GATEWAY_TELEMETRY_TENANT_CODE`；后者填写设备所属且状态为 ACTIVE 的 QMS 租户编码。采集器“网关令牌”填写相同的共享令牌，Bearer Token 留空。两项配置缺失时，无 Bearer 的遥测请求不会入库。
+
+升级已有安装时只向原 `.env.windows` 增加这两项，保留数据库密码和登录密钥，不要用示例文件覆盖。保存后重启实际监听 8080 的 QMS 进程。先观察一条采集器待发送记录返回 HTTP 2xx、待发送数下降，再按记录号在对应租户的 QMS 中核对；“已入队”只表示保存在采集器本地。当前若使用 HTTP，应将 8080 入站限制到采集电脑和受控内网，并安排 HTTPS。不要把真实令牌写进日志或发布包。
+
 ## 开机启动
 
 首次手动启动确认成功后，用**管理员 PowerShell** 在解压目录运行：

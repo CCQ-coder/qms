@@ -78,14 +78,14 @@ const fqcPassRate = computed(() => fqcMetric.value?.passRate ?? 0)
 const filteredTasks = computed(() => {
   const keyword = taskKeyword.value.trim().toLowerCase()
   if (!keyword) return fqcTasks.value
-  return fqcTasks.value.filter((task) => [task.taskNo, task.workOrderNo, task.batchNo, task.processName, task.assigneeName]
+  return fqcTasks.value.filter((task) => [task.taskNo, task.workOrderNo, task.processName, task.assigneeName]
     .some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
 const filteredFinishedTestRecords = computed(() => {
   const keyword = recordKeyword.value.trim().toLowerCase()
   if (!keyword) return finishedTestRecords.value
   return finishedTestRecords.value.filter((record) => [
-    record.equipmentAssetNo, record.workOrderNo, record.batchNo, record.internalProductNo,
+    record.equipmentAssetNo, record.workOrderNo, record.internalProductNo,
     record.productCode, record.taskNo, record.inspectedBy, record.defectSummary
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
@@ -483,13 +483,12 @@ onBeforeUnmount(() => {
         </div>
       </template>
       <div class="task-queue-toolbar">
-        <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号、生产批次或检验员" />
+        <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号或检验员" />
         <span>共 {{ filteredTasks.length }} 条待处理任务</span>
       </div>
       <el-table v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
         <el-table-column prop="taskNo" label="任务号" min-width="150" />
         <el-table-column prop="workOrderNo" label="工单号" min-width="145" />
-        <el-table-column prop="batchNo" label="生产批次" min-width="160" />
         <el-table-column prop="processName" label="工序" min-width="130" />
         <el-table-column label="类型" min-width="100"><template #default="scope">{{ taskTypeText(scope.row.taskType) }}</template></el-table-column>
         <el-table-column prop="assigneeName" label="检验员" min-width="110" />
@@ -501,12 +500,12 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>
         <div class="card-header">
-          <div><span>设备检测记录</span><small>已提交的 FQC 检验会同步设备、工单、批次和结论；历史记录缺少设备归属时会明确标为“未关联”。</small></div>
+          <div><span>设备检测记录</span><small>已提交的 FQC 检验会同步设备、工单和结论；历史记录缺少设备归属时会明确标为“未关联”。</small></div>
           <div class="task-queue-actions"><span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span><el-button link type="primary" @click="refreshWorkbench">刷新</el-button></div>
         </div>
       </template>
       <div class="task-queue-toolbar">
-        <el-input v-model="recordKeyword" clearable placeholder="设备、工单、批次、料号、任务号或检验员" />
+        <el-input v-model="recordKeyword" clearable placeholder="设备、工单、料号、任务号或检验员" />
         <span>共 {{ filteredFinishedTestRecords.length }} 条已提交记录</span>
       </div>
       <div class="finished-records-table-wrap">
@@ -514,7 +513,6 @@ onBeforeUnmount(() => {
           <el-table-column label="采集时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
           <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
           <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
-          <el-table-column prop="batchNo" label="生产批次" min-width="150"><template #default="scope">{{ scope.row.batchNo || '未分批' }}</template></el-table-column>
           <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
           <el-table-column prop="productCode" label="料号" min-width="140"><template #default="scope">{{ scope.row.productCode || '—' }}</template></el-table-column>
           <el-table-column prop="inspectionQuantity" label="检验数量" min-width="105" align="right" />

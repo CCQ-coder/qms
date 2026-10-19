@@ -52,6 +52,8 @@ Start-ScheduledTask -TaskName QMS-Windows
 
 先停止旧版 QMS（手动启动的窗口或 `Stop-ScheduledTask -TaskName QMS-Windows`），将新版 ZIP 解压到**新目录**。从旧目录复制真实的 `.env.windows` 和 `data\uploads` 到新目录的对应位置；不要用新版示例文件覆盖旧配置。日志 `logs` 可另行保留用于排查。若使用开机任务，按详细部署文档在新目录重新安装任务，使其指向新路径。确认旧进程已停止后，在新目录双击 `一键启动QMS.cmd`。不要同时运行两份占用 8080 端口的 QMS。
 
+飞针机采集器使用网关令牌时，请在新目录的真实 `.env.windows` 中核对 `QMS_GATEWAY_SHARED_TOKEN` 和 `QMS_GATEWAY_TELEMETRY_TENANT_CODE` 两项，并按 [WINDOWS_DEPLOYMENT.md](WINDOWS_DEPLOYMENT.md) 中的“飞针机网关认证”说明检查；采集器的 Bearer Token 留空。
+
 ## 查看状态和日志
 
 打开 `http://127.0.0.1:8080/actuator/health` 检查服务。日志位于解压目录的 `logs\qms-api.log`。查看最近 200 行：

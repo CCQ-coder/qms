@@ -72,11 +72,15 @@ qms:
   integration:
     gateway:
       shared-token: ${QMS_GATEWAY_SHARED_TOKEN:}
+      telemetry-tenant-code: ${QMS_GATEWAY_TELEMETRY_TENANT_CODE:}
     btf-hessian:
       # WorkingMonitor.exe cannot send a token or tenant identifier. Keep this endpoint closed
       # until explicit source addresses are supplied, and bind it to one customer tenant.
       allowed-ips: ${QMS_BTF_HESSIAN_ALLOWED_IPS:}
       tenant-code: ${QMS_BTF_HESSIAN_TENANT_CODE:${qms.tenancy.default-code}}
+      # Legacy clients can overlap retries when database writes slow down. Keep ingestion bounded
+      # so monitor traffic cannot occupy every request thread and database connection.
+      max-concurrent-requests: ${QMS_BTF_HESSIAN_MAX_CONCURRENT_REQUESTS:1}
   equipment-telemetry:
     # The runtime-status endpoint reports OFFLINE after this interval without a gateway message.
     offline-after-seconds: ${QMS_EQUIPMENT_TELEMETRY_OFFLINE_AFTER_SECONDS:300}
