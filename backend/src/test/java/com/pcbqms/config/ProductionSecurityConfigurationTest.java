@@ -123,3 +123,19 @@ class ProductionSecurityConfigurationTest {
     static class TestApplication {
     }
 }
+
+@WebMvcTest(controllers = ProductionSecurityConfigurationTest.TestController.class)
+@ContextConfiguration(classes = ProductionSecurityConfigurationTest.TestApplication.class)
+@TestPropertySource(properties = "qms.security.development-mode=false")
+class ProductionSecurityMissingTenantConfigurationTest {
+    @Autowired private MockMvc mvc;
+    @MockBean private JdbcTemplate jdbcTemplate;
+    @MockBean private JwtDecoder jwtDecoder;
+
+    @Test
+    void gatewayOnlyTelemetryPostWithoutConfiguredTenantReturns503() throws Exception {
+        mvc.perform(post("/api/v1/equipment/telemetry")
+                .header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isServiceUnavailable());
+    }
+}
