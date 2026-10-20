@@ -25,7 +25,10 @@ public record EquipmentRuntimeStatusResponse(
     String alarmMessage,
     Integer machiningCount,
     LocalDateTime lastDeviceTime,
-    LocalDateTime lastReceivedAt
+    LocalDateTime lastReceivedAt,
+    String statusSource,
+    LocalDateTime lastProbeAt,
+    LocalDateTime lastTxtChangeAt
 ) {
     public static EquipmentRuntimeStatusResponse from(Equipment equipment, EquipmentRuntimeStatus status,
                                                        boolean online) {
@@ -34,6 +37,20 @@ public record EquipmentRuntimeStatusResponse(
             status.getProgramNo(), status.getProgramVersion(), status.getMaterialNo(), status.getWorkOrderNo(),
             status.getBatchNo(), status.getOperatorName(), status.getProgressPercent(), status.getSpindleStatus(),
             status.getAlarmCode(), status.getAlarmMessage(), status.getMachiningCount(), status.getLastDeviceTime(),
-            status.getLastReceivedAt());
+            status.getLastReceivedAt(), "TELEMETRY", null, null);
+    }
+
+    public static EquipmentRuntimeStatusResponse fromPresence(Equipment equipment, EquipmentRuntimeStatus status,
+        String reportedStatus, String effectiveStatus, boolean online, LocalDateTime lastProbeAt,
+        LocalDateTime lastTxtChangeAt) {
+        return new EquipmentRuntimeStatusResponse(equipment.getId(), equipment.getAssetNo(), equipment.getName(),
+            equipment.getProcessCode(), reportedStatus, effectiveStatus, online,
+            status == null ? null : status.getProgramNo(), status == null ? null : status.getProgramVersion(),
+            status == null ? null : status.getMaterialNo(), status == null ? null : status.getWorkOrderNo(),
+            status == null ? null : status.getBatchNo(), status == null ? null : status.getOperatorName(),
+            status == null ? null : status.getProgressPercent(), status == null ? null : status.getSpindleStatus(),
+            status == null ? null : status.getAlarmCode(), status == null ? null : status.getAlarmMessage(),
+            status == null ? null : status.getMachiningCount(), status == null ? null : status.getLastDeviceTime(),
+            status == null ? null : status.getLastReceivedAt(), "FLYING_PROBE", lastProbeAt, lastTxtChangeAt);
     }
 }

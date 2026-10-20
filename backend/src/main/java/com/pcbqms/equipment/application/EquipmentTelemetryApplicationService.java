@@ -16,6 +16,7 @@ import com.pcbqms.equipment.domain.EquipmentTelemetrySummary;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentAlertMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentBusinessEventMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentRuntimeStatusMapper;
+import com.pcbqms.equipment.infrastructure.persistence.EquipmentRuntimeChannelMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetrySummaryMapper;
 import java.time.LocalDateTime;
@@ -40,6 +41,8 @@ public class EquipmentTelemetryApplicationService {
     private final EquipmentBusinessEventMapper businessEventMapper;
     private final EquipmentAlertMapper equipmentAlertMapper;
     private final ObjectMapper objectMapper;
+    private final EquipmentRuntimeStatusApplicationService runtimeQueryService;
+    private final EquipmentRuntimeChannelMapper channelMapper;
 
     @Transactional
     public EquipmentTelemetryResponse receive(EquipmentTelemetryRequest request) {
@@ -54,6 +57,7 @@ public class EquipmentTelemetryApplicationService {
             EquipmentTelemetryRecord record = toRecord(event, equipment, now, payload);
             if (telemetryRecordMapper.insertIfAbsent(record) == 0) {
                 duplicateCount++;
+                markFlyingProbeIdentity(record, now);
                 continue;
             }
             acceptedCount++;
@@ -72,8 +76,16 @@ public class EquipmentTelemetryApplicationService {
                 previous.setUpdatedAt(now);
                 runtimeStatusMapper.updateById(previous);
             }
+            markFlyingProbeIdentity(record, now);
         }
         return new EquipmentTelemetryResponse(acceptedCount, duplicateCount);
+    }
+
+    private void markFlyingProbeIdentity(EquipmentTelemetryRecord record, LocalDateTime now) {
+        if (!"FLYING_PROBE_TEST_COUNTERS".equals(record.getEventType())) return;
+        channelMapper.insertIfAbsent(FlyingProbePresenceApplicationService.identityMarker(
+            record.getTenantCode(), record.getEquipmentId(), now));
+        runtimeQueryService.markFlyingProbeTelemetry(record.getTenantCode(), record.getEquipmentId());
     }
 
     private void validateIdempotencyFields(EquipmentTelemetryEventRequest event) {

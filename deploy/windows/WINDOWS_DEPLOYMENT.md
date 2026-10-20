@@ -40,7 +40,13 @@
 
 飞针机采集器通过 `POST /api/v1/equipment/telemetry` 上报。在 QMS **实际使用的** `.env.windows` 中设置 `QMS_GATEWAY_SHARED_TOKEN` 和 `QMS_GATEWAY_TELEMETRY_TENANT_CODE`；后者填写设备所属且状态为 ACTIVE 的 QMS 租户编码。采集器“网关令牌”填写相同的共享令牌，Bearer Token 留空。两项配置缺失时，无 Bearer 的遥测请求不会入库。
 
+新版采集器另通过 `POST /api/v1/equipment/presence/flying-probe` 上报控制电脑在线、共享目录及 TXT 活跃状态。该接口沿用相同的网关令牌与固定租户，不接受 Bearer Token；采集器两种请求都不应带 `Authorization` 头。QMS 的“设备网关映射”中，`machineName` 应填写飞针机共享目录的子目录名，例如 `WTD-1`；采集器另在 `FlyingProbeCollector.hosts.json` 中为该目录名配置真实控制电脑主机名。两处名称用途不同，不要将动态 IP 当作设备目录名。主机名尚未核验时可留空，测试计数照常同步，设备状态显示“未确认”。
+
+在线状态使用 V34 运行通道表；本次升级无新增迁移。QMS 默认在状态上报超过 5 分钟时显示“未确认”，控制电脑在线且近 10 分钟观察到 TXT 更新时显示“运行中”。如需调整，可在真实 `.env.windows` 中设置 `QMS_FLYING_PROBE_PRESENCE_TTL_SECONDS` 与 `QMS_FLYING_PROBE_ACTIVITY_WINDOW_SECONDS`（单位均为秒）；采集器探测间隔应小于状态有效期。测试数据补传不会刷新设备在线状态。
+
 升级已有安装时只向原 `.env.windows` 增加这两项，保留数据库密码和登录密钥，不要用示例文件覆盖。保存后重启实际监听 8080 的 QMS 进程。先观察一条采集器待发送记录返回 HTTP 2xx、待发送数下降，再按记录号在对应租户的 QMS 中核对；“已入队”只表示保存在采集器本地。当前若使用 HTTP，应将 8080 入站限制到采集电脑和受控内网，并安排 HTTPS。不要把真实令牌写进日志或发布包。
+
+升级后还应在采集器设备状态区分别核对状态上报是否成功，并在 QMS “设备实时状态”中核对“在线/运行中/离线/未确认”。现场逐台验证主机名能从采集电脑解析及 Ping；禁 Ping 时填写经过核验的 TCP 端口。QMS 仍返回 401 时先检查正在运行的 QMS 是否确为新版、实际 `.env.windows` 中网关令牌与固定租户是否生效，以及采集器是否重启并清空旧 Bearer 配置；不要凭“已入队”判断 QMS 已写入。
 
 ## 开机启动
 

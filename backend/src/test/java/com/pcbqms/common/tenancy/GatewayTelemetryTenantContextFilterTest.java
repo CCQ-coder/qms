@@ -47,6 +47,21 @@ class GatewayTelemetryTenantContextFilterTest {
     }
 
     @Test
+    void presenceRejectsAuthorizationEvenWhenGatewayTokenIsValid() throws Exception {
+        var request = new MockHttpServletRequest("POST", "/api/v1/equipment/presence/flying-probe");
+        request.addHeader("X-Gateway-Token", "gateway-secret");
+        request.addHeader("Authorization", "Bearer valid-but-unrelated");
+        var response = new MockHttpServletResponse();
+        var chained = new AtomicBoolean();
+
+        filter("gateway-secret", "customer-b").doFilter(request, response,
+            (incoming, outgoing) -> chained.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chained).isFalse();
+    }
+
+    @Test
     void missingOrWrongTokenReturns401() throws Exception {
         var filter = filter("gateway-secret", "customer-b");
         for (String supplied : new String[] {null, "wrong-secret"}) {

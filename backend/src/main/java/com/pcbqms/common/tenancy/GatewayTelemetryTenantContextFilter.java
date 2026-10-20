@@ -26,14 +26,21 @@ public class GatewayTelemetryTenantContextFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod())
-            || !"/api/v1/equipment/telemetry".equals(request.getRequestURI())
+        if (!"POST".equals(request.getMethod())) return true;
+        String path = request.getRequestURI();
+        if ("/api/v1/equipment/presence/flying-probe".equals(path)) return false;
+        return !"/api/v1/equipment/telemetry".equals(path)
             || request.getHeader("Authorization") != null;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        if ("/api/v1/equipment/presence/flying-probe".equals(request.getRequestURI())
+            && request.getHeader("Authorization") != null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
         if (!authentication.isConfigured() || !StringUtils.hasText(tenantCode)) {
             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
             return;

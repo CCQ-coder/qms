@@ -19,8 +19,11 @@ const statusLabels: Record<string, string> = {
   ALARM: '告警中',
   IDLE: '空闲',
   PROCESSING: '加工中',
+  RUNNING: '运行中',
+  ONLINE: '在线',
   STOPPED: '已停止',
   OFFLINE: '离线',
+  UNKNOWN: '未确认',
   MAINTENANCE: '维护中',
   DISABLED: '停用'
 }

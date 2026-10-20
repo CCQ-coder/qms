@@ -92,6 +92,19 @@ class JwtTenantContextFilterTest {
     }
 
     @Test
+    void leavesPresencePostForGatewayFilterEvenWithAuthorization() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/equipment/presence/flying-probe");
+        request.addHeader("Authorization", "Bearer token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chained = new AtomicBoolean();
+
+        filter.doFilter(request, response, (incoming, outgoing) -> chained.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(chained).isTrue();
+    }
+
+    @Test
     void allowsFrontendAssetsWithoutJwt() throws Exception {
         AtomicBoolean chained = new AtomicBoolean();
         MockHttpServletResponse response = new MockHttpServletResponse();

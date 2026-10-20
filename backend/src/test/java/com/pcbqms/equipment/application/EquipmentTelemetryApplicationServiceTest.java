@@ -15,10 +15,12 @@ import com.pcbqms.equipment.domain.EquipmentAlert;
 import com.pcbqms.equipment.domain.EquipmentBusinessEvent;
 import com.pcbqms.equipment.domain.EquipmentGatewayMapping;
 import com.pcbqms.equipment.domain.EquipmentRuntimeStatus;
+import com.pcbqms.equipment.domain.EquipmentRuntimeChannel;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentAlertMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentBusinessEventMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentRuntimeStatusMapper;
+import com.pcbqms.equipment.infrastructure.persistence.EquipmentRuntimeChannelMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetrySummaryMapper;
 import java.time.LocalDateTime;
@@ -38,6 +40,8 @@ class EquipmentTelemetryApplicationServiceTest {
     @Mock private EquipmentRuntimeStatusMapper runtimeStatusMapper;
     @Mock private EquipmentBusinessEventMapper businessEventMapper;
     @Mock private EquipmentAlertMapper equipmentAlertMapper;
+    @Mock private EquipmentRuntimeStatusApplicationService runtimeQueryService;
+    @Mock private EquipmentRuntimeChannelMapper channelMapper;
 
     @AfterEach
     void clearTenantContext() {
@@ -87,9 +91,45 @@ class EquipmentTelemetryApplicationServiceTest {
         verify(equipmentAlertMapper, never()).insert(any(EquipmentAlert.class));
     }
 
+    @Test
+    void acceptedFlyingProbeTelemetryImmediatelyMarksRuntimeStatusSource() {
+        TenantContext.set("customer-a", "gateway.service");
+        when(gatewayMappingService.resolve("operator-7", "cnc-01"))
+            .thenReturn(new EquipmentGatewayMappingApplicationService.ResolvedEquipment(equipment(), new EquipmentGatewayMapping()));
+        when(telemetryRecordMapper.insertIfAbsent(any())).thenReturn(1);
+
+        service().receive(new EquipmentTelemetryRequest(List.of(event("FLYING_PROBE_TEST_COUNTERS", "IDLE", "FPT-test"))));
+
+        verify(runtimeQueryService).markFlyingProbeTelemetry("customer-a", "equipment-1");
+        ArgumentCaptor<EquipmentRuntimeChannel> marker = ArgumentCaptor.forClass(EquipmentRuntimeChannel.class);
+        verify(channelMapper).insertIfAbsent(marker.capture());
+        assertThat(marker.getValue().getSourceName()).isEqualTo("__FPT_NETWORK__");
+        assertThat(marker.getValue().getReportedStatus()).isEqualTo("UNKNOWN");
+        assertThat(marker.getValue().getLastDeviceTime()).isEqualTo(LocalDateTime.of(2000, 1, 1, 0, 0));
+        verify(channelMapper, never()).upsertIfNewer(any());
+    }
+
+    @Test
+    void duplicateFlyingProbeReplayCanSeedIdentityWithoutChangingRealPresence() {
+        TenantContext.set("customer-a", "gateway.service");
+        when(gatewayMappingService.resolve("operator-7", "cnc-01"))
+            .thenReturn(new EquipmentGatewayMappingApplicationService.ResolvedEquipment(equipment(), new EquipmentGatewayMapping()));
+        when(telemetryRecordMapper.insertIfAbsent(any())).thenReturn(0);
+        when(channelMapper.insertIfAbsent(any())).thenReturn(0); // A real probe row already occupies this key.
+
+        var result = service().receive(new EquipmentTelemetryRequest(
+            List.of(event("FLYING_PROBE_TEST_COUNTERS", "IDLE", "FPT-old"))));
+
+        assertThat(result.duplicateCount()).isEqualTo(1);
+        verify(channelMapper).insertIfAbsent(any(EquipmentRuntimeChannel.class));
+        verify(channelMapper, never()).upsertIfNewer(any());
+        verify(runtimeStatusMapper, never()).updateById(any(EquipmentRuntimeStatus.class));
+    }
+
     private EquipmentTelemetryApplicationService service() {
         return new EquipmentTelemetryApplicationService(gatewayMappingService, telemetryRecordMapper, telemetrySummaryMapper, runtimeStatusMapper,
-            businessEventMapper, equipmentAlertMapper, new ObjectMapper().findAndRegisterModules());
+            businessEventMapper, equipmentAlertMapper, new ObjectMapper().findAndRegisterModules(), runtimeQueryService,
+            channelMapper);
     }
 
     private Equipment equipment() {

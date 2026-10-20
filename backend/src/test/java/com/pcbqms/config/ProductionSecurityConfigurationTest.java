@@ -59,6 +59,31 @@ class ProductionSecurityConfigurationTest {
     }
 
     @Test
+    void gatewayPresencePostUsesFixedTenant() throws Exception {
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("customer-b"))).thenReturn(1);
+
+        mvc.perform(post("/api/v1/equipment/presence/flying-probe")
+                .header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isOk())
+            .andExpect(content().string("customer-b"));
+    }
+
+    @Test
+    void presenceWithValidBearerIsRejectedEvenWithGatewayToken() throws Exception {
+        Jwt jwt = Jwt.withTokenValue("verified-token")
+            .header("alg", "RS256")
+            .subject("operator")
+            .claim("tenant_code", "jwt-tenant")
+            .build();
+        when(jwtDecoder.decode("verified-token")).thenReturn(jwt);
+
+        mvc.perform(post("/api/v1/equipment/presence/flying-probe")
+                .header("Authorization", "Bearer verified-token")
+                .header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void invalidAuthorizationNeverFallsBackToGateway() throws Exception {
         mvc.perform(post("/api/v1/equipment/telemetry")
                 .header("X-Gateway-Token", "gateway-secret")
@@ -93,6 +118,9 @@ class ProductionSecurityConfigurationTest {
         mvc.perform(get("/api/v1/equipment/telemetry")
                 .header("X-Gateway-Token", "gateway-secret"))
             .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/equipment/presence/flying-probe")
+                .header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/other")
                 .header("X-Gateway-Token", "gateway-secret"))
             .andExpect(status().isUnauthorized());
@@ -102,6 +130,11 @@ class ProductionSecurityConfigurationTest {
     static class TestController {
         @PostMapping("/api/v1/equipment/telemetry")
         String telemetry() {
+            return TenantContext.tenantCode();
+        }
+
+        @PostMapping("/api/v1/equipment/presence/flying-probe")
+        String flyingProbePresence() {
             return TenantContext.tenantCode();
         }
 

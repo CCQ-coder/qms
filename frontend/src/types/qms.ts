@@ -350,6 +350,9 @@ export type EquipmentRuntimeStatus = {
   reportedStatus?: string
   effectiveStatus: string
   online: boolean
+  statusSource?: 'FLYING_PROBE' | 'TELEMETRY'
+  lastProbeAt?: string | null
+  lastTxtChangeAt?: string | null
   programNo?: string
   operatorName?: string
   progressPercent?: number

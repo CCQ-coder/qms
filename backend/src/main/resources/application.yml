@@ -92,6 +92,10 @@ qms:
       cleanup-cron: "${QMS_EQUIPMENT_TELEMETRY_CLEANUP_CRON:0 15 * * * *}"
       cleanup-batch-size: ${QMS_EQUIPMENT_TELEMETRY_CLEANUP_BATCH_SIZE:10000}
       cleanup-max-batches: ${QMS_EQUIPMENT_TELEMETRY_CLEANUP_MAX_BATCHES:30}
+  flying-probe:
+    # The collector probe interval must be shorter than the report freshness limit.
+    presence-ttl-seconds: ${QMS_FLYING_PROBE_PRESENCE_TTL_SECONDS:300}
+    activity-window-seconds: ${QMS_FLYING_PROBE_ACTIVITY_WINDOW_SECONDS:600}
   ocr:
     enabled: ${QMS_OCR_ENABLED:false}
     base-url: ${QMS_OCR_BASE_URL:http://localhost:8000}

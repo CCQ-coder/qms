@@ -10,6 +10,20 @@ import java.util.List;
 
 @Mapper
 public interface EquipmentTelemetryRecordMapper {
+    @Select("""
+        SELECT DISTINCT equipment_id FROM (
+            SELECT equipment_id FROM qms_equipment_telemetry
+            WHERE tenant_code = #{tenantCode} AND event_type = 'FLYING_PROBE_TEST_COUNTERS'
+            UNION
+            SELECT equipment_id FROM qms_equipment_telemetry_minute_summary
+            WHERE tenant_code = #{tenantCode} AND last_event_type = 'FLYING_PROBE_TEST_COUNTERS'
+            UNION
+            SELECT equipment_id FROM qms_equipment_telemetry_hour_summary
+            WHERE tenant_code = #{tenantCode} AND last_event_type = 'FLYING_PROBE_TEST_COUNTERS'
+        ) flying_probe_equipment
+        """)
+    List<String> selectFlyingProbeEquipmentIds(@Param("tenantCode") String tenantCode);
+
     /** MySQL performs the final idempotency check so gateway retries are concurrency-safe. */
     @Insert("""
         INSERT INTO qms_equipment_telemetry (
