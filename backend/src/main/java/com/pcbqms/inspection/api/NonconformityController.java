@@ -32,6 +32,12 @@ public class NonconformityController {
         return ApiResponse.of(service.createNonconformity(request));
     }
 
+    @PostMapping("/nonconformities/manual")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<NonconformityResponse> createManualNonconformity(@Valid @RequestBody CreateManualNonconformityRequest request) {
+        return ApiResponse.of(service.createManualNonconformity(request));
+    }
+
     @PostMapping("/nonconformities/{ncrId}/capas")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CapaResponse> createCapa(@PathVariable String ncrId, @Valid @RequestBody CreateCapaRequest request) {

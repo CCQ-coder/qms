@@ -2,6 +2,7 @@ package com.pcbqms.integration.btfhessian;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,12 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -77,6 +84,41 @@ class BtfHessianMonitorServletTest {
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(new String(response.getContentAsByteArray(), StandardCharsets.UTF_8)).contains("请求已拒绝");
         verify(applicationService, never()).receive(PAYLOAD);
+    }
+
+    @Test
+    void acknowledgesOverlappingMonitorCallsWithoutStartingMoreDatabaseWork() throws Throwable {
+        CountDownLatch firstCallStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstCall = new CountDownLatch(1);
+        AtomicInteger invocationCount = new AtomicInteger();
+        when(applicationService.receive(PAYLOAD)).thenAnswer(ignored -> {
+            if (invocationCount.incrementAndGet() == 1) {
+                firstCallStarted.countDown();
+                assertThat(releaseFirstCall.await(2, TimeUnit.SECONDS)).isTrue();
+            }
+            return new EquipmentTelemetryResponse(0, 0);
+        });
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MockHttpServletResponse> firstResponse = executor.submit(
+                () -> invoke(hessianOneCall("Monitor", PAYLOAD), "10.20.169.142"));
+            assertThat(firstCallStarted.await(1, TimeUnit.SECONDS)).isTrue();
+
+            MockHttpServletResponse overlappingResponse =
+                invoke(hessianOneCall("Monitor", PAYLOAD), "10.20.169.142");
+
+            assertThat(overlappingResponse.getStatus()).isEqualTo(200);
+            assertThat(decodeHessianOneReply(overlappingResponse.getContentAsByteArray())).isEqualTo("OK");
+            verify(applicationService, times(1)).receive(PAYLOAD);
+
+            releaseFirstCall.countDown();
+            assertThat(decodeHessianOneReply(firstResponse.get(1, TimeUnit.SECONDS).getContentAsByteArray()))
+                .isEqualTo("OK");
+        } finally {
+            releaseFirstCall.countDown();
+            executor.shutdownNow();
+        }
     }
 
     private MockHttpServletResponse invoke(byte[] content, String remoteAddress) throws Exception {

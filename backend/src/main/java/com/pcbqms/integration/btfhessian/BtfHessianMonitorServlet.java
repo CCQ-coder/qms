@@ -13,6 +13,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,12 +26,14 @@ public class BtfHessianMonitorServlet extends HttpServlet {
 
     private final BtfHessianProperties properties;
     private final BtfHessianMonitorApplicationService applicationService;
+    private final Semaphore processingPermits;
     private final AtomicLong lastClientFailureLogMillis = new AtomicLong();
 
     public BtfHessianMonitorServlet(BtfHessianProperties properties,
                                     BtfHessianMonitorApplicationService applicationService) {
         this.properties = properties;
         this.applicationService = applicationService;
+        this.processingPermits = new Semaphore(properties.getMaxConcurrentRequests());
     }
 
     @Override
@@ -47,7 +50,18 @@ public class BtfHessianMonitorServlet extends HttpServlet {
             if (!"Monitor".equals(invocation.method())) {
                 throw new RejectedRequestException("不支持的 Hessian 方法：" + invocation.method());
             }
-            applicationService.receive(invocation.payload());
+            if (!processingPermits.tryAcquire()) {
+                logClientFailure("busy", remoteAddress, "监控上报处理中，跳过重叠快照");
+                // This protocol sends complete machine snapshots. A newer scheduled snapshot will
+                // replace the skipped one, so acknowledge it instead of provoking a retry storm.
+                writeSuccess(response, version);
+                return;
+            }
+            try {
+                applicationService.receive(invocation.payload());
+            } finally {
+                processingPermits.release();
+            }
             writeSuccess(response, version);
             log.info("Accepted BTF legacy monitor snapshot from {}", remoteAddress);
         } catch (RejectedRequestException exception) {

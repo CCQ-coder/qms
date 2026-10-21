@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { isAxiosError } from 'axios'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime, taskTypeText } from '@/utils/display-text'
@@ -23,7 +24,10 @@ const inspectionPhotoFiles = ref<UploadUserFile[]>([])
 const uploadedAttachmentUrls = ref<string[]>([])
 const offlineDrafts = ref<OfflineInspectionDraft[]>([])
 const syncingOfflineDrafts = ref(false)
-const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>('monitor')
+const route = useRoute()
+const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
+const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>(isSummaryRoute.value ? 'summary' : 'monitor')
+watch(isSummaryRoute, (summaryRoute) => { activePanel.value = summaryRoute ? 'summary' : 'monitor' })
 const monitoringLoading = ref(false)
 const equipment = ref<Equipment[]>([])
 const finishedTestRecords = ref<FinishedTestInspectionRecord[]>([])
@@ -78,14 +82,14 @@ const fqcPassRate = computed(() => fqcMetric.value?.passRate ?? 0)
 const filteredTasks = computed(() => {
   const keyword = taskKeyword.value.trim().toLowerCase()
   if (!keyword) return fqcTasks.value
-  return fqcTasks.value.filter((task) => [task.taskNo, task.workOrderNo, task.batchNo, task.processName, task.assigneeName]
+  return fqcTasks.value.filter((task) => [task.taskNo, task.workOrderNo, task.processName, task.assigneeName]
     .some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
 const filteredFinishedTestRecords = computed(() => {
   const keyword = recordKeyword.value.trim().toLowerCase()
   if (!keyword) return finishedTestRecords.value
   return finishedTestRecords.value.filter((record) => [
-    record.equipmentAssetNo, record.workOrderNo, record.batchNo, record.internalProductNo,
+    record.equipmentAssetNo, record.workOrderNo, record.internalProductNo,
     record.productCode, record.taskNo, record.inspectedBy, record.defectSummary
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
@@ -255,7 +259,7 @@ async function refreshWorkbench() {
   }
 }
 
-function showPanel(panel: 'monitor' | 'records' | 'tasks' | 'summary') {
+function showPanel(panel: 'monitor' | 'records' | 'tasks') {
   activePanel.value = panel
 }
 
@@ -401,12 +405,12 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="page-stack finished-test-page" v-loading="monitoringLoading">
-    <div v-if="offlineDrafts.length" class="offline-draft-banner">
+    <div v-if="!isSummaryRoute && offlineDrafts.length" class="offline-draft-banner">
       <el-alert type="warning" show-icon :closable="false" :title="`本机暂存 ${offlineDrafts.length} 条待补传检验记录`" description="暂存内容包含检验表单与照片，并按当前客户和用户归类；网络恢复后会自动补传。" />
       <el-button type="warning" :loading="syncingOfflineDrafts" @click="syncOfflineDrafts">立即补传</el-button>
     </div>
 
-    <section class="finished-test-hero">
+    <section v-if="!isSummaryRoute" class="finished-test-hero">
       <div>
         <p class="eyebrow">FQC 成品检测</p>
         <h2>成品测试实时监控工作台</h2>
@@ -419,11 +423,10 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <nav class="finished-test-tabs" aria-label="成品测试页面模块">
+    <nav v-if="!isSummaryRoute" class="finished-test-tabs" aria-label="成品测试页面模块">
       <button :class="{ active: activePanel === 'monitor' }" type="button" @click="showPanel('monitor')">实时监控</button>
       <button :class="{ active: activePanel === 'records' }" type="button" @click="showPanel('records')">设备检测记录</button>
       <button :class="{ active: activePanel === 'tasks' }" type="button" @click="showPanel('tasks')">待检任务</button>
-      <button :class="{ active: activePanel === 'summary' }" type="button" @click="showPanel('summary')">成品测试汇总表</button>
     </nav>
 
     <template v-if="activePanel === 'monitor'">
@@ -483,13 +486,12 @@ onBeforeUnmount(() => {
         </div>
       </template>
       <div class="task-queue-toolbar">
-        <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号、生产批次或检验员" />
+        <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号或检验员" />
         <span>共 {{ filteredTasks.length }} 条待处理任务</span>
       </div>
       <el-table v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
         <el-table-column prop="taskNo" label="任务号" min-width="150" />
         <el-table-column prop="workOrderNo" label="工单号" min-width="145" />
-        <el-table-column prop="batchNo" label="生产批次" min-width="160" />
         <el-table-column prop="processName" label="工序" min-width="130" />
         <el-table-column label="类型" min-width="100"><template #default="scope">{{ taskTypeText(scope.row.taskType) }}</template></el-table-column>
         <el-table-column prop="assigneeName" label="检验员" min-width="110" />
@@ -501,12 +503,12 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>
         <div class="card-header">
-          <div><span>设备检测记录</span><small>已提交的 FQC 检验会同步设备、工单、批次和结论；历史记录缺少设备归属时会明确标为“未关联”。</small></div>
+          <div><span>设备检测记录</span><small>已提交的 FQC 检验会同步设备、工单和结论；历史记录缺少设备归属时会明确标为“未关联”。</small></div>
           <div class="task-queue-actions"><span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span><el-button link type="primary" @click="refreshWorkbench">刷新</el-button></div>
         </div>
       </template>
       <div class="task-queue-toolbar">
-        <el-input v-model="recordKeyword" clearable placeholder="设备、工单、批次、料号、任务号或检验员" />
+        <el-input v-model="recordKeyword" clearable placeholder="设备、工单、料号、任务号或检验员" />
         <span>共 {{ filteredFinishedTestRecords.length }} 条已提交记录</span>
       </div>
       <div class="finished-records-table-wrap">
@@ -514,7 +516,6 @@ onBeforeUnmount(() => {
           <el-table-column label="采集时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
           <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
           <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
-          <el-table-column prop="batchNo" label="生产批次" min-width="150"><template #default="scope">{{ scope.row.batchNo || '未分批' }}</template></el-table-column>
           <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
           <el-table-column prop="productCode" label="料号" min-width="140"><template #default="scope">{{ scope.row.productCode || '—' }}</template></el-table-column>
           <el-table-column prop="inspectionQuantity" label="检验数量" min-width="105" align="right" />

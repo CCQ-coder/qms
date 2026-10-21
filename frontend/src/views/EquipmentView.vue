@@ -28,7 +28,7 @@ const maintenanceFormRef = ref<FormInstance>()
 const completeFormRef = ref<FormInstance>()
 const saving = ref(false)
 const deletingEquipmentId = ref<string>()
-const equipmentForm = reactive({ assetNo: '', name: '', equipmentType: '', manufacturer: '', model: '', processCode: '', processName: '', responsibleName: '', calibrationDueAt: '' })
+const equipmentForm = reactive({ assetNo: '', name: '', equipmentType: '', manufacturer: '', model: '', processCode: '', processName: '', responsibleName: '', status: 'IN_USE', calibrationDueAt: '' })
 const equipmentFilters = reactive({ keyword: '', equipmentType: '', status: '' })
 const maintenanceForm = reactive({ equipmentId: '', maintenanceType: 'MAINTENANCE', scheduledAt: '', description: '', executorName: '' })
 const completeForm = reactive({ result: '' })
@@ -60,6 +60,10 @@ const equipmentPageEnd = computed(() => Math.min(equipmentCurrentPage.value * eq
 
 function maintenanceTypeText(type: string) {
   return ({ INSPECTION: '点检', MAINTENANCE: '保养', REPAIR: '维修', CALIBRATION: '校准/检定' })[type] ?? type
+}
+
+function equipmentStatusTagType(status: string) {
+  return ({ ALARM: 'danger', MAINTENANCE: 'warning', DISABLED: 'info' } as Record<string, 'danger' | 'warning' | 'info'>)[status] ?? 'success'
 }
 
 async function load() {
@@ -130,7 +134,7 @@ function changeEquipmentPageSize(size: number) {
 
 function openEquipment() {
   editingEquipmentId.value = undefined
-  Object.assign(equipmentForm, { assetNo: '', name: '', equipmentType: '', manufacturer: '', model: '', processCode: '', processName: '', responsibleName: '', calibrationDueAt: '' })
+  Object.assign(equipmentForm, { assetNo: '', name: '', equipmentType: '', manufacturer: '', model: '', processCode: '', processName: '', responsibleName: '', status: 'IN_USE', calibrationDueAt: '' })
   equipmentDialog.value = true
 }
 
@@ -145,6 +149,7 @@ function openEditEquipment(item: Equipment) {
     processCode: item.processCode ?? '',
     processName: item.processName ?? '',
     responsibleName: item.responsibleName ?? '',
+    status: item.status,
     calibrationDueAt: item.calibrationDueAt ?? ''
   })
   equipmentDialog.value = true
@@ -161,7 +166,8 @@ async function saveEquipment() {
       await qmsApi.updateEquipment(editingEquipmentId.value, updatePayload)
       ElMessage.success('设备台账已更新')
     } else {
-      await qmsApi.createEquipment(payload)
+      const { status: _status, ...createPayload } = payload
+      await qmsApi.createEquipment(createPayload)
       ElMessage.success('设备台账已保存')
     }
     equipmentDialog.value = false
@@ -264,21 +270,21 @@ onMounted(load)
     <el-card shadow="never" class="content-card">
       <template #header><div class="card-header"><span>设备台账</span><el-button type="primary" @click="openEquipment">新增设备</el-button></div></template>
       <el-alert title="设备类型为固定选项：类型选择“成品测试设备”的设备，会自动展示在“成品测试实时监控工作台”。" type="info" :closable="false" show-icon class="equipment-monitor-tip" />
-      <div class="toolbar equipment-filter-bar"><el-input v-model="equipmentFilters.keyword" clearable placeholder="设备编号、名称、厂商、型号、责任人" style="width: 280px" @keyup.enter="searchEquipment" /><el-select v-model="equipmentFilters.equipmentType" clearable placeholder="全部设备类型" style="width: 180px"><el-option v-for="item in equipmentTypes" :key="item.code" :label="item.name" :value="item.name" /></el-select><el-select v-model="equipmentFilters.status" clearable placeholder="全部状态" style="width: 130px"><el-option label="在用" value="IN_USE" /><el-option label="告警" value="ALARM" /></el-select><el-button @click="resetEquipmentFilters">重置</el-button><el-button type="primary" @click="searchEquipment">查询</el-button></div>
+      <div class="toolbar equipment-filter-bar"><el-input v-model="equipmentFilters.keyword" clearable placeholder="设备编号、名称、厂商、型号、责任人" style="width: 280px" @keyup.enter="searchEquipment" /><el-select v-model="equipmentFilters.equipmentType" clearable placeholder="全部设备类型" style="width: 180px"><el-option v-for="item in equipmentTypes" :key="item.code" :label="item.name" :value="item.name" /></el-select><el-select v-model="equipmentFilters.status" clearable placeholder="全部状态" style="width: 130px"><el-option label="在用" value="IN_USE" /><el-option label="维护中" value="MAINTENANCE" /><el-option label="停用" value="DISABLED" /><el-option label="告警中" value="ALARM" /></el-select><el-button @click="resetEquipmentFilters">重置</el-button><el-button type="primary" @click="searchEquipment">查询</el-button></div>
       <el-table :data="equipment" empty-text="暂无设备台账">
         <el-table-column prop="assetNo" label="设备编号" min-width="145" />
         <el-table-column prop="name" label="设备名称" min-width="160" />
         <el-table-column prop="equipmentType" label="设备类型" min-width="150" />
         <el-table-column prop="manufacturer" label="厂商" min-width="130" show-overflow-tooltip />
         <el-table-column prop="model" label="型号" min-width="130" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="100"><template #default="scope"><el-tag :type="scope.row.status === 'ALARM' ? 'danger' : 'success'">{{ statusText(scope.row.status) }}</el-tag></template></el-table-column>
+        <el-table-column label="状态" min-width="100"><template #default="scope"><el-tag :type="equipmentStatusTagType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="145" fixed="right"><template #default="scope"><el-button type="primary" link @click="openEditEquipment(scope.row)">编辑</el-button><el-button type="danger" link :loading="deletingEquipmentId === scope.row.id" @click="deleteEquipment(scope.row)">删除</el-button></template></el-table-column>
       </el-table>
       <div class="equipment-pagination"><span>显示第 {{ equipmentPageStart }}–{{ equipmentPageEnd }} 条，共 {{ equipmentTotal }} 条</span><el-pagination :current-page="equipmentCurrentPage" :page-size="equipmentPageSize" :page-sizes="[10, 20, 50, 100]" :total="equipmentTotal" background layout="sizes, prev, pager, next, jumper" @current-change="(page: number) => { equipmentCurrentPage = page; load() }" @size-change="changeEquipmentPageSize" /></div>
     </el-card>
 
     <el-dialog v-model="equipmentDialog" :title="editingEquipmentId ? '编辑设备' : '新增设备'" width="min(640px, 94vw)">
-      <el-form ref="equipmentFormRef" :model="equipmentForm" :rules="equipmentRules" label-position="top"><div class="form-grid"><el-form-item label="设备编号" prop="assetNo"><el-input v-model="equipmentForm.assetNo" :disabled="Boolean(editingEquipmentId)" /></el-form-item><el-form-item label="设备名称" prop="name"><el-input v-model="equipmentForm.name" /></el-form-item><el-form-item label="设备类型" prop="equipmentType"><el-select v-model="equipmentForm.equipmentType" class="full-width" placeholder="请选择设备类型"><el-option v-for="item in equipmentTypes" :key="item.code" :label="item.name" :value="item.name" /></el-select><div v-if="!equipmentTypes.length" class="field-help">请先在“设备管理 / 设备类型”中配置并启用设备类型。</div></el-form-item><el-form-item label="厂商"><el-input v-model="equipmentForm.manufacturer" placeholder="例如：三菱" /></el-form-item><el-form-item label="型号"><el-input v-model="equipmentForm.model" placeholder="例如：MV-2000" /></el-form-item><el-form-item label="责任人"><el-input v-model="equipmentForm.responsibleName" /></el-form-item><el-form-item label="工序编码"><el-input v-model="equipmentForm.processCode" /></el-form-item><el-form-item label="工序名称"><el-input v-model="equipmentForm.processName" /></el-form-item></div><el-form-item label="校准/检定到期时间"><el-date-picker v-model="equipmentForm.calibrationDueAt" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" class="full-width" /></el-form-item></el-form>
+      <el-form ref="equipmentFormRef" :model="equipmentForm" :rules="equipmentRules" label-position="top"><div class="form-grid"><el-form-item label="设备编号" prop="assetNo"><el-input v-model="equipmentForm.assetNo" :disabled="Boolean(editingEquipmentId)" /></el-form-item><el-form-item label="设备名称" prop="name"><el-input v-model="equipmentForm.name" /></el-form-item><el-form-item label="设备类型" prop="equipmentType"><el-select v-model="equipmentForm.equipmentType" class="full-width" placeholder="请选择设备类型"><el-option v-for="item in equipmentTypes" :key="item.code" :label="item.name" :value="item.name" /></el-select><div v-if="!equipmentTypes.length" class="field-help">请先在“设备管理 / 设备类型”中配置并启用设备类型。</div></el-form-item><el-form-item v-if="editingEquipmentId" label="状态"><el-select v-model="equipmentForm.status" class="full-width"><el-option label="在用" value="IN_USE" /><el-option label="维护中" value="MAINTENANCE" /><el-option label="停用" value="DISABLED" /><el-option label="告警中" value="ALARM" /></el-select></el-form-item><el-form-item label="厂商"><el-input v-model="equipmentForm.manufacturer" placeholder="例如：三菱" /></el-form-item><el-form-item label="型号"><el-input v-model="equipmentForm.model" placeholder="例如：MV-2000" /></el-form-item><el-form-item label="责任人"><el-input v-model="equipmentForm.responsibleName" /></el-form-item><el-form-item label="工序编码"><el-input v-model="equipmentForm.processCode" /></el-form-item><el-form-item label="工序名称"><el-input v-model="equipmentForm.processName" /></el-form-item></div><el-form-item label="校准/检定到期时间"><el-date-picker v-model="equipmentForm.calibrationDueAt" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" class="full-width" /></el-form-item></el-form>
       <template #footer><el-button @click="equipmentDialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveEquipment">保存</el-button></template>
     </el-dialog>
     </template>

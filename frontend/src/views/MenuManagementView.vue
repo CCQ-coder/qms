@@ -8,6 +8,7 @@ import type { AdministrationItem } from '@/types/qms'
 
 type MenuRow = AdministrationItem & {
   menuType: 'GROUP' | 'PAGE'
+  displayLabel: string
   path?: string
   children?: MenuRow[]
 }
@@ -27,6 +28,7 @@ const menuRows = computed<MenuRow[]>(() => {
     const row: MenuRow = {
       ...item,
       menuType: definition.parentCode ? 'PAGE' : 'GROUP',
+      displayLabel: definition.label,
       path: definition.path,
       children: definition.parentCode ? undefined : []
     }
@@ -96,7 +98,7 @@ onMounted(() => { void load() })
         角色权限中的“可见菜单”会在此处的显示状态基础上继续筛选；两项都允许时，用户才会看到对应页面。
       </el-alert>
       <el-table :data="menuRows" row-key="itemCode" :tree-props="{ children: 'children' }" default-expand-all empty-text="暂无菜单配置">
-        <el-table-column prop="itemName" label="菜单名称" min-width="210" />
+        <el-table-column prop="displayLabel" label="菜单名称" min-width="210" />
         <el-table-column label="类型" width="100"><template #default="scope"><el-tag :type="scope.row.menuType === 'GROUP' ? 'primary' : 'info'" size="small">{{ scope.row.menuType === 'GROUP' ? '分组' : '页面' }}</el-tag></template></el-table-column>
         <el-table-column prop="itemCode" label="菜单编码" min-width="190" />
         <el-table-column label="路由地址" min-width="210"><template #default="scope">{{ scope.row.path || '—' }}</template></el-table-column>

@@ -1,7 +1,7 @@
 import { http } from '@/api/http'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
-  InspectionRule, InspectionTemplate, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
+  InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery
   , MenuAccess
 } from '@/types/qms'
@@ -185,6 +185,11 @@ export const qmsApi = {
 
   async createNonconformity(inspectionRecordId: string) {
     const { data } = await http.post<ApiResponse<Nonconformity>>('/api/v1/nonconformities', { inspectionRecordId })
+    return data.data
+  },
+
+  async createManualNonconformity(payload: ManualNonconformityInput) {
+    const { data } = await http.post<ApiResponse<Nonconformity>>('/api/v1/nonconformities/manual', payload)
     return data.data
   },
 

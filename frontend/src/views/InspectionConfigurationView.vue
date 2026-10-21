@@ -345,7 +345,7 @@ onMounted(async () => {
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="产品与工序" name="master-data">
+        <el-tab-pane v-if="route.meta.configTab === 'master-data'" label="产品与工序" name="master-data">
           <div class="master-data-grid">
             <div>
               <div class="toolbar"><strong>产品资料</strong><el-button type="primary" plain @click="openProductDialog">新增产品</el-button></div>

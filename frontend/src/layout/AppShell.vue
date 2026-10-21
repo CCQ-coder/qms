@@ -105,15 +105,13 @@ onMounted(() => {
           <el-menu-item v-if="isMenuVisible('WORK_ORDERS')" index="/work-orders"><span>生产指令查询</span></el-menu-item>
           <el-menu-item v-if="isMenuVisible('PROCESS_INSPECTION')" index="/process-inspection"><span>工序检验</span></el-menu-item>
           <el-menu-item v-if="isMenuVisible('INSPECTION_WORKBENCH')" index="/inspection"><span>成品测试</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('INSPECTION_TEMPLATES')" index="/inspection-templates"><span>检验标准配置</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('INSPECTION_RULES')" index="/inspection-rules"><span>自动派单规则</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('NONCONFORMITIES')" index="/nonconformities"><span>不良品处理</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('TRACE')" index="trace">
-          <template #title><el-icon><Operation /></el-icon><span>追溯与分析</span></template>
-          <el-menu-item v-if="isMenuVisible('NONCONFORMITIES')" index="/nonconformities"><span>不良品处理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('TRACEABILITY')" index="/traceability"><span>质量追溯</span></el-menu-item>
+          <template #title><el-icon><Operation /></el-icon><span>报表</span></template>
           <el-menu-item v-if="isMenuVisible('ANALYTICS')" index="/analytics"><span>报表分析</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_FINISHED_TEST_SUMMARY')" index="/equipment/finished-test-summary"><span>成品测试汇总表</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('EQUIPMENT')" index="equipment">

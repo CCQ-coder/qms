@@ -7,6 +7,7 @@ const statusLabels: Record<string, string> = {
   PASS: '合格',
   FAIL: '不合格',
   OPEN: '待处置',
+  CAPA_OPEN: 'CAPA 处理中',
   CLOSED: '已关闭',
   IN_PROGRESS: '处理中',
   CANCELLED: '已取消',

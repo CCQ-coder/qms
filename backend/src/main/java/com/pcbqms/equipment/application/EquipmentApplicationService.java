@@ -49,6 +49,7 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class EquipmentApplicationService {
     private static final Set<String> MAINTENANCE_TYPES = Set.of("INSPECTION", "MAINTENANCE", "REPAIR", "CALIBRATION");
+    private static final Set<String> EQUIPMENT_STATUSES = Set.of("IN_USE", "MAINTENANCE", "DISABLED", "ALARM");
     private static final Pattern ASSET_NUMBER_SUFFIX = Pattern.compile("^(.*?)(\\d+)$");
     private final EquipmentMapper equipmentMapper;
     private final EquipmentMaintenanceMapper maintenanceMapper;
@@ -253,6 +254,13 @@ public class EquipmentApplicationService {
         equipment.setProcessCode(request.processCode());
         equipment.setProcessName(request.processName());
         equipment.setResponsibleName(request.responsibleName());
+        if (StringUtils.hasText(request.status())) {
+            String status = request.status().trim().toUpperCase(Locale.ROOT);
+            if (!EQUIPMENT_STATUSES.contains(status)) {
+                throw new IllegalArgumentException("设备状态必须从允许状态中选择");
+            }
+            equipment.setStatus(status);
+        }
         equipment.setCalibrationDueAt(request.calibrationDueAt());
         equipment.setUpdatedAt(LocalDateTime.now());
         equipmentMapper.updateById(equipment);

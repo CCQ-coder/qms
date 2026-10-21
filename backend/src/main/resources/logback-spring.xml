@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <property name="LOG_FILE"
+              value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}}/qms-api.log}"/>
+
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <include resource="org/springframework/boot/logging/logback/file-appender.xml"/>
+
+    <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>${QMS_LOG_ASYNC_QUEUE_SIZE:-4096}</queueSize>
+        <neverBlock>true</neverBlock>
+        <maxFlushTime>2000</maxFlushTime>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="CONSOLE"/>
+    </appender>
+
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>${QMS_LOG_ASYNC_QUEUE_SIZE:-4096}</queueSize>
+        <neverBlock>true</neverBlock>
+        <maxFlushTime>2000</maxFlushTime>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="FILE"/>
+    </appender>
+
+    <root level="${ROOT_LOG_LEVEL:-INFO}">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+</configuration>

@@ -16,12 +16,10 @@ export const navigationMenuDefinitions: NavigationMenuDefinition[] = [
   { code: 'WORK_ORDERS', label: '生产指令查询', parentCode: 'QUALITY', path: '/work-orders' },
   { code: 'PROCESS_INSPECTION', label: '工序检验', parentCode: 'QUALITY', path: '/process-inspection' },
   { code: 'INSPECTION_WORKBENCH', label: '成品测试', parentCode: 'QUALITY', path: '/inspection' },
-  { code: 'INSPECTION_TEMPLATES', label: '检验标准配置', parentCode: 'QUALITY', path: '/inspection-templates' },
-  { code: 'INSPECTION_RULES', label: '自动派单规则', parentCode: 'QUALITY', path: '/inspection-rules' },
-  { code: 'TRACE', label: '追溯与分析' },
-  { code: 'NONCONFORMITIES', label: '不良品处理', parentCode: 'TRACE', path: '/nonconformities' },
-  { code: 'TRACEABILITY', label: '质量追溯', parentCode: 'TRACE', path: '/traceability' },
+  { code: 'NONCONFORMITIES', label: '不良品处理', parentCode: 'QUALITY', path: '/nonconformities' },
+  { code: 'TRACE', label: '报表' },
   { code: 'ANALYTICS', label: '报表分析', parentCode: 'TRACE', path: '/analytics' },
+  { code: 'EQUIPMENT_FINISHED_TEST_SUMMARY', label: '成品测试汇总表', parentCode: 'TRACE', path: '/equipment/finished-test-summary' },
   { code: 'EQUIPMENT', label: '设备管理' },
   { code: 'EQUIPMENT_LEDGER', label: '设备台账', parentCode: 'EQUIPMENT', path: '/equipment' },
   { code: 'EQUIPMENT_INSPECTION', label: '点检管理', parentCode: 'EQUIPMENT', path: '/equipment/inspection' },
@@ -64,9 +62,11 @@ export function isMenuVisible(menuCode: string, access = menuAccess.value) {
   if (!definition || !definition.parentCode || !access) return Boolean(definition)
   if (menuCode === 'SYSTEM_TENANTS' && access.roleCode !== 'PLATFORM_ADMIN') return false
   const activeMenuCodes = new Set(access.activeMenuCodes)
+  const permitted = access.permittedMenuCodes.includes(menuCode)
+    || (menuCode === 'EQUIPMENT_FINISHED_TEST_SUMMARY' && access.permittedMenuCodes.includes('INSPECTION_WORKBENCH'))
   return activeMenuCodes.has(menuCode)
     && activeMenuCodes.has(definition.parentCode)
-    && access.permittedMenuCodes.includes(menuCode)
+    && permitted
 }
 
 export function isMenuGroupVisible(menuCode: string, access = menuAccess.value) {

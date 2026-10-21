@@ -271,6 +271,47 @@ export type Nonconformity = {
   status: string
   initiatedBy: string
   createdAt: string
+  detectionDate?: string
+  shiftName?: string
+  processCode?: string
+  processName?: string
+  responsibleDepartment?: string
+  remark?: string
+  dispositionMethod?: string
+  details: NonconformityDetail[]
+}
+
+export type NonconformityDetail = {
+  id: string
+  lineNo: number
+  workOrderNo: string
+  internalProductNo?: string
+  processName: string
+  unit: string
+  singlePcsArea?: number
+  scrapQuantity: number
+  scrapArea?: number
+  scrapReason?: string
+  remark?: string
+  status: string
+}
+
+export type ManualNonconformityInput = {
+  detectionDate: string
+  shiftName?: string
+  processCode: string
+  processName: string
+  responsibleDepartment?: string
+  remark?: string
+  dispositionMethod: string
+  batchNo?: string
+  details: Array<{
+    workOrderNo: string
+    unit: string
+    scrapQuantity: number
+    scrapReason?: string
+    remark?: string
+  }>
 }
 
 export type Capa = {

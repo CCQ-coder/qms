@@ -142,7 +142,7 @@ onMounted(() => { void load() })
         <div v-show="!filtersCollapsed" id="work-order-filters" class="work-order-filters">
           <label class="work-order-filter-field work-order-keyword-field"><span>快速查询</span><el-input v-model="keyword" clearable placeholder="指令号、厂内编号、客户料号、订单号" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>生产批次</span><el-input v-model="batchNo" clearable placeholder="输入批次号" @keyup.enter="load(1)" /></label>
-          <label class="work-order-filter-field"><span>客户编号</span><el-input v-model="customerCode" clearable placeholder="输入客户编号" @keyup.enter="load(1)" /></label>
+          <label class="work-order-filter-field"><span>客户</span><el-input v-model="customerCode" clearable placeholder="输入客户" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>工序信息</span><el-input v-model="currentProcess" clearable placeholder="工序或表面处理名称" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>入库状态</span><el-select v-model="warehouseStatus" placeholder="全部" clearable><el-option label="待入库" value="PENDING" /><el-option label="已入库" value="RECEIVED" /><el-option label="已结批" value="CLOSED" /></el-select></label>
           <label class="work-order-filter-field"><span>优先级</span><el-select v-model="priority" placeholder="全部" clearable><el-option label="低" value="LOW" /><el-option label="普通" value="NORMAL" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="URGENT" /></el-select></label>
@@ -155,18 +155,18 @@ onMounted(() => { void load() })
 
     <el-card class="content-card work-order-list-card" shadow="never">
       <div class="work-order-list-heading">
-        <div><h2>生产指令列表</h2><p>默认显示现场排产、投料和入库信息；板材、尺寸与工艺明细请点击生产指令号查看。</p></div>
+        <div><h2>生产指令列表</h2><p>默认显示现场排产、投料面积和入库信息；板材、尺寸与工艺明细请点击生产指令号查看。</p></div>
       </div>
 
       <div class="work-order-table-wrap work-order-summary-table-wrap" :class="{ 'no-batch-column': !showBatchColumn }">
         <el-table v-loading="loading" class="work-order-data-table" :data="rows" stripe>
           <el-table-column label="生产指令号" min-width="150"><template #default="{ row }"><el-button class="work-order-detail-link" link type="primary" @click="openDetail(row)">{{ row.workOrderNo }}</el-button></template></el-table-column>
           <el-table-column v-if="showBatchColumn" label="生产批次" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ batchText(row) }}</template></el-table-column>
-          <el-table-column label="产品 / 厂内编号" min-width="170"><template #default="{ row }"><div>{{ value(row.internalProductNo ?? row.productCode) }}</div><small>{{ value(row.customerPartNo) }}</small></template></el-table-column>
+          <el-table-column label="厂内编号 / 客户料号" min-width="180"><template #default="{ row }"><div>{{ value(row.internalProductNo ?? row.productCode) }}</div><small>{{ value(row.customerPartNo) }}</small></template></el-table-column>
           <el-table-column label="客户" min-width="100"><template #default="{ row }">{{ value(row.customerCode) }}</template></el-table-column>
-          <el-table-column label="工序信息" min-width="135"><template #default="{ row }"><div>{{ value(row.currentProcessName) }}</div><small v-if="row.sourceSystem === 'ERP_EXCEL'">表面处理</small></template></el-table-column>
-          <el-table-column label="订单 / 投料 / 完工 / 入库" min-width="180"><template #default="{ row }">{{ value(row.customerOrderQuantity) }} / {{ value(row.plannedQuantity) }} / {{ value(row.completedQuantity) }} / {{ value(row.cumulativeWarehouseQuantity) }}</template></el-table-column>
-          <el-table-column label="投料信息" min-width="145"><template #default="{ row }"><div>{{ value(row.materialArea) }} m²</div><small>预投率 {{ value(row.estimatedYieldRate) }}% · 计划领料 {{ value(row.plannedMaterialIssueQuantity) }}</small></template></el-table-column>
+          <el-table-column label="工艺" min-width="135"><template #default="{ row }"><div>{{ value(row.currentProcessName) }}</div><small v-if="row.sourceSystem === 'ERP_EXCEL'">表面处理</small></template></el-table-column>
+          <el-table-column label="订单 / 投料 / 入库" min-width="160"><template #default="{ row }">{{ value(row.customerOrderQuantity) }} / {{ value(row.plannedQuantity) }} / {{ value(row.cumulativeWarehouseQuantity) }}</template></el-table-column>
+          <el-table-column label="投料面积" min-width="145"><template #default="{ row }"><div>{{ value(row.materialArea) }} m²</div><small>预投率 {{ value(row.estimatedYieldRate) }}% · 计划领料 {{ value(row.plannedMaterialIssueQuantity) }}</small></template></el-table-column>
           <el-table-column label="总 / A / B PNL" min-width="130"><template #default="{ row }"><div>{{ value(row.totalPanelQuantity) }} / {{ value(row.aBoardPanelQuantity) }} / {{ value(row.bBoardPanelQuantity) }}</div><small>{{ value(row.panelizationNo) }}</small></template></el-table-column>
           <el-table-column label="工单状态" min-width="105"><template #default="{ row }"><el-tag :type="workOrderTagType(row.status)" effect="light">{{ workOrderStatusText(row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="入库状态" min-width="105"><template #default="{ row }"><el-tag :type="warehouseTagType(row.warehouseStatus)" effect="plain">{{ warehouseStatusText(row.warehouseStatus) }}</el-tag></template></el-table-column>
@@ -246,7 +246,7 @@ onMounted(() => { void load() })
               <el-descriptions :column="3" border>
                 <el-descriptions-item label="产品编码">{{ value(selected.productCode) }}</el-descriptions-item><el-descriptions-item label="厂内编号">{{ value(selected.internalProductNo) }}</el-descriptions-item><el-descriptions-item label="客户料号">{{ value(selected.customerPartNo) }}</el-descriptions-item>
                 <el-descriptions-item label="产品名称">{{ value(selected.productName) }}</el-descriptions-item><el-descriptions-item label="产品规格" :span="2">{{ value(selected.specification) }}</el-descriptions-item>
-                <el-descriptions-item label="客户编号">{{ value(selected.customerCode) }}</el-descriptions-item><el-descriptions-item label="板厚">{{ value(selected.boardThickness) }}</el-descriptions-item><el-descriptions-item label="层数">{{ value(selected.layerCount) }}</el-descriptions-item>
+                <el-descriptions-item label="客户">{{ value(selected.customerCode) }}</el-descriptions-item><el-descriptions-item label="板厚">{{ value(selected.boardThickness) }}</el-descriptions-item><el-descriptions-item label="层数">{{ value(selected.layerCount) }}</el-descriptions-item>
               </el-descriptions>
             </section>
             <section class="work-order-detail-section">

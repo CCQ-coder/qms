@@ -2,6 +2,7 @@ package com.pcbqms.administration.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +14,7 @@ import com.pcbqms.administration.domain.AdministrationItem;
 import com.pcbqms.administration.infrastructure.persistence.AdministrationAuditLogMapper;
 import com.pcbqms.administration.infrastructure.persistence.AdministrationItemMapper;
 import com.pcbqms.common.tenancy.TenantContext;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -61,5 +63,27 @@ class AdministrationApplicationServiceTest {
         assertThat(auditCaptor.getValue().getModuleCode()).isEqualTo("DICTIONARY");
         assertThat(auditCaptor.getValue().getActor()).isEqualTo("admin.b");
         assertThat(response.itemCode()).isEqualTo("DEFECT_LEVEL");
+    }
+
+    @Test
+    void createsFinishedTestSummaryUnderReportsMenu() {
+        TenantContext.set("customer-b", "admin.b");
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of());
+        AdministrationApplicationService service = new AdministrationApplicationService(
+            administrationItemMapper,
+            administrationAuditLogMapper,
+            inspectionAccessScopeService,
+            new ObjectMapper()
+        );
+
+        service.listItems("menu");
+
+        verify(administrationItemMapper, atLeastOnce()).insert(itemCaptor.capture());
+        AdministrationItem summaryMenu = itemCaptor.getAllValues().stream()
+            .filter(item -> "EQUIPMENT_FINISHED_TEST_SUMMARY".equals(item.getItemCode()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(summaryMenu.getParentCode()).isEqualTo("TRACE");
+        assertThat(summaryMenu.getSortOrder()).isEqualTo(34);
     }
 }

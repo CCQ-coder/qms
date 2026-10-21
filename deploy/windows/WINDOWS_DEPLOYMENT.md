@@ -65,7 +65,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-qms-windows.ps1
 
 ## 日志与排查
 
-- 应用日志在 `logs\qms-api.log`，按 20 MB 滚动、保留 14 天、总量上限 1 GB；可在 `.env.windows` 调整 `QMS_LOG_*`。
+- 应用日志在 `logs\qms-api.log`，按 20 MB 滚动、保留 14 天、总量上限 1 GB；文件和控制台分别使用非阻塞异步队列，避免日志输出异常拖住业务请求。可在 `.env.windows` 调整 `QMS_LOG_*`，`QMS_LOG_ASYNC_QUEUE_SIZE` 默认 4096；队列耗尽时会舍弃部分日志以保证请求继续处理。
 - 每个 HTTP 请求会记录方法、路径、状态码、耗时，并在响应头返回 `X-Request-ID`。日志行包含相同的 `rid`，便于用一次请求定位错误；查询参数、请求体和授权头不会写入请求日志。
 - 查看最近日志：`Get-Content .\logs\qms-api.log -Tail 200`。实时跟踪：`Get-Content .\logs\qms-api.log -Tail 50 -Wait`。按请求 ID 查找：`Select-String -Path .\logs\qms-api*.log -Pattern '<请求 ID>'`。
 - 无法启动时先直接运行 `start-qms-windows.ps1` 查看屏幕错误，再检查 `logs\qms-api.log`。云数据库连接故障可检查 DNS、出站端口、云端 IP 白名单、MySQL 用户授权和 TLS 证书；不要在工单中粘贴 `.env.windows` 密码或完整连接串。

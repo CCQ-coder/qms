@@ -11,6 +11,7 @@ public record UpdateEquipmentRequest(
     String processCode,
     String processName,
     String responsibleName,
+    String status,
     LocalDateTime calibrationDueAt
 ) {
 }

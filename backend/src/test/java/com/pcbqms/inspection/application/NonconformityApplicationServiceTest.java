@@ -11,19 +11,26 @@ import static org.mockito.Mockito.when;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.inspection.api.CloseCapaRequest;
+import com.pcbqms.inspection.api.CreateCapaRequest;
 import com.pcbqms.inspection.api.CreateNonconformityRequest;
+import com.pcbqms.inspection.api.CreateManualNonconformityRequest;
+import com.pcbqms.inspection.api.CreateNonconformityDetailRequest;
 import com.pcbqms.inspection.domain.InspectionRecord;
 import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.domain.Nonconformity;
+import com.pcbqms.inspection.domain.NonconformityDetail;
 import com.pcbqms.inspection.infrastructure.persistence.CapaMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionRecordMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTaskMapper;
 import com.pcbqms.inspection.infrastructure.persistence.NonconformityMapper;
+import com.pcbqms.inspection.infrastructure.persistence.NonconformityDetailMapper;
 import com.pcbqms.workorder.domain.ProductionBatch;
 import com.pcbqms.workorder.domain.WorkOrder;
 import com.pcbqms.workorder.infrastructure.persistence.ProductionBatchMapper;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.util.List;
+import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +42,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class NonconformityApplicationServiceTest {
     @Mock private NonconformityMapper nonconformityMapper;
+    @Mock private NonconformityDetailMapper nonconformityDetailMapper;
     @Mock private CapaMapper capaMapper;
     @Mock private InspectionRecordMapper inspectionRecordMapper;
     @Mock private InspectionTaskMapper inspectionTaskMapper;
@@ -73,7 +81,7 @@ class NonconformityApplicationServiceTest {
         when(productionBatchMapper.selectById("batch-1")).thenReturn(batch);
         NonconformityApplicationService service = new NonconformityApplicationService(
             nonconformityMapper, capaMapper, inspectionRecordMapper, inspectionTaskMapper, inspectionAccessScopeService,
-            workOrderMapper, productionBatchMapper);
+            workOrderMapper, productionBatchMapper, nonconformityDetailMapper);
 
         var response = service.createNonconformity(new CreateNonconformityRequest("record-1"));
 
@@ -124,9 +132,52 @@ class NonconformityApplicationServiceTest {
         verifyNoInteractions(capaMapper);
     }
 
+    @Test
+    void createsManualNonconformityWithCalculatedScrapArea() {
+        TenantContext.set("customer-a", "tester.a");
+        WorkOrder workOrder = new WorkOrder();
+        workOrder.setId("work-order-1");
+        workOrder.setTenantCode("customer-a");
+        workOrder.setWorkOrderNo("WO-001");
+        workOrder.setInternalProductNo("INNER-001");
+        workOrder.setSinglePcsArea(new BigDecimal("0.25"));
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder);
+        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
+        var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 10, 20), "白班", "FQC", "成品测试",
+            "品质部", "手工登记", "SCRAP", "BATCH-001", List.of(
+                new CreateNonconformityDetailRequest("WO-001", "PCS", 4, "板边破损", "复核后报废")));
+
+        var response = service().createManualNonconformity(request);
+
+        assertThat(response.ncrNo()).matches("NCR-\\d{8}-0001");
+        ArgumentCaptor<Nonconformity> ncr = ArgumentCaptor.forClass(Nonconformity.class);
+        verify(nonconformityMapper).insert(ncr.capture());
+        assertThat(ncr.getValue().getInspectionRecordId()).isNull();
+        assertThat(ncr.getValue().getDispositionMethod()).isEqualTo("SCRAP");
+        assertThat(response.details()).hasSize(1);
+        assertThat(response.details().getFirst().scrapArea()).isEqualByComparingTo("1.00");
+        verify(inspectionAccessScopeService).requireProcessAccess("FQC");
+        verify(nonconformityDetailMapper).insert(any(NonconformityDetail.class));
+    }
+
+    @Test
+    void manualNonconformityCanStartCapaUsingItsProcessAccess() {
+        TenantContext.set("customer-a", "tester.a");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setProcessCode("FQC");
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(capaMapper.selectOne(any())).thenReturn(null);
+        when(capaMapper.selectCount(any())).thenReturn(0L);
+
+        service().createCapa("ncr-1", new CreateCapaRequest("板边破损", null, null, null, null, null));
+
+        verify(inspectionAccessScopeService).requireProcessAccess("FQC");
+        verifyNoInteractions(inspectionRecordMapper);
+    }
+
     private NonconformityApplicationService service() {
         return new NonconformityApplicationService(nonconformityMapper, capaMapper, inspectionRecordMapper,
-            inspectionTaskMapper, inspectionAccessScopeService, workOrderMapper, productionBatchMapper);
+            inspectionTaskMapper, inspectionAccessScopeService, workOrderMapper, productionBatchMapper, nonconformityDetailMapper);
     }
 
     private Nonconformity nonconformity(String id, String recordId) {

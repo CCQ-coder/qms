@@ -11,6 +11,7 @@ import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.api.EquipmentResponse;
 import com.pcbqms.equipment.api.EquipmentQueryRequest;
 import com.pcbqms.equipment.api.EquipmentTypeResponse;
+import com.pcbqms.equipment.api.UpdateEquipmentRequest;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentAlertMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMaintenanceItemMapper;
@@ -98,6 +99,36 @@ class EquipmentApplicationServiceTest {
         assertThat(service.listEquipmentTypes())
             .extracting(EquipmentTypeResponse::name)
             .containsExactly("生产设备", "制程检测设备", "成品测试设备", "测量设备", "辅助设备");
+    }
+
+    @Test
+    void updatesEquipmentStatusFromEditForm() {
+        TenantContext.set("customer-a", "admin.a");
+        Equipment equipment = equipment("eq-1", "FQC");
+        equipment.setStatus("IN_USE");
+        when(equipmentMapper.selectById("eq-1")).thenReturn(equipment);
+        EquipmentApplicationService service = service();
+
+        EquipmentResponse response = service.updateEquipment("eq-1", new UpdateEquipmentRequest(
+            "飞机机", "成品测试设备", "旺通达", "WTD-100", "FQC", "成品测试", "张三", "DISABLED", null
+        ));
+
+        assertThat(response.status()).isEqualTo("DISABLED");
+        assertThat(equipment.getStatus()).isEqualTo("DISABLED");
+        verify(equipmentMapper).updateById(equipment);
+    }
+
+    @Test
+    void rejectsUnsupportedEquipmentStatusFromEditForm() {
+        TenantContext.set("customer-a", "admin.a");
+        Equipment equipment = equipment("eq-1", "FQC");
+        equipment.setStatus("IN_USE");
+        when(equipmentMapper.selectById("eq-1")).thenReturn(equipment);
+        EquipmentApplicationService service = service();
+
+        assertThatIllegalArgumentException().isThrownBy(() -> service.updateEquipment("eq-1", new UpdateEquipmentRequest(
+            "飞机机", "成品测试设备", "旺通达", "WTD-100", "FQC", "成品测试", "张三", "UNKNOWN", null
+        ))).withMessage("设备状态必须从允许状态中选择");
     }
 
     @Test
