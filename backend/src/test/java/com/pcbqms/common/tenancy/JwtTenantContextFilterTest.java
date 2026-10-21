@@ -97,4 +97,26 @@ class JwtTenantContextFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(403);
     }
+
+    @Test
+    void skipsOnlyTelemetryPostWithoutAuthorization() throws Exception {
+        MockHttpServletRequest gatewayRequest = new MockHttpServletRequest("POST", "/api/v1/equipment/telemetry");
+        AtomicBoolean chained = new AtomicBoolean();
+        filter.doFilter(gatewayRequest, new MockHttpServletResponse(),
+            (request, response) -> chained.set(true));
+        assertThat(chained).isTrue();
+
+        MockHttpServletRequest authorizedTelemetry =
+            new MockHttpServletRequest("POST", "/api/v1/equipment/telemetry");
+        authorizedTelemetry.addHeader("Authorization", "Bearer invalid");
+        for (MockHttpServletRequest request : new MockHttpServletRequest[] {
+            new MockHttpServletRequest("GET", "/api/v1/equipment/telemetry"),
+            new MockHttpServletRequest("POST", "/api/v1/cnc/file-requests"),
+            authorizedTelemetry
+        }) {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(request, response, (req, res) -> { });
+            assertThat(response.getStatus()).isEqualTo(401);
+        }
+    }
 }

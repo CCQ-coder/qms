@@ -1,11 +1,14 @@
 package com.pcbqms.config;
 
 import com.pcbqms.common.tenancy.JwtTenantContextFilter;
+import com.pcbqms.common.tenancy.GatewayTelemetryTenantContextFilter;
+import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,7 +33,11 @@ import org.springframework.security.web.SecurityFilterChain;
 public class ProductionSecurityConfiguration {
     @Bean
     SecurityFilterChain productionSecurityFilterChain(HttpSecurity http,
-                                                      JwtTenantContextFilter jwtTenantContextFilter) throws Exception {
+                                                      JwtTenantContextFilter jwtTenantContextFilter,
+                                                      GatewayIntegrationAuthentication gatewayAuthentication,
+                                                      JdbcTemplate jdbcTemplate,
+                                                      @Value("${qms.integration.gateway.telemetry-tenant-code:}")
+                                                      String telemetryTenantCode) throws Exception {
         return http
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -40,9 +47,12 @@ public class ProductionSecurityConfiguration {
                     "/manifest.webmanifest", "/runtime-config.js", "/sw.js").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/auth/tenants").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/equipment/telemetry").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
             .addFilterAfter(jwtTenantContextFilter, BearerTokenAuthenticationFilter.class)
+            .addFilterAfter(new GatewayTelemetryTenantContextFilter(
+                gatewayAuthentication, jdbcTemplate, telemetryTenantCode), JwtTenantContextFilter.class)
             .build();
     }
 
