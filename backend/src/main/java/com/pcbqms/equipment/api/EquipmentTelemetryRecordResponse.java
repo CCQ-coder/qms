@@ -31,7 +31,12 @@ public record EquipmentTelemetryRecordResponse(
     BigDecimal routeLength,
     String screenText,
     String sourceRecordNo,
-    String rawPayload
+    String rawPayload,
+    String materialNo,
+    String workOrderNo,
+    String batchNo,
+    Integer goodBoardCount,
+    Integer badBoardCount
 ) {
     public static EquipmentTelemetryRecordResponse from(
         EquipmentTelemetryRecord record,
@@ -41,7 +46,9 @@ public record EquipmentTelemetryRecordResponse(
         String legacyMachineType,
         BigDecimal runtimeSeconds,
         BigDecimal routeLength,
-        String screenText
+        String screenText,
+        Integer goodBoardCount,
+        Integer badBoardCount
     ) {
         return new EquipmentTelemetryRecordResponse(
             record.getId(), record.getEquipmentId(), equipment.getAssetNo(), equipment.getName(), record.getSourceUsername(),
@@ -49,7 +56,8 @@ public record EquipmentTelemetryRecordResponse(
             record.getOperatorName(), record.getProgressPercent(), record.getSpindleStatus(), record.getAlarmCode(),
             record.getAlarmMessage(), record.getMachiningCount()
             , legacyState, legacyId, legacyMachineType, runtimeSeconds, routeLength, screenText,
-            record.getSourceRecordNo(), record.getRawPayload()
+            record.getSourceRecordNo(), record.getRawPayload(),
+            record.getMaterialNo(), record.getWorkOrderNo(), record.getBatchNo(), goodBoardCount, badBoardCount
         );
     }
 }

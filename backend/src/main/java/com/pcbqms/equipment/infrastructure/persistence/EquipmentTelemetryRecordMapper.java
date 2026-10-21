@@ -46,6 +46,9 @@ public interface EquipmentTelemetryRecordMapper {
                source_record_no, deduplication_key, raw_payload, created_at
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
+        <if test="eventType != null">
+            AND event_type = #{eventType}
+        </if>
         <if test="equipmentId != null and equipmentId != ''">
             AND equipment_id = #{equipmentId}
         </if>
@@ -77,6 +80,7 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("toTime") LocalDateTime toTime,
         @Param("cursorReceivedAt") LocalDateTime cursorReceivedAt,
         @Param("cursorId") String cursorId,
-        @Param("limit") int limit
+        @Param("limit") int limit,
+        @Param("eventType") String eventType
     );
 }

@@ -414,12 +414,17 @@ export type EquipmentTelemetryRecord = {
   eventType?: string
   status?: string
   programNo?: string
+  materialNo?: string
+  workOrderNo?: string
+  batchNo?: string
   operatorName?: string
   progressPercent?: number
   spindleStatus?: string
   alarmCode?: string
   alarmMessage?: string
   machiningCount?: number
+  goodBoardCount?: number
+  badBoardCount?: number
   legacyState?: string
   legacyId?: string
   legacyMachineType?: string
@@ -432,6 +437,7 @@ export type EquipmentTelemetryRecord = {
 
 export type EquipmentTelemetryHistoryQuery = {
   equipmentId?: string
+  eventType?: string
   fromTime?: string
   toTime?: string
   cursor?: string

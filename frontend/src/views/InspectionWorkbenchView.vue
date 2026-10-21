@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type Upload
 import { qmsApi } from '@/api/qms'
 import { formatDateTime, taskTypeText } from '@/utils/display-text'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
+import { useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
@@ -31,6 +32,18 @@ watch(isSummaryRoute, (summaryRoute) => { activePanel.value = summaryRoute ? 'su
 const monitoringLoading = ref(false)
 const equipment = ref<Equipment[]>([])
 const finishedTestRecords = ref<FinishedTestInspectionRecord[]>([])
+const finishedRecordsError = ref('')
+const recordSource = ref<'probe' | 'fqc'>('probe')
+const {
+  records: flyingProbeRecords,
+  nextCursor: flyingProbeNextCursor,
+  loading: flyingProbeLoading,
+  loaded: flyingProbeLoaded,
+  error: flyingProbeError,
+  updatedAt: flyingProbeUpdatedAt,
+  refresh: refreshFlyingProbeRecords,
+  loadMore: loadMoreFlyingProbeRecords
+} = useFlyingProbeHistory((query) => qmsApi.listEquipmentTelemetryHistory(query))
 const qualitySummary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
 const selectedDeviceId = ref('FQC-01')
 const taskKeyword = ref('')
@@ -245,7 +258,12 @@ async function loadMonitoringData() {
     ])
     if (summaryResult.status === 'fulfilled') qualitySummary.value = summaryResult.value
     if (equipmentResult.status === 'fulfilled') equipment.value = equipmentResult.value
-    if (recordsResult.status === 'fulfilled') finishedTestRecords.value = recordsResult.value
+    if (recordsResult.status === 'fulfilled') {
+      finishedTestRecords.value = recordsResult.value
+      finishedRecordsError.value = ''
+    } else {
+      finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
+    }
     updatedAt.value = new Date()
   } finally {
     monitoringLoading.value = false
@@ -261,6 +279,20 @@ async function refreshWorkbench() {
 
 function showPanel(panel: 'monitor' | 'records' | 'tasks') {
   activePanel.value = panel
+  if (panel === 'records') {
+    recordSource.value = 'probe'
+    if (!flyingProbeLoaded.value) void refreshFlyingProbeRecords()
+  }
+}
+
+function showRecordSource(source: 'probe' | 'fqc') {
+  recordSource.value = source
+  if (source === 'probe' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
+}
+
+async function refreshRecordPanel() {
+  if (recordSource.value === 'probe') await refreshFlyingProbeRecords()
+  else await refreshWorkbench()
 }
 
 function deviceStatusLabel(device: MonitorDevice) {
@@ -503,29 +535,54 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>
         <div class="card-header">
-          <div><span>设备检测记录</span><small>已提交的 FQC 检验会同步设备、工单和结论；历史记录缺少设备归属时会明确标为“未关联”。</small></div>
-          <div class="task-queue-actions"><span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span><el-button link type="primary" @click="refreshWorkbench">刷新</el-button></div>
+          <div><span>设备检测记录</span><small>飞针机采集计数与已提交的 FQC 检验分别查看。</small></div>
+          <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordSource === 'probe' ? (flyingProbeUpdatedAt ? `更新于 ${formatDateTime(flyingProbeUpdatedAt)}` : '尚未读取') : `更新于 ${updatedAtLabel}` }}</span><el-button link type="primary" :disabled="recordSource === 'probe' && flyingProbeLoading" @click="refreshRecordPanel">刷新</el-button></div>
         </div>
       </template>
-      <div class="task-queue-toolbar">
-        <el-input v-model="recordKeyword" clearable placeholder="设备、工单、料号、任务号或检验员" />
-        <span>共 {{ filteredFinishedTestRecords.length }} 条已提交记录</span>
+      <div class="task-queue-actions" role="group" aria-label="记录来源">
+        <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
+        <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
       </div>
-      <div class="finished-records-table-wrap">
-        <el-table :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的设备检测记录">
-          <el-table-column label="采集时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
-          <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
-          <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
-          <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
-          <el-table-column prop="productCode" label="料号" min-width="140"><template #default="scope">{{ scope.row.productCode || '—' }}</template></el-table-column>
-          <el-table-column prop="inspectionQuantity" label="检验数量" min-width="105" align="right" />
-          <el-table-column prop="goodQuantity" label="良品" min-width="90" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodQuantity }}</span></template></el-table-column>
-          <el-table-column prop="defectiveQuantity" label="不良" min-width="90" align="right"><template #default="scope"><span :class="{ 'bad-text': scope.row.defectiveQuantity > 0 }">{{ scope.row.defectiveQuantity }}</span></template></el-table-column>
-          <el-table-column label="结果" min-width="90"><template #default="scope"><el-tag :type="scope.row.verdict === 'PASS' ? 'success' : 'danger'">{{ scope.row.verdict }}</el-tag></template></el-table-column>
-          <el-table-column prop="defectSummary" label="缺陷说明" min-width="180"><template #default="scope">{{ scope.row.defectSummary || '—' }}</template></el-table-column>
-          <el-table-column prop="inspectedBy" label="检验员" min-width="110"><template #default="scope">{{ scope.row.inspectedBy || '—' }}</template></el-table-column>
-        </el-table>
-      </div>
+      <template v-if="recordSource === 'probe'">
+        <p class="summary-footnote">飞针机自动上报测试计数；这些记录尚未形成 FQC 检验结论。</p>
+        <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
+        <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
+        <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap">
+          <el-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
+            <el-table-column label="QMS 接收时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
+            <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column prop="equipmentCode" label="检测设备" min-width="125" />
+            <el-table-column label="料号" min-width="155"><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="已测" min-width="95" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
+            <el-table-column label="好板" min-width="95" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="坏板" min-width="95" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
+            <el-table-column prop="sourceRecordNo" label="来源记录号" min-width="260" show-overflow-tooltip />
+          </el-table>
+        </div>
+        <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
+      </template>
+      <template v-else>
+        <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
+        <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
+          <el-input v-model="recordKeyword" clearable placeholder="设备、工单、料号、任务号或检验员" />
+          <span>共 {{ filteredFinishedTestRecords.length }} 条已提交记录</span>
+        </div>
+        <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
+          <el-table :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的设备检测记录">
+            <el-table-column label="采集时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
+            <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
+            <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
+            <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
+            <el-table-column prop="productCode" label="料号" min-width="140"><template #default="scope">{{ scope.row.productCode || '—' }}</template></el-table-column>
+            <el-table-column prop="inspectionQuantity" label="检验数量" min-width="105" align="right" />
+            <el-table-column prop="goodQuantity" label="良品" min-width="90" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodQuantity }}</span></template></el-table-column>
+            <el-table-column prop="defectiveQuantity" label="不良" min-width="90" align="right"><template #default="scope"><span :class="{ 'bad-text': scope.row.defectiveQuantity > 0 }">{{ scope.row.defectiveQuantity }}</span></template></el-table-column>
+            <el-table-column label="结果" min-width="90"><template #default="scope"><el-tag :type="scope.row.verdict === 'PASS' ? 'success' : 'danger'">{{ scope.row.verdict }}</el-tag></template></el-table-column>
+            <el-table-column prop="defectSummary" label="缺陷说明" min-width="180"><template #default="scope">{{ scope.row.defectSummary || '—' }}</template></el-table-column>
+            <el-table-column prop="inspectedBy" label="检验员" min-width="110"><template #default="scope">{{ scope.row.inspectedBy || '—' }}</template></el-table-column>
+          </el-table>
+        </div>
+      </template>
     </el-card>
 
     <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card summary-table-card">

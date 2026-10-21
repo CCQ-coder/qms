@@ -81,7 +81,8 @@ public class EquipmentTelemetryQueryApplicationService {
             toTime,
             cursor == null ? null : cursor.receivedAt(),
             cursor == null ? null : cursor.id(),
-            pageSize + 1
+            pageSize + 1,
+            StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null
         );
         boolean hasMore = rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
@@ -119,7 +120,9 @@ public class EquipmentTelemetryQueryApplicationService {
             decimalAttribute(attributes, "runtimeSeconds"),
             decimalAttribute(attributes, "routeLength"),
             textAttribute(attributes, "legacyScreenText") != null
-                ? textAttribute(attributes, "legacyScreenText") : record.getAlarmMessage()
+                ? textAttribute(attributes, "legacyScreenText") : record.getAlarmMessage(),
+            integerAttribute(attributes, "goodBoardCount"),
+            integerAttribute(attributes, "badBoardCount")
         );
     }
 
@@ -143,6 +146,12 @@ public class EquipmentTelemetryQueryApplicationService {
         JsonNode value = attributes.path(name);
         if (!value.isNumber()) return null;
         return value.decimalValue();
+    }
+
+    private Integer integerAttribute(JsonNode attributes, String name) {
+        if (attributes == null) return null;
+        JsonNode value = attributes.path(name);
+        return value.isIntegralNumber() && value.canConvertToInt() ? value.intValue() : null;
     }
 
     private String encodeCursor(EquipmentTelemetryRecord record) {
