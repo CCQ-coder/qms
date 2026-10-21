@@ -15,6 +15,10 @@ public class GatewayIntegrationAuthentication {
         this.sharedToken = sharedToken;
     }
 
+    public boolean isConfigured() {
+        return StringUtils.hasText(sharedToken);
+    }
+
     public void verify(String suppliedToken) {
         if (!StringUtils.hasText(sharedToken)) {
             throw new AccessDeniedException("数据同步网关认证未配置");
