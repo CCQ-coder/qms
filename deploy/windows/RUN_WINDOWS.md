@@ -54,6 +54,8 @@ Start-ScheduledTask -TaskName QMS-Windows
 
 ## 查看状态和日志
 
+飞针机遥测需要在 QMS 服务器现有 `.env.windows` 中同时配置 `QMS_GATEWAY_SHARED_TOKEN` 和 `QMS_GATEWAY_TELEMETRY_TENANT_CODE`，后者填写设备所属的 ACTIVE 租户编码；修改后重启 QMS。采集器的 Bearer Token 留空。先检查健康接口，再确认一条待发记录返回 2xx、待发数下降，并在对应租户找到记录。保留旧包和原配置用于回退。详细要求见 [WINDOWS_DEPLOYMENT.md](WINDOWS_DEPLOYMENT.md#飞针机遥测网关)。
+
 打开 `http://127.0.0.1:8080/actuator/health` 检查服务。日志位于解压目录的 `logs\qms-api.log`。查看最近 200 行：
 
 ```powershell

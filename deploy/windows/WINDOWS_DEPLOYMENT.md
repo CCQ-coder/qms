@@ -36,6 +36,14 @@
 
 5. 如需局域网访问，在管理员 PowerShell 中按实际端口建立 Windows 防火墙入站规则。若跨不可信网络使用，请在前面配置 HTTPS 反向代理并限制访问来源，不要直接公开 HTTP 端口。
 
+## 飞针机遥测网关
+
+飞针机采集器向 `POST /api/v1/equipment/telemetry` 发送 `X-Gateway-Token`，其 Bearer Token 可以留空。在 QMS 服务器**现有**的私有 `.env.windows` 中同时设置 `QMS_GATEWAY_SHARED_TOKEN`（必须与采集器一致）和 `QMS_GATEWAY_TELEMETRY_TENANT_CODE`（该设备所属的 ACTIVE 租户编码，例如 `customer-b`），然后重启 QMS。不要用示例文件覆盖现有配置，也不要把真实令牌写进 ZIP、日志或版本库。租户编码只由服务端配置决定，采集器请求中的租户字段不会决定写入位置。
+
+更新前备份现有 QMS 包、`.env.windows`、`data\uploads` 和数据库；停止旧服务后再替换包，保留原有登录密钥和数据目录。重启后先访问 `/actuator/health`，再让采集器重试一条待发送记录：确认同步记录为 HTTP 2xx、待发送数下降，且 QMS 中该租户出现对应记录。若仍为 401，核对两端网关令牌；503 表示服务端令牌或租户配置缺失；403 表示指定租户不存在或已停用。验证失败时恢复旧 QMS 包与 `.env.windows`，采集器未成功的数据仍留在本地队列。
+
+现场使用 HTTP 时，网关令牌会以明文经过网络。将 8080 入站规则限定为采集器及其他受控内网来源，并安排 HTTPS；不要对公网开放该端口。
+
 ## 开机启动
 
 首次手动启动确认成功后，用**管理员 PowerShell** 在解压目录运行：

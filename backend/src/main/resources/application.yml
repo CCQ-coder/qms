@@ -72,6 +72,7 @@ qms:
   integration:
     gateway:
       shared-token: ${QMS_GATEWAY_SHARED_TOKEN:}
+      telemetry-tenant-code: ${QMS_GATEWAY_TELEMETRY_TENANT_CODE:}
     btf-hessian:
       # WorkingMonitor.exe cannot send a token or tenant identifier. Keep this endpoint closed
       # until explicit source addresses are supplied, and bind it to one customer tenant.
