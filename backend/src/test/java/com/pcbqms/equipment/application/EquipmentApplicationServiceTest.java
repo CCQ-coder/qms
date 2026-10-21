@@ -78,8 +78,6 @@ class EquipmentApplicationServiceTest {
         Equipment equipment = equipment("eq-1", "FQC");
         when(equipmentMapper.selectById("eq-1")).thenReturn(equipment);
         when(maintenanceMapper.selectCount(any())).thenReturn(0L);
-        when(inspectionAccessScopeService.currentAccess()).thenReturn(
-            new InspectionAccessScopeService.InspectionAccess("admin.a", "TENANT_ADMIN", true, Set.of()));
         EquipmentApplicationService service = service();
 
         service.deleteEquipment("eq-1");
@@ -93,8 +91,6 @@ class EquipmentApplicationServiceTest {
         Equipment equipment = equipment("eq-1", "FQC");
         when(equipmentMapper.selectById("eq-1")).thenReturn(equipment);
         when(maintenanceMapper.selectCount(any())).thenReturn(1L);
-        when(inspectionAccessScopeService.currentAccess()).thenReturn(
-            new InspectionAccessScopeService.InspectionAccess("admin.a", "TENANT_ADMIN", true, Set.of()));
         EquipmentApplicationService service = service();
 
         assertThatIllegalArgumentException().isThrownBy(() -> service.deleteEquipment("eq-1"))
