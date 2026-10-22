@@ -1,6 +1,10 @@
 spring:
   application:
     name: qms-api
+  task:
+    scheduling:
+      pool:
+        size: 3
   datasource:
     url: ${QMS_DB_URL:jdbc:mysql://localhost:3306/qms?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     username: ${QMS_DB_USERNAME:root}

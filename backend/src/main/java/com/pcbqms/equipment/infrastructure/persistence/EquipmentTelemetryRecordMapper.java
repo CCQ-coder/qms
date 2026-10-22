@@ -1,6 +1,7 @@
 package com.pcbqms.equipment.infrastructure.persistence;
 
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -25,6 +26,17 @@ public interface EquipmentTelemetryRecordMapper {
         ) ON DUPLICATE KEY UPDATE id = id
         """)
     int insertIfAbsent(EquipmentTelemetryRecord record);
+
+    /** Affected-row counts for no-op upserts vary with MySQL CLIENT_FOUND_ROWS. Check the persisted UUID. */
+    @Select("""
+        SELECT id FROM qms_equipment_telemetry
+        WHERE tenant_code = #{tenantCode} AND equipment_id = #{equipmentId}
+          AND deduplication_key = #{deduplicationKey}
+        LIMIT 1
+        """)
+    String selectIdByDeduplicationKey(
+        @Param("tenantCode") String tenantCode, @Param("equipmentId") String equipmentId,
+        @Param("deduplicationKey") String deduplicationKey);
 
     @Select("""
         SELECT id, tenant_code, equipment_id, source_username, machine_name, device_time, received_at,
@@ -82,5 +94,21 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("cursorId") String cursorId,
         @Param("limit") int limit,
         @Param("eventType") String eventType
+    );
+
+    @Select("""
+        <script>
+        SELECT telemetry_id, status, reason, inspection_record_id, delta_tested
+        FROM qms_flying_probe_projection
+        WHERE tenant_code = #{tenantCode}
+          AND telemetry_id IN
+          <foreach collection="telemetryIds" item="telemetryId" open="(" separator="," close=")">
+            #{telemetryId}
+          </foreach>
+        </script>
+        """)
+    List<EquipmentTelemetryProjectionStatus> selectProjectionStatuses(
+        @Param("tenantCode") String tenantCode,
+        @Param("telemetryIds") List<String> telemetryIds
     );
 }

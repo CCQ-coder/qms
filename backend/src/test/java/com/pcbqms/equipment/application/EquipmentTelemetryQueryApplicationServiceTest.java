@@ -13,6 +13,7 @@ import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.api.EquipmentTelemetryHistoryQuery;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
 import java.time.LocalDateTime;
@@ -124,5 +125,41 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         assertThat(mockingDetails(telemetryRecordMapper).getInvocations()).singleElement().satisfies(invocation ->
             assertThat(Arrays.asList(invocation.getArguments())).contains("FLYING_PROBE_TEST_COUNTERS")
         );
+    }
+
+    @Test
+    void includesFlyingProbeConversionDiagnosisInHistoryPage() {
+        TenantContext.set("customer-b", "admin");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        equipment.setAssetNo("WTD-1");
+        EquipmentTelemetryRecord record = new EquipmentTelemetryRecord();
+        record.setId("telemetry-1");
+        record.setEquipmentId("equipment-1");
+        record.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        record.setReceivedAt(LocalDateTime.of(2026, 10, 22, 9, 30));
+        EquipmentTelemetryProjectionStatus projection = new EquipmentTelemetryProjectionStatus();
+        projection.setTelemetryId("telemetry-1");
+        projection.setStatus("RETRYABLE");
+        projection.setReason("客户品号精确匹配生产指令数量为 0，必须恰好为 1");
+
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
+        when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
+            eq("FLYING_PROBE_TEST_COUNTERS"))).thenReturn(List.of(record));
+        when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("telemetry-1")))
+            .thenReturn(List.of(projection));
+
+        var page = new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "FLYING_PROBE_TEST_COUNTERS"));
+
+        assertThat(page.items()).singleElement().satisfies(item -> {
+            assertThat(item.fqcProjectionStatus()).isEqualTo("RETRYABLE");
+            assertThat(item.fqcProjectionReason()).contains("匹配生产指令数量为 0");
+            assertThat(item.fqcInspectionRecordId()).isNull();
+        });
     }
 }

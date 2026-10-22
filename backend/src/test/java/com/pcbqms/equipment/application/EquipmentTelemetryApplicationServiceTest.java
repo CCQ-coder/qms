@@ -23,6 +23,7 @@ import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordM
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetrySummaryMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,7 +51,13 @@ class EquipmentTelemetryApplicationServiceTest {
         Equipment equipment = equipment();
         when(gatewayMappingService.resolve("operator-7", "cnc-01"))
             .thenReturn(new EquipmentGatewayMappingApplicationService.ResolvedEquipment(equipment, new EquipmentGatewayMapping()));
-        when(telemetryRecordMapper.insertIfAbsent(any())).thenReturn(1);
+        AtomicReference<String> insertedId = new AtomicReference<>();
+        when(telemetryRecordMapper.insertIfAbsent(any())).thenAnswer(call -> {
+            insertedId.set(((EquipmentTelemetryRecord) call.getArgument(0)).getId());
+            return 1;
+        });
+        when(telemetryRecordMapper.selectIdByDeduplicationKey(any(), any(), any()))
+            .thenAnswer(call -> insertedId.get());
         when(runtimeStatusMapper.selectOne(any())).thenReturn(null);
 
         var result = service().receive(new EquipmentTelemetryRequest(List.of(event("ALARM", "ALARM", "42"))));
@@ -85,6 +92,22 @@ class EquipmentTelemetryApplicationServiceTest {
         verify(runtimeStatusMapper, never()).insert(any(EquipmentRuntimeStatus.class));
         verify(businessEventMapper, never()).insertWithPayload(any(EquipmentBusinessEvent.class));
         verify(equipmentAlertMapper, never()).insert(any(EquipmentAlert.class));
+    }
+
+    @Test
+    void reportsDuplicateWhenMysqlFoundRowsReturnsOneForNoOpUpsert() {
+        TenantContext.set("customer-a", "gateway.service");
+        when(gatewayMappingService.resolve("operator-7", "cnc-01"))
+            .thenReturn(new EquipmentGatewayMappingApplicationService.ResolvedEquipment(equipment(), new EquipmentGatewayMapping()));
+        when(telemetryRecordMapper.insertIfAbsent(any())).thenReturn(1);
+        when(telemetryRecordMapper.selectIdByDeduplicationKey(any(), any(), any())).thenReturn("original-row-id");
+
+        var result = service().receive(new EquipmentTelemetryRequest(List.of(event("ALARM", "ALARM", "42"))));
+
+        assertThat(result.acceptedCount()).isZero();
+        assertThat(result.duplicateCount()).isEqualTo(1);
+        verify(runtimeStatusMapper, never()).insert(any(EquipmentRuntimeStatus.class));
+        verify(telemetrySummaryMapper, never()).upsertMinute(any());
     }
 
     private EquipmentTelemetryApplicationService service() {

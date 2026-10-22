@@ -32,8 +32,10 @@ public class InspectionTaskController {
     }
 
     @GetMapping("/completed-finished-records")
-    public ApiResponse<List<FinishedTestInspectionRecordResponse>> listCompletedFinishedRecords() {
-        return ApiResponse.of(inspectionApplicationService.listCompletedFinishedRecords());
+    public ApiResponse<FinishedTestRecordPage> listCompletedFinishedRecords(
+        @RequestParam(defaultValue = "100") int limit, @RequestParam(required = false) String cursor
+    ) {
+        return ApiResponse.of(inspectionApplicationService.listCompletedFinishedRecords(limit, cursor));
     }
 
     @PostMapping
