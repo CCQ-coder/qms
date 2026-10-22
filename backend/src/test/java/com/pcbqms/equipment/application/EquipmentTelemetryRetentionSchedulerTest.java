@@ -14,6 +14,21 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 class EquipmentTelemetryRetentionSchedulerTest {
     @Test
+    void rawCleanupSeparatesLimitFromBatchSize() {
+        JdbcTemplate jdbcTemplate = org.mockito.Mockito.mock(JdbcTemplate.class);
+        EquipmentTelemetryRetentionScheduler scheduler = new EquipmentTelemetryRetentionScheduler(jdbcTemplate);
+        ReflectionTestUtils.setField(scheduler, "cleanupBatchSize", 100);
+        ReflectionTestUtils.setField(scheduler, "cleanupMaxBatches", 1);
+        when(jdbcTemplate.update(anyString(), any(LocalDateTime.class))).thenReturn(0);
+
+        scheduler.removeExpiredRecords();
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate, org.mockito.Mockito.times(2)).update(sql.capture(), any(LocalDateTime.class));
+        assertThat(sql.getAllValues().getFirst()).containsPattern("\\bLIMIT\\s+100\\b");
+    }
+
+    @Test
     void rawCleanupKeepsFlyingProbeEventsUntilTheirProjectionIsDurable() {
         JdbcTemplate jdbcTemplate = org.mockito.Mockito.mock(JdbcTemplate.class);
         EquipmentTelemetryRetentionScheduler scheduler = new EquipmentTelemetryRetentionScheduler(jdbcTemplate);

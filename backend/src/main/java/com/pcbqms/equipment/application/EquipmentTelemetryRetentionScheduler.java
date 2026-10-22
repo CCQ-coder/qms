@@ -21,7 +21,8 @@ public class EquipmentTelemetryRetentionScheduler {
                OR EXISTS (SELECT 1 FROM qms_flying_probe_projection projection
                           WHERE projection.telemetry_id = qms_equipment_telemetry.id
                             AND projection.tenant_code = qms_equipment_telemetry.tenant_code))
-        LIMIT """;
+        LIMIT
+        """;
     private static final String DELETE_MINUTE_SQL = "DELETE FROM qms_equipment_telemetry_minute_summary WHERE bucket_start < ? LIMIT ";
 
     private final JdbcTemplate jdbcTemplate;
