@@ -138,25 +138,45 @@ public class FlyingProbeInspectionProjectionService {
             retryLater(projection, "同一飞针文件的更早快照仍待匹配", now);
             return;
         }
-        String materialKey = projection.getMaterialNo().trim().toUpperCase(Locale.ROOT);
-        List<WorkOrder> candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+        String materialKey = normalizeMaterialKey(projection.getMaterialNo());
+        FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
+        WorkOrder workOrder;
+        if (run == null) {
+            List<WorkOrder> candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+                    .eq(WorkOrder::getTenantCode, projection.getTenantCode())
+                    .apply("internal_product_no_match_key = {0}", materialKey))
+                .stream().filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
+                .toList();
+            if (candidates.size() != 1) {
+                retryLater(projection, "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
+                return;
+            }
+            workOrder = candidates.getFirst();
+        } else {
+            if (!"ACTIVE".equals(run.getStatus())) {
+                skip(projection, "文件批次已因计数回退停止自动投影：" + run.getReason(), now);
+                return;
+            }
+            if (!projection.getTenantCode().equals(run.getTenantCode())
+                || !projection.getEquipmentId().equals(run.getEquipmentId())
+                || !materialKey.equals(normalizeMaterialKey(run.getMaterialNo()))) {
+                retryLater(projection, "文件批次来源或工单映射发生变化，需人工核对", now);
+                return;
+            }
+            workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
                 .eq(WorkOrder::getTenantCode, projection.getTenantCode())
-                .apply("UPPER(TRIM(customer_part_no)) = {0}", materialKey))
-            .stream().filter(order -> order.getCustomerPartNo() != null
-                && materialKey.equals(order.getCustomerPartNo().trim().toUpperCase(Locale.ROOT))).toList();
-        if (candidates.size() != 1) {
-            retryLater(projection, "客户品号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
-            return;
+                .eq(WorkOrder::getWorkOrderNo, run.getWorkOrderNo()));
+            if (workOrder == null
+                || !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))) {
+                retryLater(projection, "文件批次工单映射发生变化，需人工核对", now);
+                return;
+            }
         }
-        WorkOrder workOrder = candidates.getFirst();
         List<ProductionBatch> batches = productionBatchMapper.selectList(Wrappers.lambdaQuery(ProductionBatch.class)
             .eq(ProductionBatch::getTenantCode, projection.getTenantCode())
             .eq(ProductionBatch::getWorkOrderId, workOrder.getId())
             .eq(ProductionBatch::getStatus, "ACTIVE"));
         ProductionBatch batch = batches.size() == 1 ? batches.getFirst() : null;
-        projection.setWorkOrderNo(workOrder.getWorkOrderNo());
-        projection.setBatchNo(batch == null ? null : batch.getBatchNo());
-
         InspectionTemplate template = templateMapper.selectOne(Wrappers.lambdaQuery(InspectionTemplate.class)
             .eq(InspectionTemplate::getTenantCode, projection.getTenantCode())
             .eq(InspectionTemplate::getTemplateCode, TEMPLATE_CODE)
@@ -167,28 +187,32 @@ public class FlyingProbeInspectionProjectionService {
             return;
         }
 
-        FlyingProbeRun newRun = new FlyingProbeRun();
-        newRun.setRunKey(projection.getRunKey());
-        newRun.setTenantCode(projection.getTenantCode());
-        newRun.setEquipmentId(projection.getEquipmentId());
-        newRun.setSourceFile(snapshot.sourceFile());
-        newRun.setSourceStartTime(snapshot.startTime());
-        newRun.setMaterialNo(projection.getMaterialNo());
-        newRun.setWorkOrderNo(workOrder.getWorkOrderNo());
-        newRun.setUpdatedAt(now);
-        projectionMapper.insertRunIfAbsent(newRun);
-        FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
+        if (run == null) {
+            FlyingProbeRun newRun = new FlyingProbeRun();
+            newRun.setRunKey(projection.getRunKey());
+            newRun.setTenantCode(projection.getTenantCode());
+            newRun.setEquipmentId(projection.getEquipmentId());
+            newRun.setSourceFile(snapshot.sourceFile());
+            newRun.setSourceStartTime(snapshot.startTime());
+            newRun.setMaterialNo(projection.getMaterialNo());
+            newRun.setWorkOrderNo(workOrder.getWorkOrderNo());
+            newRun.setUpdatedAt(now);
+            projectionMapper.insertRunIfAbsent(newRun);
+            run = projectionMapper.lockRun(projection.getRunKey());
+        }
         if (!"ACTIVE".equals(run.getStatus())) {
             skip(projection, "文件批次已因计数回退停止自动投影：" + run.getReason(), now);
             return;
         }
         if (!projection.getTenantCode().equals(run.getTenantCode())
             || !projection.getEquipmentId().equals(run.getEquipmentId())
-            || !projection.getMaterialNo().equals(run.getMaterialNo())
+            || !materialKey.equals(normalizeMaterialKey(run.getMaterialNo()))
             || !workOrder.getWorkOrderNo().equals(run.getWorkOrderNo())) {
             retryLater(projection, "文件批次来源或工单映射发生变化，需人工核对", now);
             return;
         }
+        projection.setWorkOrderNo(workOrder.getWorkOrderNo());
+        projection.setBatchNo(batch == null ? null : batch.getBatchNo());
         // The first retained sample of an old file is only a baseline. Its earlier
         // increments may have expired from raw telemetry, so their quantity is unknown.
         if (run.getLastDeviceTime() == null && snapshot.startTime().isBefore(now.minusDays(rawRetentionDays))) {
@@ -347,6 +371,10 @@ public class FlyingProbeInspectionProjectionService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 不可用", exception);
         }
+    }
+
+    private String normalizeMaterialKey(String materialNo) {
+        return StringUtils.hasText(materialNo) ? materialNo.trim().toUpperCase(Locale.ROOT) : null;
     }
 
     private void skip(FlyingProbeProjection projection, String reason, LocalDateTime now) {
