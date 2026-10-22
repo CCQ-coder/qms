@@ -52,7 +52,13 @@ public class EquipmentTelemetryApplicationService {
             LocalDateTime now = LocalDateTime.now();
             String payload = serialize(event);
             EquipmentTelemetryRecord record = toRecord(event, equipment, now, payload);
-            if (telemetryRecordMapper.insertIfAbsent(record) == 0) {
+            int affectedRows = telemetryRecordMapper.insertIfAbsent(record);
+            String persistedId = affectedRows == 0 ? null : telemetryRecordMapper.selectIdByDeduplicationKey(
+                record.getTenantCode(), record.getEquipmentId(), record.getDeduplicationKey());
+            if (affectedRows != 0 && persistedId == null) {
+                throw new IllegalStateException("设备遥测写入后无法读取去重记录");
+            }
+            if (affectedRows == 0 || !record.getId().equals(persistedId)) {
                 duplicateCount++;
                 continue;
             }

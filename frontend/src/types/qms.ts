@@ -433,6 +433,10 @@ export type EquipmentTelemetryRecord = {
   screenText?: string
   sourceRecordNo?: string
   rawPayload?: string
+  fqcProjectionStatus?: string | null
+  fqcProjectionReason?: string | null
+  fqcInspectionRecordId?: string | null
+  fqcDeltaTested?: number | null
 }
 
 export type EquipmentTelemetryHistoryQuery = {

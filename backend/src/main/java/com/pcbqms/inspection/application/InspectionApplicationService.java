@@ -11,6 +11,7 @@ import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
 import com.pcbqms.inspection.api.CreateInspectionTaskRequest;
 import com.pcbqms.inspection.api.FinishedTestInspectionRecordResponse;
+import com.pcbqms.inspection.api.FinishedTestRecordPage;
 import com.pcbqms.inspection.api.InspectionRecordResponse;
 import com.pcbqms.inspection.api.InspectionTaskResponse;
 import com.pcbqms.inspection.api.ProcessInspectionRecordResponse;
@@ -33,6 +34,9 @@ import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -115,27 +119,63 @@ public class InspectionApplicationService {
      * The response is intentionally joined with task and work-order context so the
      * workstation page can show the same audit fields as the device feed.
      */
-    public List<FinishedTestInspectionRecordResponse> listCompletedFinishedRecords() {
+    public FinishedTestRecordPage listCompletedFinishedRecords(int limit, String cursor) {
+        if (limit < 1 || limit > 200) {
+            throw new IllegalArgumentException("每页记录数必须为 1 到 200");
+        }
         String tenantCode = TenantContext.tenantCode();
         InspectionAccessScopeService.InspectionAccess access = inspectionAccessScopeService.currentAccess();
-        List<InspectionTask> tasks = inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)
-                .eq(InspectionTask::getTenantCode, tenantCode)
-                .eq(InspectionTask::getStatus, "COMPLETED"))
-            .stream()
-            .filter(task -> isFinishedTestTask(task) && (access.fullDataAccess() || access.canAccess(task.getProcessCode())))
-            .toList();
-        if (tasks.isEmpty()) {
-            return List.of();
+        if (!access.fullDataAccess() && access.processCodes().isEmpty()) {
+            return new FinishedTestRecordPage(List.of(), null);
         }
-        Map<String, InspectionTask> tasksById = tasks.stream()
-            .collect(java.util.stream.Collectors.toMap(InspectionTask::getId, task -> task));
-        return inspectionRecordMapper.selectList(Wrappers.lambdaQuery(InspectionRecord.class)
-                .eq(InspectionRecord::getTenantCode, tenantCode)
-                .in(InspectionRecord::getTaskId, tasksById.keySet())
-                .orderByDesc(InspectionRecord::getInspectedAt))
-            .stream()
-            .map(record -> toFinishedTestRecordResponse(record, tasksById.get(record.getTaskId())))
-            .toList();
+        LocalDateTime cursorTime = null;
+        String cursorId = null;
+        if (StringUtils.hasText(cursor)) {
+            try {
+                String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+                int separator = decoded.indexOf('|');
+                cursorTime = LocalDateTime.parse(decoded.substring(0, separator));
+                cursorId = decoded.substring(separator + 1);
+                if (cursorId.isBlank()) throw new IllegalArgumentException("分页游标无效");
+            } catch (RuntimeException exception) {
+                throw new IllegalArgumentException("分页游标无效", exception);
+            }
+        }
+        List<String> processCodes = access.fullDataAccess() ? null : new ArrayList<>(access.processCodes());
+        List<InspectionRecord> fetched = inspectionRecordMapper.selectFinishedPage(
+            tenantCode, processCodes, cursorTime, cursorId, limit + 1);
+        boolean hasMore = fetched.size() > limit;
+        List<InspectionRecord> records = hasMore ? fetched.subList(0, limit) : fetched;
+        if (records.isEmpty()) {
+            return new FinishedTestRecordPage(List.of(), null);
+        }
+        List<String> taskIds = records.stream().map(InspectionRecord::getTaskId).distinct().toList();
+        Map<String, InspectionTask> tasksById = inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)
+                .eq(InspectionTask::getTenantCode, tenantCode).in(InspectionTask::getId, taskIds))
+            .stream().collect(java.util.stream.Collectors.toMap(InspectionTask::getId, task -> task));
+        List<String> workOrderIds = tasksById.values().stream().map(InspectionTask::getWorkOrderId)
+            .filter(StringUtils::hasText).distinct().toList();
+        Map<String, WorkOrder> workOrdersById = workOrderIds.isEmpty() ? Map.of()
+            : workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+                .eq(WorkOrder::getTenantCode, tenantCode).in(WorkOrder::getId, workOrderIds))
+                .stream().collect(java.util.stream.Collectors.toMap(WorkOrder::getId, order -> order));
+        List<String> batchIds = tasksById.values().stream().map(InspectionTask::getBatchId)
+            .filter(StringUtils::hasText).distinct().toList();
+        Map<String, ProductionBatch> batchesById = batchIds.isEmpty() ? Map.of()
+            : productionBatchMapper.selectList(Wrappers.lambdaQuery(ProductionBatch.class)
+                .eq(ProductionBatch::getTenantCode, tenantCode).in(ProductionBatch::getId, batchIds))
+                .stream().collect(java.util.stream.Collectors.toMap(ProductionBatch::getId, batch -> batch));
+        List<FinishedTestInspectionRecordResponse> items = records.stream()
+            .map(record -> {
+                InspectionTask task = tasksById.get(record.getTaskId());
+                return toFinishedTestRecordResponse(record,
+                    task == null ? null : workOrdersById.get(task.getWorkOrderId()),
+                    task == null || !StringUtils.hasText(task.getBatchId()) ? null : batchesById.get(task.getBatchId()), task);
+            }).toList();
+        InspectionRecord last = records.getLast();
+        String nextCursor = hasMore ? Base64.getUrlEncoder().withoutPadding().encodeToString(
+            (last.getInspectedAt() + "|" + last.getId()).getBytes(StandardCharsets.UTF_8)) : null;
+        return new FinishedTestRecordPage(items, nextCursor);
     }
 
     @Transactional
@@ -170,6 +210,23 @@ public class InspectionApplicationService {
 
     @Transactional
     public InspectionRecordResponse submitRecord(String taskId, CreateInspectionRecordRequest request) {
+        return submitRecordAt(taskId, request, null);
+    }
+
+    /** Shares manual validation, idempotency, and NCR behavior with the flying-probe projection. */
+    @Transactional
+    public InspectionRecordResponse submitAutomaticRecord(
+        String taskId, CreateInspectionRecordRequest request, LocalDateTime deviceInspectionTime
+    ) {
+        if (!"admin".equals(TenantContext.actor()) || deviceInspectionTime == null) {
+            throw new IllegalArgumentException("飞针自动检验必须由 admin 以设备检测时间提交");
+        }
+        return submitRecordAt(taskId, request, deviceInspectionTime);
+    }
+
+    private InspectionRecordResponse submitRecordAt(
+        String taskId, CreateInspectionRecordRequest request, LocalDateTime deviceInspectionTime
+    ) {
         String tenantCode = TenantContext.tenantCode();
         InspectionTask task = inspectionTaskMapper.selectById(taskId);
         if (task == null || !tenantCode.equals(task.getTenantCode())) {
@@ -205,7 +262,7 @@ public class InspectionApplicationService {
         record.setEquipmentAssetNo(resolveEquipmentAssetNo(task, request.equipmentAssetNo()));
         record.setClientRequestId(request.clientRequestId());
         record.setInspectedBy(TenantContext.actor());
-        record.setInspectedAt(now);
+        record.setInspectedAt(deviceInspectionTime == null ? now : deviceInspectionTime);
         record.setCreatedAt(now);
         inspectionRecordMapper.insert(record);
         inspectionAttachmentApplicationService.linkToInspectionRecord(record.getId(), request.attachmentUrls());
@@ -283,11 +340,13 @@ public class InspectionApplicationService {
         );
     }
 
-    private FinishedTestInspectionRecordResponse toFinishedTestRecordResponse(InspectionRecord record, InspectionTask task) {
-        WorkOrder workOrder = task == null ? null : workOrderMapper.selectById(task.getWorkOrderId());
-        ProductionBatch batch = task != null && StringUtils.hasText(task.getBatchId())
-            ? productionBatchMapper.selectById(task.getBatchId()) : null;
-        int inspectionQuantity = batch != null && batch.getPlannedQuantity() != null ? batch.getPlannedQuantity()
+    private FinishedTestInspectionRecordResponse toFinishedTestRecordResponse(
+        InspectionRecord record, WorkOrder workOrder, ProductionBatch batch, InspectionTask task
+    ) {
+        Map<String, Object> results = readResults(record.getResultsJson());
+        Object actualQuantity = results.get("inspectionQuantity");
+        int inspectionQuantity = actualQuantity instanceof Integer quantity && quantity >= 0 ? quantity
+            : batch != null && batch.getPlannedQuantity() != null ? batch.getPlannedQuantity()
             : workOrder != null && workOrder.getPlannedQuantity() != null ? workOrder.getPlannedQuantity() : 0;
         int defectiveQuantity = Math.max(record.getDefectiveQuantity() == null ? 0 : record.getDefectiveQuantity(), 0);
         return new FinishedTestInspectionRecordResponse(
@@ -297,7 +356,7 @@ public class InspectionApplicationService {
             workOrder == null ? null : firstNonBlank(workOrder.getCustomerPartNo(), workOrder.getProductCode()),
             inspectionQuantity, Math.max(inspectionQuantity - defectiveQuantity, 0), defectiveQuantity,
             record.getVerdict(), record.getDefectSummary(), record.getDefectLocation(), record.getInspectedBy(),
-            readResults(record.getResultsJson())
+            results
         );
     }
 
