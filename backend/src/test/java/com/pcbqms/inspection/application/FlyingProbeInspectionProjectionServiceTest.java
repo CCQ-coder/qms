@@ -66,7 +66,8 @@ class FlyingProbeInspectionProjectionServiceTest {
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder()));
         when(productionBatchMapper.selectList(any())).thenReturn(List.of());
         FlyingProbeRun run = run();
-        when(projectionMapper.lockRun(any())).thenReturn(run);
+        when(projectionMapper.lockRun(any())).thenReturn(null, run, run);
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
         when(inspectionApplicationService.submitAutomaticRecord(any(), any(), any())).thenAnswer(call ->
             new InspectionRecordResponse(call.getArgument(0), call.getArgument(0),
                 ((CreateInspectionRecordRequest) call.getArgument(1)).verdict(), 0, null, null, null,
@@ -113,7 +114,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void matchesCustomerPartIgnoringCaseAndOuterSpaces() {
+    void matchesInternalProductNumberIgnoringCaseAndOuterSpaces() {
         TenantContext.set("tenant-a", "admin");
         var now = LocalDateTime.now();
         var telemetry = event("normalized", now.minusHours(1), now.minusMinutes(1), 3, 3, 0);
@@ -122,12 +123,13 @@ class FlyingProbeInspectionProjectionServiceTest {
         when(projectionMapper.lockProjection("normalized")).thenReturn(projection);
         validEquipment();
         WorkOrder order = workOrder();
-        order.setCustomerPartNo("P2L046907A");
+        order.setInternalProductNo("P2L046907A");
+        order.setCustomerPartNo("CUSTOMER-PART-OTHER");
         when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
 
         service().projectNew(telemetry);
 
-        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-1");
+        assertThat(projection.getReason()).contains("专用飞针电测检验模板");
     }
 
     @Test
@@ -141,13 +143,82 @@ class FlyingProbeInspectionProjectionServiceTest {
         WorkOrder secondOrder = workOrder();
         secondOrder.setId("work-2");
         secondOrder.setWorkOrderNo("WO-2");
-        secondOrder.setCustomerPartNo(" part-1 ");
+        secondOrder.setInternalProductNo(" part-1 ");
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder(), secondOrder));
 
         service().projectNew(telemetry);
 
         assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
         assertThat(projection.getReason()).contains("数量为 2");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void productCodeAloneCannotMatchANewRun() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("product-only", now.minusHours(1), now.minusMinutes(1), 3, 3, 0);
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("product-only")).thenReturn(projection);
+        validEquipment();
+        WorkOrder order = workOrder();
+        order.setInternalProductNo("OTHER-PART");
+        order.setProductCode("PART-1");
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+        assertThat(projection.getReason()).contains("数量为 0");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void alreadyBoundRunKeepsItsWorkOrderWhenAnotherOrderWithSameInternalNumberAppears() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("bound", now.minusHours(1), now.minusMinutes(1), 5, 4, 1);
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("bound")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        FlyingProbeRun boundRun = run();
+        boundRun.setMaterialNo(" part-1 ");
+        boundRun.setLastDeviceTime(now.minusMinutes(2));
+        boundRun.setTestedCount(3);
+        boundRun.setGoodCount(3);
+        when(projectionMapper.lockRun(any())).thenReturn(boundRun);
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(inspectionApplicationService.submitAutomaticRecord(any(), any(), any())).thenAnswer(call ->
+            new InspectionRecordResponse("record-bound", call.getArgument(0), "FAIL", 1, null, null,
+                null, call.getArgument(2)));
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-1");
+        assertThat(projection.getDeltaTested()).isEqualTo(2);
+        verify(workOrderMapper, never()).selectList(any());
+        verify(taskMapper).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void alreadyBoundRunStopsIfItsPinnedOrderNoLongerMatchesInternalNumber() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("changed-order", now.minusHours(1), now.minusMinutes(1), 5, 4, 1);
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("changed-order")).thenReturn(projection);
+        validEquipment();
+        when(projectionMapper.lockRun(any())).thenReturn(run());
+        WorkOrder changed = workOrder();
+        changed.setInternalProductNo("OTHER-PART");
+        when(workOrderMapper.selectOne(any())).thenReturn(changed);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+        assertThat(projection.getReason()).contains("工单映射");
         verify(taskMapper, never()).insert(any(InspectionTask.class));
     }
 
@@ -162,7 +233,7 @@ class FlyingProbeInspectionProjectionServiceTest {
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder()));
         when(productionBatchMapper.selectList(any())).thenReturn(List.of());
         FlyingProbeRun run = run();
-        when(projectionMapper.lockRun(any())).thenReturn(run);
+        when(projectionMapper.lockRun(any())).thenReturn(null, run);
 
         service().projectNew(telemetry);
 
@@ -180,7 +251,7 @@ class FlyingProbeInspectionProjectionServiceTest {
         var projection = projection(telemetry);
         when(projectionMapper.lockProjection("reset")).thenReturn(projection);
         validEquipmentAndTemplate();
-        when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder()));
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
         when(productionBatchMapper.selectList(any())).thenReturn(List.of());
         FlyingProbeRun run = run();
         run.setLastDeviceTime(now.minusMinutes(2));
@@ -240,7 +311,8 @@ class FlyingProbeInspectionProjectionServiceTest {
         order.setId("work-1");
         order.setTenantCode("tenant-a");
         order.setWorkOrderNo("WO-1");
-        order.setCustomerPartNo("PART-1");
+        order.setInternalProductNo("PART-1");
+        order.setCustomerPartNo("CUSTOMER-PART-OTHER");
         return order;
     }
 
