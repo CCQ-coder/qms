@@ -49,6 +49,16 @@ class GatewayHostStatusApplicationServiceTest {
     }
 
     @Test
+    void recordRejectsHostThatExpandsBeyondColumnLength() {
+        GatewayHostStatusRequest request = new GatewayHostStatusRequest("ß".repeat(160),
+            OffsetDateTime.of(2026, 10, 22, 5, 0, 0, 0, ZoneOffset.UTC),
+            null, 100L, 50L, 80L, 40L, 3600L);
+
+        assertThatThrownBy(() -> service.record(request)).isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
     void upsertUsesTenantAndNormalizedHost() {
         service.record(sample(50L, 100L, 40L, 80L));
 

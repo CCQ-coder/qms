@@ -20,7 +20,9 @@ public class GatewayHostStatusApplicationService {
     }
 
     public void record(GatewayHostStatusRequest request) {
-        if (request == null || !StringUtils.hasText(request.hostName()) || request.hostName().trim().length() > 160
+        String hostName = request == null || request.hostName() == null ? null
+            : request.hostName().trim().toUpperCase(Locale.ROOT);
+        if (request == null || !StringUtils.hasText(hostName) || hostName.length() > 160
             || request.sampledAt() == null || request.cpuPercent() != null
                 && (request.cpuPercent().signum() < 0 || request.cpuPercent().compareTo(java.math.BigDecimal.valueOf(100)) > 0)
             || request.memoryTotalBytes() == null || request.memoryTotalBytes() <= 0
@@ -44,7 +46,7 @@ public class GatewayHostStatusApplicationService {
                 memory_available_bytes = VALUES(memory_available_bytes),
                 system_disk_total_bytes = VALUES(system_disk_total_bytes),
                 system_disk_free_bytes = VALUES(system_disk_free_bytes), uptime_seconds = VALUES(uptime_seconds)
-            """, TenantContext.tenantCode(), request.hostName().trim().toUpperCase(Locale.ROOT),
+            """, TenantContext.tenantCode(), hostName,
             Timestamp.from(request.sampledAt().toInstant()), Timestamp.from(Instant.now()), request.cpuPercent(),
             request.memoryTotalBytes(), request.memoryAvailableBytes(), request.systemDiskTotalBytes(),
             request.systemDiskFreeBytes(), request.uptimeSeconds());
