@@ -101,7 +101,7 @@ QMS 面向现场网关提供 HTTPS JSON 接口；不实现、不暴露也不需�
 }
 ```
 
-`cpuPercent` 在首次采样无法计算时可为 `null`。登录用户可用 `GET /api/v1/gateway/host-status` 读取本租户各电脑的最新状态，响应为 `{ "data": [...] }`，每条记录另含 `receivedAt`。应先部署包含此接口的 QMS，再启用采集端上报。
+`cpuPercent` 在首次采样无法计算时可为 `null`。登录用户可用 `GET /api/v1/gateway/host-status` 读取本租户各电脑的最新状态，响应为 `{ "data": [...] }`，每条记录另含 `receivedAt`。要把电脑状态关联到设备台账，先新增电脑设备，再在“设备网关映射”填写与 `hostName` 相同的 `machineName`（如 `SCBGX`）；查询结果会带出 `equipmentId`、`equipmentCode` 和 `equipmentName`，未映射时这三个字段为空。“设备管理 → 设备数据接入”展示最新电脑状态。应先部署包含此接口的 QMS，再启用采集端上报。
 
 `POST /api/v1/equipment/telemetry` 接收实时或批量遥测：
 

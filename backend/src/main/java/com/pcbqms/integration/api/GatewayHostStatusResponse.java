@@ -12,6 +12,9 @@ public record GatewayHostStatusResponse(
     long systemDiskTotalBytes,
     long systemDiskFreeBytes,
     long uptimeSeconds,
-    Instant receivedAt
+    Instant receivedAt,
+    String equipmentId,
+    String equipmentCode,
+    String equipmentName
 ) {
 }

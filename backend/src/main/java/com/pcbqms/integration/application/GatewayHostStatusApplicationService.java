@@ -54,14 +54,23 @@ public class GatewayHostStatusApplicationService {
 
     public List<GatewayHostStatusResponse> listLatest() {
         return jdbcTemplate.query("""
-            SELECT host_name, sampled_at, received_at, cpu_percent, memory_total_bytes,
-                   memory_available_bytes, system_disk_total_bytes, system_disk_free_bytes, uptime_seconds
-            FROM qms_gateway_host_status WHERE tenant_code = ? ORDER BY host_name
+            SELECT host.host_name, host.sampled_at, host.received_at, host.cpu_percent,
+                   host.memory_total_bytes, host.memory_available_bytes,
+                   host.system_disk_total_bytes, host.system_disk_free_bytes, host.uptime_seconds,
+                   equipment.id AS equipment_id, equipment.asset_no AS equipment_code,
+                   equipment.name AS equipment_name
+            FROM qms_gateway_host_status host
+            LEFT JOIN qms_equipment_gateway_mapping mapping
+                ON mapping.tenant_code = host.tenant_code AND mapping.machine_name = host.host_name
+            LEFT JOIN qms_equipment equipment
+                ON equipment.tenant_code = host.tenant_code AND equipment.id = mapping.equipment_id
+            WHERE host.tenant_code = ? ORDER BY host.host_name
             """, (row, index) -> new GatewayHostStatusResponse(
                 row.getString("host_name"), row.getTimestamp("sampled_at").toInstant(),
                 row.getBigDecimal("cpu_percent"), row.getLong("memory_total_bytes"),
                 row.getLong("memory_available_bytes"), row.getLong("system_disk_total_bytes"),
                 row.getLong("system_disk_free_bytes"), row.getLong("uptime_seconds"),
-                row.getTimestamp("received_at").toInstant()), TenantContext.tenantCode());
+                row.getTimestamp("received_at").toInstant(), row.getString("equipment_id"),
+                row.getString("equipment_code"), row.getString("equipment_name")), TenantContext.tenantCode());
     }
 }

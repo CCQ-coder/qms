@@ -59,11 +59,13 @@ class GatewayHostStatusControllerTest {
     void listsLatestStatusInApiResponse() throws Exception {
         when(service.listLatest()).thenReturn(List.of(new GatewayHostStatusResponse("SCBGX",
             Instant.parse("2026-10-22T10:00:00Z"), new BigDecimal("12.50"),
-            100, 40, 200, 80, 300, Instant.parse("2026-10-22T10:00:01Z"))));
+            100, 40, 200, 80, 300, Instant.parse("2026-10-22T10:00:01Z"),
+            "equipment-scbgx", "SCBGX", "飞针机采集电脑")));
 
         mvc().perform(get("/api/v1/gateway/host-status"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data[0].hostName").value("SCBGX"))
+            .andExpect(jsonPath("$.data[0].equipmentCode").value("SCBGX"))
             .andExpect(jsonPath("$.data[0].memoryAvailableBytes").value(40));
     }
 }

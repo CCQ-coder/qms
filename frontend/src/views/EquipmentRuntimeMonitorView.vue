@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime, legacyStateText, statusText } from '@/utils/display-text'
-import type { Equipment, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord } from '@/types/qms'
+import { formatHostCapacity, formatHostUptime, isHostOnline } from '@/utils/host-status'
+import type { Equipment, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, GatewayHostStatus } from '@/types/qms'
 
 const parameterKeys = {
   refreshSeconds: 'equipment.monitor.auto-refresh-seconds',
@@ -34,6 +35,8 @@ const rawPayloadDialog = ref(false)
 const unmatchedPayloadDialog = ref(false)
 const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const telemetryRecords = ref<EquipmentTelemetryRecord[]>([])
+const hostStatuses = ref<GatewayHostStatus[]>([])
+const hostStatusError = ref(false)
 const mappings = ref<EquipmentGatewayMapping[]>([])
 const unmatchedMessages = ref<EquipmentGatewayUnmatchedMessage[]>([])
 const equipment = ref<Equipment[]>([])
@@ -55,7 +58,7 @@ let refreshTimer: number | undefined
 
 const mappingRules: FormRules = {
   equipmentId: [{ required: true, message: '请选择 QMS 设备', trigger: 'change' }],
-  machineName: [{ required: true, message: '请输入现场监控软件上报的设备名', trigger: 'blur' }]
+  machineName: [{ required: true, message: '请输入设备名或电脑名', trigger: 'blur' }]
 }
 
 const equipmentOptions = computed(() => runtimeStatuses.value.map((item) => ({
@@ -192,13 +195,22 @@ async function loadLiveData(initial = false) {
   }
 }
 
+async function loadHostStatuses() {
+  try {
+    hostStatuses.value = await qmsApi.listGatewayHostStatuses()
+    hostStatusError.value = false
+  } catch {
+    hostStatusError.value = true
+  }
+}
+
 async function refreshAll() {
-  await Promise.all([loadLiveData(), loadMappings()])
+  await Promise.all([loadLiveData(), loadMappings(), loadHostStatuses()])
 }
 
 function restartAutoRefresh() {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer)
-  refreshTimer = window.setInterval(() => { void loadLiveData() }, config.refreshSeconds * 1000)
+  refreshTimer = window.setInterval(() => { void Promise.all([loadLiveData(), loadHostStatuses()]) }, config.refreshSeconds * 1000)
 }
 
 async function saveConfiguration() {
@@ -264,7 +276,7 @@ watch(selectedEquipmentId, () => { void loadLiveData() })
 
 onMounted(async () => {
   await loadConfiguration()
-  await Promise.all([loadLiveData(true), loadMappings()])
+  await Promise.all([loadLiveData(true), loadMappings(), loadHostStatuses()])
   restartAutoRefresh()
 })
 
@@ -296,6 +308,21 @@ onBeforeUnmount(() => {
       <el-empty v-else description="暂无已入库现场数据；请先添加设备映射并确认旧监控软件正在上报" :image-size="72" />
     </el-card>
 
+    <el-card shadow="never" class="content-card">
+      <template #header><div class="card-header"><span>采集电脑状态</span><small>每 60 秒上报；超过 {{ config.offlineSeconds }} 秒未收到新状态显示离线。</small></div></template>
+      <el-alert v-if="hostStatusError" title="电脑状态读取失败，请检查 QMS 接收接口" type="warning" :closable="false" show-icon />
+      <el-table :data="hostStatuses" empty-text="暂无电脑状态上报">
+        <el-table-column prop="hostName" label="电脑名" min-width="125" />
+        <el-table-column label="QMS 设备" min-width="170"><template #default="scope">{{ scope.row.equipmentCode ? `${scope.row.equipmentCode} · ${scope.row.equipmentName}` : '未映射' }}</template></el-table-column>
+        <el-table-column label="状态" min-width="95"><template #default="scope"><el-tag :type="isHostOnline(scope.row.receivedAt, Date.now(), config.offlineSeconds) ? 'success' : 'info'">{{ isHostOnline(scope.row.receivedAt, Date.now(), config.offlineSeconds) ? '在线' : '离线' }}</el-tag></template></el-table-column>
+        <el-table-column label="CPU" min-width="90"><template #default="scope">{{ scope.row.cpuPercent == null ? '采样中' : `${scope.row.cpuPercent}%` }}</template></el-table-column>
+        <el-table-column label="可用 / 总内存" min-width="160"><template #default="scope">{{ formatHostCapacity(scope.row.memoryAvailableBytes, scope.row.memoryTotalBytes) }}</template></el-table-column>
+        <el-table-column label="系统盘剩余 / 总量" min-width="175"><template #default="scope">{{ formatHostCapacity(scope.row.systemDiskFreeBytes, scope.row.systemDiskTotalBytes) }}</template></el-table-column>
+        <el-table-column label="开机时长" min-width="125"><template #default="scope">{{ formatHostUptime(scope.row.uptimeSeconds) }}</template></el-table-column>
+        <el-table-column label="最后接收时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
+      </el-table>
+    </el-card>
+
     <el-card v-if="unmatchedMessages.length" shadow="never" class="content-card unmatched-message-card">
       <template #header><div class="card-header"><span>已接收、待映射的现场数据</span><small>这些数据已安全到达 QMS；选择“配置映射”即可让后续上报自动进入设备台账。</small></div></template>
       <el-table :data="unmatchedMessages" empty-text="暂无待映射现场数据">
@@ -314,7 +341,7 @@ onBeforeUnmount(() => {
 
     <el-dialog v-model="configurationDialog" title="精雕/锣机接入配置" width="min(780px, 94vw)" :close-on-click-modal="false" v-loading="configurationLoading"><el-alert title="“现场上报地址”用于复制到旧监控客户端；QMS 服务监听端口由部署配置管理，保存地址不会更改服务器端口。刷新、离线判定、展示数量和历史范围会立即生效。" type="warning" :closable="false" show-icon /><el-tabs style="margin-top: 18px"><el-tab-pane label="数据展示与判定"><el-form label-position="top" class="config-form-grid"><el-form-item label="自动刷新间隔（秒）"><el-input-number v-model="config.refreshSeconds" :min="3" :max="60" :step="1" /></el-form-item><el-form-item label="设备离线阈值（秒）"><el-input-number v-model="config.offlineSeconds" :min="30" :max="86400" :step="30" /></el-form-item><el-form-item label="实时数据展示列数"><el-input-number v-model="config.displayColumns" :min="1" :max="4" :step="1" /></el-form-item><el-form-item label="实时数据展示行数"><el-input-number v-model="config.displayRows" :min="1" :max="6" :step="1" /></el-form-item><el-form-item label="上报明细读取条数"><el-input-number v-model="config.historyLimit" :min="20" :max="300" :step="10" /></el-form-item><el-form-item label="历史查询范围（天）"><el-input-number v-model="config.historyDays" :min="1" :max="90" :step="1" /></el-form-item></el-form></el-tab-pane><el-tab-pane label="现场上报参数"><el-form label-position="top" class="config-form-grid"><el-form-item label="QMS 服务地址"><el-input v-model="config.gatewayHost" placeholder="例如：192.168.1.71" /></el-form-item><el-form-item label="QMS 服务端口"><el-input v-model="config.gatewayPort" inputmode="numeric" placeholder="8080" /></el-form-item><el-form-item label="接口路径"><el-input v-model="config.gatewayPath" placeholder="/hessian/monitor" /></el-form-item><el-form-item label="调用方法"><el-input v-model="config.gatewayMethod" placeholder="Monitor" /></el-form-item><el-form-item label="现场上报间隔（秒）"><el-input-number v-model="config.reportIntervalSeconds" :min="1" :max="600" :step="1" /></el-form-item></el-form><div class="endpoint-preview"><span>供现场端填写</span><code>{{ endpoint }}</code><small>方法：{{ config.gatewayMethod }}；建议上报间隔：{{ config.reportIntervalSeconds }} 秒</small></div></el-tab-pane></el-tabs><template #footer><el-button @click="configurationDialog = false">取消</el-button><el-button type="primary" :loading="configurationSaving" @click="saveConfiguration">保存配置</el-button></template></el-dialog>
 
-    <el-dialog v-model="mappingDialog" title="新增现场设备映射" width="min(560px, 94vw)" :close-on-click-modal="false"><el-alert title="填写旧监控软件实际上报的 machinename。保存后，后续数据会自动匹配到对应 QMS 设备。" type="info" :closable="false" show-icon /><el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top" style="margin-top: 18px"><el-form-item label="QMS 设备" prop="equipmentId"><el-select v-model="mappingForm.equipmentId" filterable class="full-width" placeholder="请选择设备台账"><el-option v-for="item in equipment" :key="item.id" :label="`${item.assetNo} · ${item.name}`" :value="item.id" /></el-select></el-form-item><el-form-item label="现场上报设备名（machinename）" prop="machineName"><el-input v-model="mappingForm.machineName" maxlength="160" show-word-limit placeholder="例如：CNC-15" /><div class="field-help">名称会自动忽略英文大小写和首尾空格；同一名称不可映射到多个设备。</div></el-form-item></el-form><template #footer><el-button @click="mappingDialog = false">取消</el-button><el-button type="primary" :loading="mappingSaving" @click="saveMapping">保存映射</el-button></template></el-dialog>
+    <el-dialog v-model="mappingDialog" title="新增现场设备映射" width="min(560px, 94vw)" :close-on-click-modal="false"><el-alert title="填写现场上报的 machinename 或采集电脑的 hostName。保存后，电脑状态会关联到对应的 QMS 设备。" type="info" :closable="false" show-icon /><el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top" style="margin-top: 18px"><el-form-item label="QMS 设备" prop="equipmentId"><el-select v-model="mappingForm.equipmentId" filterable class="full-width" placeholder="请选择设备台账"><el-option v-for="item in equipment" :key="item.id" :label="`${item.assetNo} · ${item.name}`" :value="item.id" /></el-select></el-form-item><el-form-item label="来源设备名 / 电脑名" prop="machineName"><el-input v-model="mappingForm.machineName" maxlength="160" show-word-limit placeholder="例如：SCBGX" /><div class="field-help">名称会自动忽略英文大小写和首尾空格；同一名称不可映射到多个设备。</div></el-form-item></el-form><template #footer><el-button @click="mappingDialog = false">取消</el-button><el-button type="primary" :loading="mappingSaving" @click="saveMapping">保存映射</el-button></template></el-dialog>
 
     <el-dialog v-model="rawPayloadDialog" title="设备上报数据详情" width="min(920px, 96vw)"><div v-if="selectedRecord" class="record-detail-grid"><div><span>数据流</span><strong>{{ selectedRecord.sourceUsername || '现场监控' }} → {{ selectedRecord.machineName || '未命名设备' }} → {{ selectedRecord.equipmentCode }} · {{ selectedRecord.equipmentName }}</strong></div><div><span>解析状态</span><strong>{{ telemetryStatusText(selectedRecord) }} · {{ selectedRecord.eventType || '—' }}</strong></div><div><span>设备时间</span><strong>{{ formatDateTime(selectedRecord.deviceTime) }}</strong></div><div><span>QMS 接收时间</span><strong>{{ formatDateTime(selectedRecord.receivedAt) }}</strong></div></div><el-table v-if="selectedRecord" :data="[selectedRecord]" border style="margin-top: 18px"><el-table-column prop="programNo" label="程序" min-width="160" /><el-table-column prop="operatorName" label="操作员" min-width="120" /><el-table-column prop="machiningCount" label="完成数量" min-width="110" /><el-table-column label="进度" min-width="95"><template #default="scope">{{ scope.row.progressPercent == null ? '—' : `${scope.row.progressPercent}%` }}</template></el-table-column><el-table-column prop="spindleStatus" label="主轴状态" min-width="120" /><el-table-column prop="screenText" label="屏幕/报警文字" min-width="180" show-overflow-tooltip /></el-table><div class="raw-payload"><span>原始入库报文（已脱敏、结构化保存）</span><pre>{{ formatRawPayload(selectedRecord) }}</pre></div><template #footer><el-button type="primary" @click="rawPayloadDialog = false">关闭</el-button></template></el-dialog>
     <el-dialog v-model="unmatchedPayloadDialog" title="待映射现场报文" width="min(860px, 96vw)"><div v-if="selectedUnmatchedMessage" class="record-detail-grid"><div><span>来源用户</span><strong>{{ selectedUnmatchedMessage.sourceUsername || '—' }}</strong></div><div><span>现场设备名</span><strong>{{ selectedUnmatchedMessage.machineName || '—' }}</strong></div><div><span>最后设备时间</span><strong>{{ formatDateTime(selectedUnmatchedMessage.lastDeviceTime) }}</strong></div><div><span>已接收次数</span><strong>{{ selectedUnmatchedMessage.occurrenceCount }}</strong></div></div><div class="raw-payload"><span>原始接收报文</span><pre>{{ formatRawPayload(selectedUnmatchedMessage) }}</pre></div><template #footer><el-button @click="unmatchedPayloadDialog = false">关闭</el-button><el-button type="primary" @click="unmatchedPayloadDialog = false; openMapping(selectedUnmatchedMessage?.machineName)">使用此设备名配置映射</el-button></template></el-dialog>

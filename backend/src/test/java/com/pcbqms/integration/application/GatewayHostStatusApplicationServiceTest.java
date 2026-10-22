@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.pcbqms.common.tenancy.TenantContext;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.integration.api.GatewayHostStatusRequest;
 import com.pcbqms.integration.api.GatewayHostStatusResponse;
 import java.math.BigDecimal;
@@ -76,6 +77,9 @@ class GatewayHostStatusApplicationServiceTest {
         Instant sampled = Instant.parse("2026-10-22T05:00:00Z");
         Instant received = Instant.parse("2026-10-22T05:00:03Z");
         when(row.getString("host_name")).thenReturn("SCBGX");
+        when(row.getString("equipment_id")).thenReturn("equipment-scbgx");
+        when(row.getString("equipment_code")).thenReturn("SCBGX");
+        when(row.getString("equipment_name")).thenReturn("飞针机采集电脑");
         when(row.getTimestamp("sampled_at")).thenReturn(Timestamp.from(sampled));
         when(row.getTimestamp("received_at")).thenReturn(Timestamp.from(received));
         when(row.getBigDecimal("cpu_percent")).thenReturn(new BigDecimal("12.5"));
@@ -96,6 +100,10 @@ class GatewayHostStatusApplicationServiceTest {
         assertThat(latest.get(0).hostName()).isEqualTo("SCBGX");
         assertThat(latest.get(0).sampledAt()).isEqualTo(sampled);
         assertThat(latest.get(0).receivedAt()).isEqualTo(received);
+        var json = new ObjectMapper().findAndRegisterModules().valueToTree(latest.get(0));
+        assertThat(json.path("equipmentId").asText()).isEqualTo("equipment-scbgx");
+        assertThat(json.path("equipmentCode").asText()).isEqualTo("SCBGX");
+        assertThat(json.path("equipmentName").asText()).isEqualTo("飞针机采集电脑");
         verify(jdbc).query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<GatewayHostStatusResponse>>any(),
             eq("customer-b"));
     }

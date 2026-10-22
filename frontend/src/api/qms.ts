@@ -3,7 +3,7 @@ import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery
-  , MenuAccess
+  , MenuAccess, GatewayHostStatus
 } from '@/types/qms'
 
 export const qmsApi = {
@@ -251,6 +251,11 @@ export const qmsApi = {
 
   async listEquipmentGatewayMappings() {
     const { data } = await http.get<ApiResponse<EquipmentGatewayMapping[]>>('/api/v1/equipment/gateway-mappings')
+    return data.data
+  },
+
+  async listGatewayHostStatuses() {
+    const { data } = await http.get<ApiResponse<GatewayHostStatus[]>>('/api/v1/gateway/host-status')
     return data.data
   },
 
