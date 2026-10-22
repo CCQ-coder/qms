@@ -57,6 +57,22 @@ class ProductionSecurityConfigurationTest {
     }
 
     @Test
+    void gatewayOnlyHostStatusPostReachesGatewayFilter() throws Exception {
+        mvc.perform(post("/api/v1/gateway/host-status").header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/gateway/host-status").header("X-Gateway-Token", "wrong"))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/gateway/host-status"))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/gateway/host-status")
+                .header("X-Gateway-Token", "gateway-secret")
+                .header("Authorization", "Basic invalid"))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/gateway/host-status").header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void invalidAuthorizationNeverFallsBackToGateway() throws Exception {
         mvc.perform(post("/api/v1/equipment/telemetry")
                 .header("X-Gateway-Token", "gateway-secret")
@@ -81,6 +97,16 @@ class ProductionSecurityConfigurationTest {
 
         @GetMapping("/api/v1/equipment/telemetry")
         ResponseEntity<Void> list() {
+            return ResponseEntity.noContent().build();
+        }
+
+        @PostMapping("/api/v1/gateway/host-status")
+        ResponseEntity<Void> receiveHostStatus() {
+            return ResponseEntity.noContent().build();
+        }
+
+        @GetMapping("/api/v1/gateway/host-status")
+        ResponseEntity<Void> listHostStatus() {
             return ResponseEntity.noContent().build();
         }
 

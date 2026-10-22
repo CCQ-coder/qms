@@ -43,6 +43,29 @@ class GatewayTelemetryTenantContextFilterTest {
     }
 
     @Test
+    void hostStatusRequestUsesConfiguredTenantAndRejectsInactiveTenant() throws Exception {
+        var request = new MockHttpServletRequest("POST", "/api/v1/gateway/host-status");
+        request.addHeader("X-Gateway-Token", "gateway-secret");
+        AtomicBoolean chained = new AtomicBoolean();
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("customer-b"))).thenReturn(1);
+        filter("gateway-secret", "customer-b").doFilter(request, new MockHttpServletResponse(),
+            (req, res) -> {
+                chained.set(true);
+                assertThat(TenantContext.tenantCode()).isEqualTo("customer-b");
+            });
+        assertThat(chained).isTrue();
+        assertThatThrownBy(TenantContext::tenantCode).isInstanceOf(IllegalStateException.class);
+
+        chained.set(false);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("customer-b"))).thenReturn(0);
+        var response = new MockHttpServletResponse();
+        filter("gateway-secret", "customer-b").doFilter(request, response,
+            (req, res) -> chained.set(true));
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(chained).isFalse();
+    }
+
+    @Test
     void missingOrWrongTokenReturns401() throws Exception {
         for (String supplied : new String[] { null, "wrong-secret" }) {
             var request = telemetryRequest(supplied);

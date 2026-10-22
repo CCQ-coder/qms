@@ -373,6 +373,21 @@ export type EquipmentGatewayMapping = {
   updatedAt: string
 }
 
+export type GatewayHostStatus = {
+  hostName: string
+  equipmentId?: string
+  equipmentCode?: string
+  equipmentName?: string
+  sampledAt: string
+  receivedAt: string
+  cpuPercent?: number | null
+  memoryTotalBytes: number
+  memoryAvailableBytes: number
+  systemDiskTotalBytes: number
+  systemDiskFreeBytes: number
+  uptimeSeconds: number
+}
+
 export type EquipmentGatewayUnmatchedMessage = {
   id: string
   sourceUsername?: string
@@ -433,6 +448,10 @@ export type EquipmentTelemetryRecord = {
   screenText?: string
   sourceRecordNo?: string
   rawPayload?: string
+  fqcProjectionStatus?: string | null
+  fqcProjectionReason?: string | null
+  fqcInspectionRecordId?: string | null
+  fqcDeltaTested?: number | null
 }
 
 export type EquipmentTelemetryHistoryQuery = {

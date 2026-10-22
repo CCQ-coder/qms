@@ -3,7 +3,7 @@ import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery
-  , MenuAccess
+  , MenuAccess, GatewayHostStatus
 } from '@/types/qms'
 
 export const qmsApi = {
@@ -68,8 +68,10 @@ export const qmsApi = {
     return data.data
   },
 
-  async listCompletedFinishedTestRecords() {
-    const { data } = await http.get<ApiResponse<FinishedTestInspectionRecord[]>>('/api/v1/inspection-tasks/completed-finished-records')
+  async listCompletedFinishedTestRecords(limit = 100, cursor?: string) {
+    const { data } = await http.get<ApiResponse<{ items: FinishedTestInspectionRecord[], nextCursor: string | null }>>(
+      '/api/v1/inspection-tasks/completed-finished-records', { params: { limit, cursor } }
+    )
     return data.data
   },
 
@@ -254,6 +256,11 @@ export const qmsApi = {
     return data.data
   },
 
+  async listGatewayHostStatuses() {
+    const { data } = await http.get<ApiResponse<GatewayHostStatus[]>>('/api/v1/gateway/host-status')
+    return data.data
+  },
+
   async createEquipmentGatewayMapping(payload: { equipmentId: string, machineName: string }) {
     const { data } = await http.post<ApiResponse<EquipmentGatewayMapping>>('/api/v1/equipment/gateway-mappings', payload)
     return data.data
@@ -337,8 +344,8 @@ export const qmsApi = {
     return data.data
   },
 
-  async getQualitySummary(from?: string, to?: string, processCode?: string) {
-    const { data } = await http.get<ApiResponse<QualitySummary>>('/api/v1/reports/quality-summary', { params: { from, to, processCode } })
+  async getQualitySummary(from?: string, to?: string, processCode?: string, finishedTest?: boolean) {
+    const { data } = await http.get<ApiResponse<QualitySummary>>('/api/v1/reports/quality-summary', { params: { from, to, processCode, finishedTest } })
     return data.data
   },
 

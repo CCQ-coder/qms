@@ -27,7 +27,8 @@ public class GatewayTelemetryTenantContextFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !request.getMethod().equals("POST")
-            || !request.getRequestURI().equals("/api/v1/equipment/telemetry")
+            || !(request.getRequestURI().equals("/api/v1/equipment/telemetry")
+                || request.getRequestURI().equals("/api/v1/gateway/host-status"))
             || request.getHeader("Authorization") != null;
     }
 

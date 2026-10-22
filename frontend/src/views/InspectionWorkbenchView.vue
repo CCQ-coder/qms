@@ -4,11 +4,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import { formatDateTime, taskTypeText } from '@/utils/display-text'
+import { formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
-import type { Equipment, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
+import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
 const backendReachable = ref(true)
@@ -28,11 +28,20 @@ const offlineDrafts = ref<OfflineInspectionDraft[]>([])
 const syncingOfflineDrafts = ref(false)
 const route = useRoute()
 const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
-const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>(isSummaryRoute.value ? 'summary' : 'monitor')
-watch(isSummaryRoute, (summaryRoute) => { activePanel.value = summaryRoute ? 'summary' : 'monitor' })
+const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
 const equipment = ref<Equipment[]>([])
+const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const finishedTestRecords = ref<FinishedTestInspectionRecord[]>([])
+const finishedRecordsNextCursor = ref<string>()
+const finishedRecordsLoading = ref(false)
+const finishedRecordsUpdatedAt = ref<Date>()
+const probeSnapshots = ref<Record<string, EquipmentTelemetryRecord>>({})
+const probeFailedEquipmentIds = ref<Set<string>>(new Set())
+const summaryError = ref('')
+const equipmentError = ref('')
+const runtimeError = ref('')
+const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
 const recordSource = ref<'probe' | 'fqc'>('probe')
 const {
@@ -45,46 +54,40 @@ const {
   refresh: refreshFlyingProbeRecords,
   loadMore: loadMoreFlyingProbeRecords
 } = useFlyingProbeHistory((query) => qmsApi.listEquipmentTelemetryHistory(query))
+watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
+  activePanel.value = summaryRoute ? 'summary' : panel === 'records' ? 'records' : 'monitor'
+  if (activePanel.value === 'records' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
+})
 const qualitySummary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
-const selectedDeviceId = ref('FQC-01')
+const selectedDeviceId = ref('')
+const taskListDeviceAssetNo = ref('')
+const recordEquipmentAssetNo = ref('')
 const taskKeyword = ref('')
 const recordKeyword = ref('')
-const updatedAt = ref(new Date())
+const updatedAt = ref<Date>()
 const finishedTestEquipmentType = '成品测试设备'
 
-type MonitorDevice = Pick<Equipment, 'assetNo' | 'name' | 'equipmentType' | 'status' | 'responsibleName' | 'calibrationStatus'> & {
-  connected: boolean
-  task?: InspectionTask
-  queueSize: number
-  recordCount: number
-  passCount: number
-  failCount: number
+type MonitorDevice = Equipment & {
+  runtime?: EquipmentRuntimeStatus
+  probe?: EquipmentTelemetryRecord
+  probeError: boolean
 }
 const recordRules: FormRules = {
   verdict: [{ required: true, message: '请选择结论', trigger: 'change' }],
   defectiveQuantity: [{ required: true, type: 'number', min: 0, message: '请输入不良数量', trigger: 'change' }]
 }
 
-const fqcTasks = computed(() => {
-  const matching = tasks.value.filter((task) => /FQC|成品|测试/i.test(`${task.processCode} ${task.processName} ${task.taskType}`))
-  return matching.length ? matching : tasks.value
-})
+const fqcTasks = computed(() => tasks.value.filter((task) =>
+  task.taskType?.toUpperCase() === 'FINISHED' || task.processCode?.toUpperCase() === 'FQC'))
 
 const monitorDevices = computed<MonitorDevice[]>(() => {
-  const finishedTestEquipment = equipment.value.filter((item) => item.equipmentType === finishedTestEquipmentType)
-  return finishedTestEquipment.map((device, index) => {
-    const assignedTasks = fqcTasks.value.filter((_, taskIndex) => taskIndex % finishedTestEquipment.length === index)
-    const deviceRecords = finishedTestRecords.value.filter((record) => record.equipmentAssetNo === device.assetNo)
-    return {
-      ...device,
-      connected: true,
-      task: assignedTasks[0],
-      queueSize: assignedTasks.length,
-      recordCount: deviceRecords.length,
-      passCount: deviceRecords.filter((record) => record.verdict === 'PASS').length,
-      failCount: deviceRecords.filter((record) => record.verdict === 'FAIL').length
-    }
-  })
+  const runtimeByEquipmentId = new Map(runtimeStatuses.value.map((status) => [status.equipmentId, status]))
+  return equipment.value.filter((item) => item.equipmentType === finishedTestEquipmentType).map((device) => ({
+    ...device,
+    runtime: runtimeByEquipmentId.get(device.id),
+    probe: probeSnapshots.value[device.id],
+    probeError: probeFailedEquipmentIds.value.has(device.id)
+  }))
 })
 const monitorPage = ref(1)
 const monitorPageSize = ref(10)
@@ -100,11 +103,17 @@ watch(pagedMonitorDevices, (devices) => {
 })
 
 const selectedDevice = computed(() => monitorDevices.value.find((device) => device.assetNo === selectedDeviceId.value) ?? monitorDevices.value[0])
-const fqcMetric = computed(() => qualitySummary.value.byProcess.find((item) => /FQC|成品|测试/i.test(`${item.processCode} ${item.processName}`)))
-const fqcTotal = computed(() => fqcMetric.value?.totalRecords ?? 0)
-const fqcPass = computed(() => fqcMetric.value?.passRecords ?? 0)
-const fqcFail = computed(() => fqcMetric.value?.failRecords ?? 0)
-const fqcPassRate = computed(() => fqcMetric.value?.passRate ?? 0)
+const selectedProbeRecord = computed(() => selectedDevice.value?.probe)
+const selectedAssociation = computed(() => {
+  const probe = selectedProbeRecord.value
+  return probe?.fqcProjectionStatus === 'PROCESSED'
+    ? `${probe.workOrderNo || '未关联'} / ${probe.batchNo || '未关联'}`
+    : '未关联 / 未关联'
+})
+const fqcTotal = computed(() => qualitySummary.value.totalRecords)
+const fqcPass = computed(() => qualitySummary.value.passRecords)
+const fqcFail = computed(() => qualitySummary.value.failRecords)
+const fqcPassRate = computed(() => qualitySummary.value.firstPassRate)
 const filteredTasks = computed(() => {
   const keyword = taskKeyword.value.trim().toLowerCase()
   if (!keyword) return fqcTasks.value
@@ -119,7 +128,7 @@ const filteredFinishedTestRecords = computed(() => {
     record.productCode, record.taskNo, record.inspectedBy, record.defectSummary
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
-const updatedAtLabel = computed(() => formatDateTime(updatedAt.value))
+const updatedAtLabel = computed(() => updatedAt.value ? formatDateTime(updatedAt.value) : '尚未成功读取')
 const workstationConnectionLabel = computed(() => {
   if (!networkOnline.value) return '本机网络已断开'
   return backendReachable.value ? 'QMS 服务已连接' : 'QMS 服务不可达'
@@ -261,37 +270,123 @@ async function loadTasks() {
   }
 }
 
+async function loadProbeSnapshots(devices: Equipment[]) {
+  const snapshots: Record<string, EquipmentTelemetryRecord> = {}
+  const failedIds = new Set<string>()
+  for (let index = 0; index < devices.length; index += 4) {
+    const batch = devices.slice(index, index + 4)
+    const results = await Promise.allSettled(batch.map((device) => qmsApi.listEquipmentTelemetryHistory({
+      equipmentId: device.id, eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1
+    })))
+    results.forEach((result, offset) => {
+      const equipmentId = batch[offset].id
+      if (result.status === 'rejected') failedIds.add(equipmentId)
+      else if (result.value.items[0]) snapshots[equipmentId] = result.value.items[0]
+    })
+  }
+  probeSnapshots.value = snapshots
+  probeFailedEquipmentIds.value = failedIds
+  probeSnapshotsError.value = failedIds.size ? `${failedIds.size} 台设备的飞针计数快照读取失败，请刷新重试。` : ''
+  return failedIds.size === 0
+}
+
+async function loadCompletedFinishedRecords(cursor?: string) {
+  if (finishedRecordsLoading.value) return false
+  finishedRecordsLoading.value = true
+  finishedRecordsError.value = ''
+  try {
+    const page = await qmsApi.listCompletedFinishedTestRecords(100, cursor)
+    finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
+    finishedRecordsNextCursor.value = page.nextCursor ?? undefined
+    if (!cursor) finishedRecordsUpdatedAt.value = new Date()
+    return true
+  } catch {
+    finishedRecordsError.value = cursor
+      ? '更早的 FQC 检验记录加载失败，请重试。'
+      : '已提交 FQC 检验记录读取失败，请重试。'
+    if (!cursor) {
+      finishedTestRecords.value = []
+      finishedRecordsNextCursor.value = undefined
+      finishedRecordsUpdatedAt.value = undefined
+    }
+    return false
+  } finally {
+    finishedRecordsLoading.value = false
+  }
+}
+
+let monitoringVersion = 0
+let runtimePollInFlight = false
+let runtimePollTimer: number | undefined
+let componentMounted = false
+
+async function pollRuntimeStatuses() {
+  if (monitoringLoading.value || runtimePollInFlight) return
+  runtimePollInFlight = true
+  const version = monitoringVersion
+  try {
+    const statuses = await qmsApi.listEquipmentRuntimeStatuses()
+    if (version !== monitoringVersion || !componentMounted) return
+    runtimeStatuses.value = statuses
+    runtimeError.value = ''
+  } catch {
+    if (version !== monitoringVersion || !componentMounted) return
+    runtimeStatuses.value = []
+    runtimeError.value = '设备实时状态读取失败，请重试。'
+  } finally {
+    runtimePollInFlight = false
+  }
+}
+
 async function loadMonitoringData() {
   monitoringLoading.value = true
+  monitoringVersion++
   try {
-    const [summaryResult, equipmentResult, recordsResult] = await Promise.allSettled([
-      qmsApi.getQualitySummary(undefined, undefined, 'FQC'),
+    const [summaryResult, equipmentResult, runtimeResult, recordsResult] = await Promise.allSettled([
+      qmsApi.getQualitySummary(undefined, undefined, undefined, true),
       qmsApi.listEquipment(),
-      qmsApi.listCompletedFinishedTestRecords()
+      qmsApi.listEquipmentRuntimeStatuses(),
+      loadCompletedFinishedRecords()
     ])
+    summaryError.value = summaryResult.status === 'rejected' ? 'FQC 质量汇总读取失败，请重试。' : ''
+    equipmentError.value = equipmentResult.status === 'rejected' ? '成品测试设备台账读取失败，请重试。' : ''
+    runtimeError.value = runtimeResult.status === 'rejected' ? '设备实时状态读取失败，请重试。' : ''
     if (summaryResult.status === 'fulfilled') qualitySummary.value = summaryResult.value
     if (equipmentResult.status === 'fulfilled') equipment.value = equipmentResult.value
-    if (recordsResult.status === 'fulfilled') {
-      finishedTestRecords.value = recordsResult.value
-      finishedRecordsError.value = ''
-    } else {
+    else equipment.value = []
+    if (runtimeResult.status === 'fulfilled') runtimeStatuses.value = runtimeResult.value
+    else runtimeStatuses.value = []
+    if (recordsResult.status === 'rejected') {
       finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
     }
-    updatedAt.value = new Date()
+    const probesLoaded = equipmentResult.status === 'fulfilled'
+      ? await loadProbeSnapshots(equipmentResult.value.filter((item) => item.equipmentType === finishedTestEquipmentType))
+      : false
+    if (equipmentResult.status === 'rejected') {
+      probeSnapshots.value = {}
+      probeFailedEquipmentIds.value = new Set()
+      probeSnapshotsError.value = ''
+    }
+    if (probesLoaded && recordsResult.status === 'fulfilled' && recordsResult.value
+      && [summaryResult, equipmentResult, runtimeResult].every((result) => result.status === 'fulfilled')) {
+      updatedAt.value = new Date()
+    }
   } finally {
     monitoringLoading.value = false
   }
 }
 
 async function refreshWorkbench() {
+  if (monitoringLoading.value) return
   await Promise.all([loadTasks(), loadMonitoringData(), loadOfflineDrafts()])
   if (!monitorDevices.value.some((device) => device.assetNo === selectedDeviceId.value)) {
-    selectedDeviceId.value = monitorDevices.value[0]?.assetNo ?? 'FQC-01'
+    selectedDeviceId.value = monitorDevices.value[0]?.assetNo ?? ''
   }
 }
 
 function showPanel(panel: 'monitor' | 'records' | 'tasks') {
   activePanel.value = panel
+  taskListDeviceAssetNo.value = ''
   if (panel === 'records') {
     recordSource.value = 'probe'
     if (!flyingProbeLoaded.value) void refreshFlyingProbeRecords()
@@ -305,27 +400,45 @@ function showRecordSource(source: 'probe' | 'fqc') {
 
 async function refreshRecordPanel() {
   if (recordSource.value === 'probe') await refreshFlyingProbeRecords()
-  else await refreshWorkbench()
+  else await loadCompletedFinishedRecords()
 }
 
 function deviceStatusLabel(device: MonitorDevice) {
-  if (!device.connected) return '待接入'
-  return ({ ACTIVE: '在用', IN_USE: '在用', IDLE: '空闲', MAINTENANCE: '维护中', ALARM: '告警中', DISABLED: '停用' } as Record<string, string>)[device.status] ?? device.status
+  if (runtimeError.value) return '状态不可用'
+  return device.runtime ? statusText(device.runtime.effectiveStatus) : '未接入'
 }
 
 function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' | 'danger' {
-  if (!device.connected) return 'info'
-  if (device.status === 'ALARM') return 'danger'
-  return ['ACTIVE', 'IN_USE', 'IDLE'].includes(device.status) ? 'success' : 'warning'
+  if (!device.runtime?.online || runtimeError.value) return 'info'
+  if (device.runtime.effectiveStatus === 'ALARM') return 'danger'
+  return device.runtime.effectiveStatus === 'PROCESSING' ? 'success' : 'warning'
+}
+
+function fqcProjectionLabel(record: EquipmentTelemetryRecord) {
+  if (record.fqcProjectionStatus === 'PROCESSED') {
+    if (record.fqcInspectionRecordId) return '已生成 FQC'
+    if (record.fqcProjectionReason?.includes('基线')) return '已作基线'
+    return record.fqcDeltaTested === 0 ? '无新增板' : '已处理'
+  }
+  if (record.fqcProjectionStatus === 'RETRYABLE') return '待匹配'
+  if (record.fqcProjectionStatus === 'SKIPPED') return '已跳过'
+  if (record.fqcProjectionStatus === 'PENDING') return '待处理'
+  return record.fqcProjectionStatus || '待处理'
+}
+
+function fqcProjectionTag(record: EquipmentTelemetryRecord): 'success' | 'warning' | 'info' {
+  if (record.fqcInspectionRecordId) return 'success'
+  if (record.fqcProjectionStatus === 'RETRYABLE') return 'warning'
+  return 'info'
 }
 
 function openSelectedDeviceTask() {
-  if (selectedDevice.value?.task) {
-    openRecord(selectedDevice.value.task)
-    return
-  }
+  taskListDeviceAssetNo.value = selectedDevice.value?.assetNo ?? ''
   activePanel.value = 'tasks'
-  ElMessage.info('当前工位没有待检任务，可在待检任务列表中选择任务处理。')
+}
+
+function selectDevice(assetNo: string) {
+  selectedDeviceId.value = assetNo
 }
 
 function openNextTask() {
@@ -346,6 +459,7 @@ function handleKeyboardShortcut(event: KeyboardEvent) {
 
 async function openRecord(task: InspectionTask) {
   selectedTask.value = task
+  recordEquipmentAssetNo.value = taskListDeviceAssetNo.value
   selectedTemplate.value = undefined
   Object.assign(recordForm, { verdict: 'PASS', defectiveQuantity: 0, defectSummary: '', defectLocation: '', measurement: '', lowerLimit: '', upperLimit: '' })
   Object.keys(recordValues).forEach((key) => delete recordValues[key])
@@ -399,7 +513,7 @@ async function submitRecord() {
     defectSummary: recordForm.defectSummary,
     defectLocation: recordForm.defectLocation,
     results: dynamicResults(),
-    equipmentAssetNo: selectedDeviceId.value || undefined,
+    equipmentAssetNo: recordEquipmentAssetNo.value || undefined,
     clientRequestId: createClientRequestId()
   }
   saving.value = true
@@ -434,14 +548,20 @@ async function submitRecord() {
 }
 
 onMounted(async () => {
-  await refreshWorkbench()
+  componentMounted = true
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('keydown', handleKeyboardShortcut)
+  runtimePollTimer = window.setInterval(() => { void pollRuntimeStatuses() }, 30_000)
+  if (activePanel.value === 'records') void refreshFlyingProbeRecords()
+  await refreshWorkbench()
+  if (!componentMounted) return
   if (navigator.onLine && offlineDrafts.value.length) void syncOfflineDrafts()
 })
 
 onBeforeUnmount(() => {
+  componentMounted = false
+  window.clearInterval(runtimePollTimer)
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
   window.removeEventListener('keydown', handleKeyboardShortcut)
@@ -476,27 +596,32 @@ onBeforeUnmount(() => {
 
     <template v-if="activePanel === 'monitor'">
       <section class="monitor-panel">
+        <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
+        <el-alert v-if="equipmentError" type="error" :closable="false" :title="equipmentError" style="margin-bottom: 12px" />
+        <el-alert v-if="runtimeError" type="error" :closable="false" :title="runtimeError" style="margin-bottom: 12px" />
+        <el-alert v-if="probeSnapshotsError" type="error" :closable="false" :title="probeSnapshotsError" style="margin-bottom: 12px" />
+        <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-bottom: 12px" />
         <div class="section-heading">
           <div>
             <h3>成品测试多设备实时监控</h3>
-            <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；待检队列由当前可处理的 FQC 任务自动分配展示。</p>
+            <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；设备上报与已提交 FQC 检验分别统计。</p>
           </div>
-          <div class="shift-summary">
-            <span>已提交 <strong>{{ fqcTotal }}</strong></span>
+          <div v-if="!summaryError" class="shift-summary">
+            <span>FQC 已提交 <strong>{{ fqcTotal }}</strong></span>
             <span>合格 <strong class="good-text">{{ fqcPass }}</strong></span>
             <span>不合格 <strong class="bad-text">{{ fqcFail }}</strong></span>
             <span>一次合格率 <strong class="good-text">{{ fqcPassRate }}%</strong></span>
           </div>
         </div>
 
-        <div v-if="monitorDevices.length" class="monitor-device-grid">
+        <div v-if="!equipmentError && monitorDevices.length" class="monitor-device-grid">
           <button
             v-for="device in pagedMonitorDevices"
             :key="device.assetNo"
             class="monitor-device-card"
-            :class="{ 'monitor-device-card--selected': selectedDevice?.assetNo === device.assetNo, 'monitor-device-card--offline': !device.connected }"
+            :class="{ 'monitor-device-card--selected': selectedDevice?.assetNo === device.assetNo, 'monitor-device-card--offline': !device.runtime?.online }"
             type="button"
-            @click="selectedDeviceId = device.assetNo"
+            @click="selectDevice(device.assetNo)"
           >
             <span class="device-card-head">
               <strong>{{ device.name }}</strong>
@@ -504,23 +629,30 @@ onBeforeUnmount(() => {
             </span>
             <span class="device-card-type">{{ device.assetNo }} · {{ device.equipmentType }}</span>
             <span class="device-task">
-              <small>当前待检任务</small>
-              <b>{{ device.task?.taskNo ?? '暂无待检任务' }}</b>
-              <em>{{ device.task ? `${device.task.workOrderNo} · ${device.task.batchNo ?? '未分批'}` : '暂无待检任务' }}</em>
+              <small>最新飞针 QMS 接收</small>
+              <b>{{ device.probeError ? '读取失败' : formatDateTime(device.probe?.receivedAt) }}</b>
+              <em>设备状态：{{ runtimeError ? '读取失败' : device.runtime?.online ? '在线' : device.runtime ? '离线' : '尚未上报' }}</em>
             </span>
-            <span class="device-card-footer"><span>队列 {{ device.queueSize }} · 已测 {{ device.recordCount }}</span><span>{{ device.connected ? `PASS ${device.passCount} · FAIL ${device.failCount}` : '点击查看工位详情' }}</span></span>
+            <span class="device-card-footer"><span>飞针已测 {{ device.probeError ? '—' : (device.probe?.machiningCount ?? '—') }}</span><span>FQC 检验见记录列表</span></span>
           </button>
         </div>
-        <div v-if="monitorDevices.length" class="monitor-pagination">
+        <div v-if="!equipmentError && monitorDevices.length" class="monitor-pagination">
           <el-pagination v-model:current-page="monitorPage" v-model:page-size="monitorPageSize" :total="monitorDevices.length" :page-sizes="[10, 20, 50, 100]" background layout="total, sizes, prev, pager, next, jumper" @size-change="monitorPage = 1" />
         </div>
-        <el-empty v-else description="暂无成品测试设备，请先在设备台账新增并选择“成品测试设备”类型。" />
+        <el-empty v-if="!equipmentError && !monitorDevices.length" description="暂无成品测试设备，请先在设备台账新增并选择“成品测试设备”类型。" />
 
-        <div v-if="selectedDevice" class="selected-device-bar">
+        <div v-if="selectedDevice && !equipmentError" class="selected-device-bar">
           <div><span>当前设备</span><strong>{{ selectedDevice.name }}（{{ selectedDevice.assetNo }}）</strong></div>
-          <div><span>当前生产指令 / 批次</span><strong>{{ selectedDevice.task ? `${selectedDevice.task.workOrderNo} / ${selectedDevice.task.batchNo ?? '未分批'}` : '暂无待检任务' }}</strong></div>
-          <div><span>任务类型</span><strong>{{ taskTypeText(selectedDevice.task?.taskType) }}</strong></div>
-          <el-button type="primary" @click="openSelectedDeviceTask">{{ selectedDevice.task ? '开始检验' : '查看待检任务' }}</el-button>
+          <div v-if="selectedDevice.probeError"><span>飞针计数快照</span><strong>读取失败，请刷新重试</strong></div>
+          <template v-else>
+            <div><span>最新飞针料号</span><strong>{{ selectedProbeRecord?.materialNo || (selectedProbeRecord ? '未上报料号' : '暂无飞针采集') }}</strong></div>
+            <div><span>飞针已测 / 好板 / 坏板</span><strong>{{ selectedProbeRecord?.machiningCount ?? '—' }} / {{ selectedProbeRecord?.goodBoardCount ?? '—' }} / {{ selectedProbeRecord?.badBoardCount ?? '—' }}</strong></div>
+            <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
+            <div><span>QMS 接收时间</span><strong>{{ formatDateTime(selectedProbeRecord?.receivedAt) }}</strong></div>
+            <div><span>关联生产指令 / 批次</span><strong>{{ selectedAssociation }}</strong></div>
+          </template>
+          <div><span>FQC 待检任务</span><strong>未关联待检任务，请从列表选择</strong></div>
+          <el-button type="primary" @click="openSelectedDeviceTask">查看待检任务</el-button>
         </div>
       </section>
 
@@ -537,6 +669,7 @@ onBeforeUnmount(() => {
         <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号或检验员" />
         <span>共 {{ filteredTasks.length }} 条待处理任务</span>
       </div>
+      <el-alert v-if="taskListDeviceAssetNo" type="info" :closable="false" :title="`从设备 ${taskListDeviceAssetNo} 进入：选择任务后将预填检测设备；任务未与设备绑定，请提交前核对。`" style="margin-bottom: 12px" />
       <paged-table :key="taskKeyword" v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
         <el-table-column prop="taskNo" label="任务号" min-width="150" />
         <el-table-column prop="workOrderNo" label="工单号" min-width="145" />
@@ -552,7 +685,7 @@ onBeforeUnmount(() => {
       <template #header>
         <div class="card-header">
           <div><span>设备检测记录</span><small>飞针机采集计数与已提交的 FQC 检验分别查看。</small></div>
-          <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordSource === 'probe' ? (flyingProbeUpdatedAt ? `更新于 ${formatDateTime(flyingProbeUpdatedAt)}` : '尚未读取') : `更新于 ${updatedAtLabel}` }}</span><el-button link type="primary" :disabled="recordSource === 'probe' && flyingProbeLoading" @click="refreshRecordPanel">刷新</el-button></div>
+          <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordSource === 'probe' ? (flyingProbeUpdatedAt ? `更新于 ${formatDateTime(flyingProbeUpdatedAt)}` : '尚未读取') : (finishedRecordsUpdatedAt ? `更新于 ${formatDateTime(finishedRecordsUpdatedAt)}` : '尚未读取') }}</span><el-button link type="primary" :disabled="recordSource === 'probe' ? flyingProbeLoading : finishedRecordsLoading" @click="refreshRecordPanel">刷新</el-button></div>
         </div>
       </template>
       <div class="task-queue-actions" role="group" aria-label="记录来源">
@@ -560,19 +693,29 @@ onBeforeUnmount(() => {
         <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
       </div>
       <template v-if="recordSource === 'probe'">
-        <p class="summary-footnote">飞针机自动上报测试计数；这些记录尚未形成 FQC 检验结论。</p>
+        <p class="summary-footnote">采集快照与自动生成的 FQC 检验分开展示；只有满足标准和唯一工单匹配的新增板数会生成检验记录。</p>
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
-        <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap">
-          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
-            <el-table-column label="QMS 接收时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
-            <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
-            <el-table-column prop="equipmentCode" label="检测设备" min-width="125" />
-            <el-table-column label="料号" min-width="155"><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
-            <el-table-column label="已测" min-width="95" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
-            <el-table-column label="好板" min-width="95" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
-            <el-table-column label="坏板" min-width="95" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
-            <el-table-column prop="sourceRecordNo" label="来源记录号" min-width="260" show-overflow-tooltip />
+        <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
+          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" :fit="false" size="small" empty-text="暂无飞针机采集记录">
+            <el-table-column label="QMS 接收时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
+            <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
+            <el-table-column label="料号" width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="已测" width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
+            <el-table-column label="好板" width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="坏板" width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="FQC 处理" width="200">
+              <template #default="scope">
+                <el-tooltip :content="scope.row.fqcProjectionReason || ''" :disabled="!scope.row.fqcProjectionReason" placement="top">
+                  <div class="fqc-projection-state">
+                    <el-tag size="small" :type="fqcProjectionTag(scope.row)">{{ fqcProjectionLabel(scope.row) }}</el-tag>
+                    <span v-if="scope.row.fqcProjectionReason" class="fqc-projection-reason">{{ scope.row.fqcProjectionReason }}</span>
+                  </div>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+            <el-table-column prop="sourceRecordNo" label="来源记录号" width="260" show-overflow-tooltip />
           </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
@@ -580,12 +723,12 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="设备、工单、料号、任务号或检验员" />
-          <span>共 {{ filteredFinishedTestRecords.length }} 条已提交记录</span>
+          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：设备、工单、料号、任务号或检验员" />
+          <span>已加载 {{ finishedTestRecords.length }} 条{{ recordKeyword.trim() ? `，其中匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
-          <paged-table :key="recordKeyword" :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的设备检测记录">
-            <el-table-column label="采集时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
+          <paged-table :key="recordKeyword" :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的 FQC 检验记录；飞针数据请查看“飞针机采集记录”">
+            <el-table-column label="检验时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
             <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
             <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
@@ -598,6 +741,7 @@ onBeforeUnmount(() => {
             <el-table-column prop="inspectedBy" label="检验员" min-width="110"><template #default="scope">{{ scope.row.inspectedBy || '—' }}</template></el-table-column>
           </paged-table>
         </div>
+        <div v-if="finishedRecordsNextCursor" class="task-queue-toolbar"><span>还有更早的 FQC 检验记录</span><el-button :loading="finishedRecordsLoading" @click="loadCompletedFinishedRecords(finishedRecordsNextCursor)">加载更多</el-button></div>
       </template>
     </el-card>
 
@@ -608,14 +752,15 @@ onBeforeUnmount(() => {
           <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
         </div>
       </template>
-      <paged-table :data="qualitySummary.dailyTrend" empty-text="暂无已提交的质量记录">
+      <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
+      <paged-table v-else :data="qualitySummary.dailyTrend" empty-text="暂无已提交的质量记录">
         <el-table-column prop="inspectionDate" label="检测日期" min-width="140" />
         <el-table-column prop="totalRecords" label="检测总数" min-width="130" align="right" />
         <el-table-column prop="passRecords" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.passRecords }}</span></template></el-table-column>
         <el-table-column prop="failRecords" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.failRecords }}</span></template></el-table-column>
         <el-table-column label="一次合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
       </paged-table>
-      <div class="summary-footnote">当前成品检验累计：{{ fqcTotal }} 条，合格 {{ fqcPass }} 条，不合格 {{ fqcFail }} 条。</div>
+      <div v-if="!summaryError" class="summary-footnote">当前成品检验累计：{{ fqcTotal }} 条，合格 {{ fqcPass }} 条，不合格 {{ fqcFail }} 条。</div>
     </el-card>
 
     <el-dialog v-model="recordDialog" class="inspection-record-dialog" title="提交检验记录" width="min(920px, 94vw)" :close-on-click-modal="false">
@@ -623,7 +768,7 @@ onBeforeUnmount(() => {
       <el-form ref="recordFormRef" :model="recordForm" :rules="recordRules" label-position="top" v-loading="templateLoading">
         <div class="form-grid">
           <el-form-item label="检测设备">
-            <el-select v-model="selectedDeviceId" clearable class="full-width" placeholder="未关联设备（可选）">
+            <el-select v-model="recordEquipmentAssetNo" clearable class="full-width" placeholder="未关联设备（可选）">
               <el-option v-for="device in monitorDevices" :key="device.assetNo" :label="`${device.name}（${device.assetNo}）`" :value="device.assetNo" />
             </el-select>
           </el-form-item>

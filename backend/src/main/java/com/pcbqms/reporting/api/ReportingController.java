@@ -25,9 +25,10 @@ public class ReportingController {
     public ApiResponse<QualitySummaryResponse> qualitySummary(
         @RequestParam(required = false) LocalDate from,
         @RequestParam(required = false) LocalDate to,
-        @RequestParam(required = false) String processCode
+        @RequestParam(required = false) String processCode,
+        @RequestParam(defaultValue = "false") boolean finishedTest
     ) {
-        return ApiResponse.of(reportingApplicationService.qualitySummary(from, to, processCode));
+        return ApiResponse.of(reportingApplicationService.qualitySummary(from, to, processCode, finishedTest));
     }
 
     @GetMapping("/quality-summary.xlsx")

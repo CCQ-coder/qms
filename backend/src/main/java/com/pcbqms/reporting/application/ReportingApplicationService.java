@@ -59,6 +59,11 @@ public class ReportingApplicationService {
 
     /** Aggregates submitted inspections in an optional inclusive inspection-date and process range. */
     public QualitySummaryResponse qualitySummary(LocalDate from, LocalDate to, String processCode) {
+        return qualitySummary(from, to, processCode, false);
+    }
+
+    /** Optionally limits the summary to finished-test tasks and FQC process tasks. */
+    public QualitySummaryResponse qualitySummary(LocalDate from, LocalDate to, String processCode, boolean finishedTest) {
         assertValidDateRange(from, to);
         String normalizedProcessCode = StringUtils.hasText(processCode) ? processCode.trim() : null;
         String tenantCode = TenantContext.tenantCode();
@@ -87,6 +92,9 @@ public class ReportingApplicationService {
                 continue;
             }
             if (normalizedProcessCode != null && (task == null || !normalizedProcessCode.equalsIgnoreCase(task.getProcessCode()))) {
+                continue;
+            }
+            if (finishedTest && !matchesFinishedTest(task)) {
                 continue;
             }
             totalCount++;
@@ -335,6 +343,11 @@ public class ReportingApplicationService {
         }
         LocalDate inspectedDate = record.getInspectedAt().toLocalDate();
         return (from == null || !inspectedDate.isBefore(from)) && (to == null || !inspectedDate.isAfter(to));
+    }
+
+    private boolean matchesFinishedTest(InspectionTask task) {
+        return task != null && ("FINISHED".equalsIgnoreCase(task.getTaskType())
+            || "FQC".equalsIgnoreCase(task.getProcessCode()));
     }
 
     private String dateRangeLabel(LocalDate from, LocalDate to) {
