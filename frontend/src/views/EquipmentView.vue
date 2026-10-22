@@ -292,7 +292,7 @@ onMounted(load)
     <template v-else-if="isMaintenancePage">
       <el-card shadow="never" class="content-card">
       <template #header><div class="card-header"><span>{{ maintenanceTitle }}</span><el-button type="primary" :disabled="!equipment.length" @click="openMaintenance">创建维护记录</el-button></div></template>
-      <el-table :data="visibleMaintenance" empty-text="暂无维护记录">
+      <paged-table :key="requestedMaintenanceType" :data="visibleMaintenance" empty-text="暂无维护记录">
         <el-table-column prop="recordNo" label="记录号" min-width="160" />
         <el-table-column prop="equipmentAssetNo" label="设备编号" min-width="140" />
         <el-table-column prop="equipmentName" label="设备名称" min-width="150" />
@@ -301,7 +301,7 @@ onMounted(load)
         <el-table-column prop="executorName" label="执行人" min-width="110" />
         <el-table-column label="状态" min-width="135"><template #default="scope"><el-tag :type="scope.row.scheduleStatus === 'ALERT' ? 'danger' : scope.row.status === 'COMPLETED' ? 'success' : scope.row.scheduleStatus === 'OVERDUE' ? 'danger' : 'warning'">{{ scope.row.scheduleStatus === 'ALERT' ? '异常告警' : scope.row.status === 'COMPLETED' ? '已完成' : scope.row.scheduleStatus === 'OVERDUE' ? '计划逾期' : '待执行' }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="120" fixed="right"><template #default="scope"><el-button v-if="!['COMPLETED', 'ALERT'].includes(scope.row.status)" type="primary" link @click="openComplete(scope.row)">填写结果</el-button><span v-else>{{ scope.row.status === 'ALERT' ? '已告警' : '已完成' }}</span></template></el-table-column>
-      </el-table>
+      </paged-table>
       </el-card>
 
     <el-dialog v-model="maintenanceDialog" title="创建设备维护记录" width="min(640px, 94vw)">
@@ -314,7 +314,7 @@ onMounted(load)
 
     <el-card v-else shadow="never" class="content-card">
       <template #header><div class="card-header"><span>设备告警</span><small>维护项目实测值超出标准时自动生成；完成该设备的维修记录后自动消警。</small></div></template>
-      <el-table :data="alerts" empty-text="暂无未消除告警">
+      <paged-table :data="alerts" empty-text="暂无未消除告警">
         <el-table-column prop="alertNo" label="告警编号" min-width="155" />
         <el-table-column prop="equipmentAssetNo" label="设备编号" min-width="130" />
         <el-table-column prop="equipmentName" label="设备名称" min-width="140" />
@@ -322,7 +322,7 @@ onMounted(load)
         <el-table-column prop="description" label="异常项目与标准" min-width="280" show-overflow-tooltip />
         <el-table-column label="告警时间" min-width="160"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column>
         <el-table-column label="状态" min-width="100"><template #default><el-tag type="danger">待检修</el-tag></template></el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
   </section>
 </template>

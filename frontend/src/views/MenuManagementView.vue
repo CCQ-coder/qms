@@ -97,7 +97,7 @@ onMounted(() => { void load() })
       <el-alert type="info" :closable="false" show-icon style="margin-bottom: 18px">
         角色权限中的“可见菜单”会在此处的显示状态基础上继续筛选；两项都允许时，用户才会看到对应页面。
       </el-alert>
-      <el-table :data="menuRows" row-key="itemCode" :tree-props="{ children: 'children' }" default-expand-all empty-text="暂无菜单配置">
+      <paged-table :data="menuRows" row-key="itemCode" :tree-props="{ children: 'children' }" default-expand-all empty-text="暂无菜单配置">
         <el-table-column prop="displayLabel" label="菜单名称" min-width="210" />
         <el-table-column label="类型" width="100"><template #default="scope"><el-tag :type="scope.row.menuType === 'GROUP' ? 'primary' : 'info'" size="small">{{ scope.row.menuType === 'GROUP' ? '分组' : '页面' }}</el-tag></template></el-table-column>
         <el-table-column prop="itemCode" label="菜单编码" min-width="190" />
@@ -111,7 +111,7 @@ onMounted(() => { void load() })
             </div>
           </template>
         </el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
   </section>
 </template>

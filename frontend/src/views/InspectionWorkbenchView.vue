@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime, taskTypeText } from '@/utils/display-text'
+import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
@@ -84,6 +85,18 @@ const monitorDevices = computed<MonitorDevice[]>(() => {
       failCount: deviceRecords.filter((record) => record.verdict === 'FAIL').length
     }
   })
+})
+const monitorPage = ref(1)
+const monitorPageSize = ref(10)
+const pagedMonitorDevices = computed(() => paginateRows(monitorDevices.value, monitorPage.value, monitorPageSize.value))
+watch(() => monitorDevices.value.length, (count) => {
+  monitorPage.value = clampPage(monitorPage.value, count, monitorPageSize.value)
+})
+watch(pagedMonitorDevices, (devices) => {
+  const first = devices[0]
+  if (first && !devices.some((device) => device.assetNo === selectedDeviceId.value)) {
+    selectedDeviceId.value = first.assetNo
+  }
 })
 
 const selectedDevice = computed(() => monitorDevices.value.find((device) => device.assetNo === selectedDeviceId.value) ?? monitorDevices.value[0])
@@ -478,7 +491,7 @@ onBeforeUnmount(() => {
 
         <div v-if="monitorDevices.length" class="monitor-device-grid">
           <button
-            v-for="device in monitorDevices"
+            v-for="device in pagedMonitorDevices"
             :key="device.assetNo"
             class="monitor-device-card"
             :class="{ 'monitor-device-card--selected': selectedDevice?.assetNo === device.assetNo, 'monitor-device-card--offline': !device.connected }"
@@ -497,6 +510,9 @@ onBeforeUnmount(() => {
             </span>
             <span class="device-card-footer"><span>队列 {{ device.queueSize }} · 已测 {{ device.recordCount }}</span><span>{{ device.connected ? `PASS ${device.passCount} · FAIL ${device.failCount}` : '点击查看工位详情' }}</span></span>
           </button>
+        </div>
+        <div v-if="monitorDevices.length" class="monitor-pagination">
+          <el-pagination v-model:current-page="monitorPage" v-model:page-size="monitorPageSize" :total="monitorDevices.length" :page-sizes="[10, 20, 50, 100]" background layout="total, sizes, prev, pager, next, jumper" @size-change="monitorPage = 1" />
         </div>
         <el-empty v-else description="暂无成品测试设备，请先在设备台账新增并选择“成品测试设备”类型。" />
 
@@ -521,7 +537,7 @@ onBeforeUnmount(() => {
         <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号或检验员" />
         <span>共 {{ filteredTasks.length }} 条待处理任务</span>
       </div>
-      <el-table v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
+      <paged-table :key="taskKeyword" v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
         <el-table-column prop="taskNo" label="任务号" min-width="150" />
         <el-table-column prop="workOrderNo" label="工单号" min-width="145" />
         <el-table-column prop="processName" label="工序" min-width="130" />
@@ -529,7 +545,7 @@ onBeforeUnmount(() => {
         <el-table-column prop="assigneeName" label="检验员" min-width="110" />
         <el-table-column label="计划完成" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.dueAt) }}</template></el-table-column>
         <el-table-column label="操作" width="120" fixed="right"><template #default="scope"><el-button type="primary" link @click="openRecord(scope.row)">填写检验</el-button></template></el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
 
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
@@ -548,7 +564,7 @@ onBeforeUnmount(() => {
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap">
-          <el-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
+          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
             <el-table-column label="QMS 接收时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" />
@@ -557,7 +573,7 @@ onBeforeUnmount(() => {
             <el-table-column label="好板" min-width="95" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="坏板" min-width="95" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column prop="sourceRecordNo" label="来源记录号" min-width="260" show-overflow-tooltip />
-          </el-table>
+          </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
       </template>
@@ -568,7 +584,7 @@ onBeforeUnmount(() => {
           <span>共 {{ filteredFinishedTestRecords.length }} 条已提交记录</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
-          <el-table :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的设备检测记录">
+          <paged-table :key="recordKeyword" :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的设备检测记录">
             <el-table-column label="采集时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
             <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
@@ -580,7 +596,7 @@ onBeforeUnmount(() => {
             <el-table-column label="结果" min-width="90"><template #default="scope"><el-tag :type="scope.row.verdict === 'PASS' ? 'success' : 'danger'">{{ scope.row.verdict }}</el-tag></template></el-table-column>
             <el-table-column prop="defectSummary" label="缺陷说明" min-width="180"><template #default="scope">{{ scope.row.defectSummary || '—' }}</template></el-table-column>
             <el-table-column prop="inspectedBy" label="检验员" min-width="110"><template #default="scope">{{ scope.row.inspectedBy || '—' }}</template></el-table-column>
-          </el-table>
+          </paged-table>
         </div>
       </template>
     </el-card>
@@ -592,13 +608,13 @@ onBeforeUnmount(() => {
           <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
         </div>
       </template>
-      <el-table :data="qualitySummary.dailyTrend" empty-text="暂无已提交的质量记录">
+      <paged-table :data="qualitySummary.dailyTrend" empty-text="暂无已提交的质量记录">
         <el-table-column prop="inspectionDate" label="检测日期" min-width="140" />
         <el-table-column prop="totalRecords" label="检测总数" min-width="130" align="right" />
         <el-table-column prop="passRecords" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.passRecords }}</span></template></el-table-column>
         <el-table-column prop="failRecords" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.failRecords }}</span></template></el-table-column>
         <el-table-column label="一次合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
-      </el-table>
+      </paged-table>
       <div class="summary-footnote">当前成品检验累计：{{ fqcTotal }} 条，合格 {{ fqcPass }} 条，不合格 {{ fqcFail }} 条。</div>
     </el-card>
 

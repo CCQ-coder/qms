@@ -323,61 +323,61 @@ onMounted(async () => {
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="检验模板" name="templates">
           <div class="toolbar"><el-button type="primary" @click="openTemplateDialog">新建检验模板</el-button><el-button @click="load">刷新</el-button></div>
-          <el-table v-loading="loading" :data="templates" empty-text="暂无检验模板">
+          <paged-table v-loading="loading" :data="templates" empty-text="暂无检验模板">
             <el-table-column prop="templateCode" label="模板编码" min-width="155" />
             <el-table-column prop="name" label="模板名称" min-width="180" />
             <el-table-column label="适用工序" min-width="150"><template #default="scope">{{ scope.row.processName }}（{{ scope.row.processCode }}）</template></el-table-column>
             <el-table-column label="任务类型" width="115"><template #default="scope">{{ taskTypeText(scope.row.taskType) }}</template></el-table-column>
             <el-table-column label="检验项" width="90"><template #default="scope">{{ scope.row.items.length }}</template></el-table-column>
             <el-table-column label="状态" width="124" fixed="right"><template #default="scope"><div class="table-status-control"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ statusText(scope.row.status) }}</el-tag><el-switch :model-value="scope.row.status === 'ACTIVE'" @change="onTemplateStatusChange($event, scope.row)" /></div></template></el-table-column>
-          </el-table>
+          </paged-table>
         </el-tab-pane>
 
         <el-tab-pane label="自动派单规则" name="rules">
           <div class="toolbar"><el-button type="primary" @click="openRuleDialog">新建派单规则</el-button><el-button @click="load">刷新</el-button></div>
-          <el-table v-loading="loading" :data="rules" empty-text="暂无自动派单规则">
+          <paged-table v-loading="loading" :data="rules" empty-text="暂无自动派单规则">
             <el-table-column prop="priority" label="优先级" width="85" />
             <el-table-column prop="name" label="规则名称" min-width="180" />
             <el-table-column prop="productCode" label="限定产品" min-width="130"><template #default="scope">{{ scope.row.productCode || '全部产品' }}</template></el-table-column>
             <el-table-column label="工序" min-width="140"><template #default="scope">{{ scope.row.processName }}（{{ scope.row.processCode }}）</template></el-table-column>
             <el-table-column label="检验模板" min-width="190"><template #default="scope">{{ templateName(scope.row.templateId) }}</template></el-table-column>
             <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
-          </el-table>
+          </paged-table>
         </el-tab-pane>
 
         <el-tab-pane v-if="route.meta.configTab === 'master-data'" label="产品与工序" name="master-data">
           <div class="master-data-grid">
             <div>
               <div class="toolbar"><strong>产品资料</strong><el-button type="primary" plain @click="openProductDialog">新增产品</el-button></div>
-              <el-table v-loading="loading" :data="products" size="small" empty-text="暂无产品资料">
+              <paged-table v-loading="loading" :data="products" size="small" empty-text="暂无产品资料">
                 <el-table-column prop="productCode" label="产品编号" min-width="130" />
                 <el-table-column prop="productName" label="产品名称" min-width="150" />
                 <el-table-column prop="specification" label="规格" min-width="170" show-overflow-tooltip />
                 <el-table-column label="状态" width="124" fixed="right"><template #default="scope"><div class="table-status-control"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ statusText(scope.row.status) }}</el-tag><el-switch :model-value="scope.row.status === 'ACTIVE'" @change="onProductStatusChange($event, scope.row)" /></div></template></el-table-column>
-              </el-table>
+              </paged-table>
             </div>
             <div>
               <div class="toolbar"><strong>工序资料</strong><el-button type="primary" plain @click="openProcessDialog">新增工序</el-button></div>
-              <el-table v-loading="loading" :data="processes" size="small" empty-text="暂无工序资料">
+              <paged-table v-loading="loading" :data="processes" size="small" empty-text="暂无工序资料">
                 <el-table-column prop="sequenceNo" label="顺序" width="75" />
                 <el-table-column prop="processCode" label="工序编码" min-width="120" />
                 <el-table-column prop="processName" label="工序名称" min-width="150" />
                 <el-table-column label="状态" width="124" fixed="right"><template #default="scope"><div class="table-status-control"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ statusText(scope.row.status) }}</el-tag><el-switch :model-value="scope.row.status === 'ACTIVE'" @change="onProcessStatusChange($event, scope.row)" /></div></template></el-table-column>
-              </el-table>
+              </paged-table>
             </div>
           </div>
         </el-tab-pane>
 
         <el-tab-pane label="用户与工序权限" name="users">
           <div class="toolbar"><span class="helper-text">仅租户管理员可维护；检验员需绑定可操作的工序。</span><el-button type="primary" @click="openUserDialog()">新增用户</el-button></div>
-          <el-table :data="users" empty-text="切换为租户管理员后可查看用户权限">
+          <paged-table :data="users" empty-text="切换为租户管理员后可查看用户权限">
             <el-table-column prop="userName" label="用户标识" min-width="150" />
             <el-table-column prop="displayName" label="显示名称" min-width="130" />
             <el-table-column prop="roleCode" label="角色" min-width="130" />
             <el-table-column label="授权工序" min-width="190"><template #default="scope">{{ scope.row.processCodes.join('、') || '全部工序' }}</template></el-table-column>
             <el-table-column label="状态" width="100"><template #default="scope"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'">{{ statusText(scope.row.status) }}</el-tag></template></el-table-column>
             <el-table-column label="操作" width="90"><template #default="scope"><el-button link type="primary" @click="openUserDialog(scope.row)">编辑</el-button></template></el-table-column>
-          </el-table>
+          </paged-table>
         </el-tab-pane>
       </el-tabs>
     </el-card>

@@ -117,7 +117,7 @@ onMounted(load)
         <el-select v-model="filter.maintenanceType" clearable placeholder="全部维护类型" @change="load"><el-option v-for="item in maintenanceTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select>
         <el-button type="primary" @click="openCreate">新增维护项目</el-button>
       </div>
-      <el-table :data="templateItems" empty-text="暂无维护项目，请新增项目并设置标准值">
+      <paged-table :key="`${filter.equipmentType}:${filter.maintenanceType}`" :data="templateItems" empty-text="暂无维护项目，请新增项目并设置标准值">
         <el-table-column prop="equipmentType" label="适用设备类型" min-width="160" />
         <el-table-column label="维护类型" min-width="120"><template #default="scope">{{ maintenanceTypeText(scope.row.maintenanceType) }}</template></el-table-column>
         <el-table-column prop="itemCode" label="项目编码" min-width="140" />
@@ -126,7 +126,7 @@ onMounted(load)
         <el-table-column label="标准上限" min-width="120"><template #default="scope">{{ scope.row.upperLimit ?? '未设置' }}</template></el-table-column>
         <el-table-column prop="unit" label="单位" min-width="90" />
         <el-table-column label="操作" width="100" fixed="right"><template #default="scope"><el-button type="danger" link @click="remove(scope.row)">删除</el-button></template></el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
 
     <el-dialog v-model="dialogVisible" title="新增维护项目" width="min(680px, 94vw)">

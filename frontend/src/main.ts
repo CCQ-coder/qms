@@ -37,6 +37,7 @@ import {
 } from 'element-plus'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
+import PagedTable from './components/PagedTable.vue'
 import { finishLoginCallback } from './auth/oidc'
 import { initializeDesktopConnection, isDesktopApplication } from './desktop/connection'
 import router from './router'
@@ -57,6 +58,7 @@ async function bootstrap() {
 
   const app = createApp(App)
   app.use(createPinia()).use(router)
+  app.component('PagedTable', PagedTable)
   for (const component of [
     ElAlert, ElAside, ElButton, ElCard, ElCheckbox, ElContainer, ElDatePicker, ElDialog, ElDivider, ElEmpty,
     ElForm, ElFormItem, ElHeader, ElIcon, ElInput, ElInputNumber, ElMain, ElMenu, ElMenuItem, ElOption, ElProgress,

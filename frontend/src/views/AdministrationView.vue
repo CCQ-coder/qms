@@ -284,7 +284,7 @@ onMounted(load)
       </div>
       <el-card shadow="never" class="content-card">
         <div class="toolbar"><el-select v-model="auditModule" clearable placeholder="全部模块" style="width: 220px"><el-option v-for="item in Object.values(configurations)" :key="item.type" :label="item.title" :value="item.type" /></el-select><el-button type="primary" @click="load">查询</el-button></div>
-        <el-table :data="auditLogs" empty-text="暂无操作日志"><el-table-column label="操作时间" min-width="185"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column><el-table-column label="模块" min-width="145"><template #default="scope">{{ auditModuleText(scope.row.moduleCode) }}</template></el-table-column><el-table-column label="操作" min-width="100"><template #default="scope">{{ auditOperationText(scope.row.operation) }}</template></el-table-column><el-table-column label="操作人" min-width="140"><template #default="scope">{{ auditActorText(scope.row.actor) }}</template></el-table-column><el-table-column prop="summary" label="操作说明" min-width="260" show-overflow-tooltip /></el-table>
+        <paged-table :key="auditModule" :data="auditLogs" empty-text="暂无操作日志"><el-table-column label="操作时间" min-width="185"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column><el-table-column label="模块" min-width="145"><template #default="scope">{{ auditModuleText(scope.row.moduleCode) }}</template></el-table-column><el-table-column label="操作" min-width="100"><template #default="scope">{{ auditOperationText(scope.row.operation) }}</template></el-table-column><el-table-column label="操作人" min-width="140"><template #default="scope">{{ auditActorText(scope.row.actor) }}</template></el-table-column><el-table-column prop="summary" label="操作说明" min-width="260" show-overflow-tooltip /></paged-table>
       </el-card>
     </template>
 
@@ -294,7 +294,7 @@ onMounted(load)
       </div>
       <el-card shadow="never" class="content-card">
         <template #header><div class="card-header"><span>{{ configuration.title }}列表</span><div><el-button @click="load">刷新</el-button><el-button type="primary" @click="openCreate">新建{{ configuration.noun }}</el-button></div></div></template>
-        <el-table :data="items" empty-text="暂无配置数据">
+        <paged-table :key="selectedType" :data="items" empty-text="暂无配置数据">
           <el-table-column prop="itemCode" label="编码" min-width="155" show-overflow-tooltip />
           <el-table-column prop="itemName" label="名称" min-width="170" show-overflow-tooltip />
           <el-table-column v-if="configuration.parentLabel" prop="parentCode" :label="configuration.parentLabel" min-width="145" show-overflow-tooltip />
@@ -304,7 +304,7 @@ onMounted(load)
           <el-table-column prop="sortOrder" label="排序" width="86" />
           <el-table-column label="状态" width="124" fixed="right"><template #default="scope"><div class="table-status-control"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ scope.row.status === 'ACTIVE' ? '启用' : '停用' }}</el-tag><el-switch :model-value="scope.row.status === 'ACTIVE'" @change="changeStatus(scope.row, Boolean($event))" /></div></template></el-table-column>
           <el-table-column label="操作" width="88" fixed="right"><template #default="scope"><el-button type="primary" link @click="openEdit(scope.row)">编辑</el-button></template></el-table-column>
-        </el-table>
+        </paged-table>
       </el-card>
 
       <el-dialog v-model="dialogVisible" :title="`${editingItem ? '编辑' : '新建'}${configuration.noun}`" width="min(720px, 94vw)">

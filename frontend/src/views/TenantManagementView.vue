@@ -167,7 +167,7 @@ onMounted(() => { void load() })
           <div><el-button @click="load">刷新</el-button><el-button type="primary" @click="openCreate">新增租户</el-button></div>
         </div>
       </template>
-      <el-table :data="tenants" empty-text="暂无租户">
+      <paged-table :data="tenants" empty-text="暂无租户">
         <el-table-column prop="name" label="组织名称" min-width="180" />
         <el-table-column prop="code" label="组织编码" min-width="160" show-overflow-tooltip />
         <el-table-column label="初始管理员" min-width="190"><template #default="scope">{{ scope.row.adminDisplayName || scope.row.adminUserName || '—' }}<span v-if="scope.row.adminDisplayName && scope.row.adminUserName" class="secondary-text">（{{ scope.row.adminUserName }}）</span></template></el-table-column>
@@ -176,7 +176,7 @@ onMounted(() => { void load() })
         <el-table-column label="状态" width="105"><template #default="scope"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ scope.row.status === 'ACTIVE' ? '启用' : '停用' }}</el-tag></template></el-table-column>
         <el-table-column label="创建时间" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column>
         <el-table-column label="操作" width="148" fixed="right"><template #default="scope"><el-button link type="primary" @click="openEdit(scope.row)">编辑</el-button><el-button link type="danger" :loading="deletingTenantCode === scope.row.code" @click="removeTenant(scope.row)">删除</el-button></template></el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="editingTenant ? '编辑租户' : '新增租户'" width="min(860px, 94vw)" destroy-on-close>

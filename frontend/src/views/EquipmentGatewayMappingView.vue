@@ -127,7 +127,7 @@ onMounted(() => { void load() })
       />
       <p v-if="!equipment.length" class="field-help">请先在“设备台账”新增需要接收监控数据的设备。</p>
 
-      <el-table :data="mappings" empty-text="暂无设备网关映射" style="margin-top: 16px">
+      <paged-table :data="mappings" empty-text="暂无设备网关映射" style="margin-top: 16px">
         <el-table-column label="QMS 设备编号" min-width="150"><template #default="scope">{{ scope.row.equipmentCode || '—' }}</template></el-table-column>
         <el-table-column label="QMS 设备名称" min-width="180"><template #default="scope">{{ scope.row.equipmentName || '目标设备不可用' }}</template></el-table-column>
         <el-table-column label="旧监控软件设备名" min-width="190">
@@ -142,7 +142,7 @@ onMounted(() => { void load() })
             <el-button type="danger" link :loading="deletingMappingId === scope.row.id" @click="remove(scope.row)">删除</el-button>
           </template>
         </el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="editingMappingId ? '编辑设备网关映射' : '新增设备网关映射'" width="min(560px, 94vw)" :close-on-click-modal="false">
