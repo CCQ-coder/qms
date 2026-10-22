@@ -120,7 +120,7 @@ onMounted(() => { void load() })
       </template>
 
       <el-alert
-        title="将现场设备的 machinename 或采集电脑的 hostName 绑定到 QMS 设备台账。名称匹配会自动忽略首尾空格和英文大小写。"
+        title="将现场 machinename、飞针机配置中的 device_id 或采集电脑 hostName 绑定到 QMS 设备台账。名称匹配会自动忽略首尾空格和英文大小写。"
         type="info"
         :closable="false"
         show-icon
@@ -130,7 +130,7 @@ onMounted(() => { void load() })
       <paged-table :data="mappings" empty-text="暂无设备网关映射" style="margin-top: 16px">
         <el-table-column label="QMS 设备编号" min-width="150"><template #default="scope">{{ scope.row.equipmentCode || '—' }}</template></el-table-column>
         <el-table-column label="QMS 设备名称" min-width="180"><template #default="scope">{{ scope.row.equipmentName || '目标设备不可用' }}</template></el-table-column>
-        <el-table-column label="来源设备名 / 电脑名" min-width="190">
+        <el-table-column label="来源标识" min-width="190">
           <template #default="scope"><code>{{ scope.row.machineName || '-' }}</code></template>
         </el-table-column>
         <el-table-column label="最后更新" min-width="180">
@@ -146,14 +146,14 @@ onMounted(() => { void load() })
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="editingMappingId ? '编辑设备网关映射' : '新增设备网关映射'" width="min(560px, 94vw)" :close-on-click-modal="false">
-      <el-alert title="填写现场上报的 machinename 或采集电脑的 hostName；标特福旧软件的 username 是操作员，不能作为设备标识。" type="info" :closable="false" show-icon />
+      <el-alert title="填写现场上报的 machinename、飞针机配置中的 device_id 或采集电脑的 hostName；标特福旧软件的 username 是操作员，不能作为设备标识。" type="info" :closable="false" show-icon />
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" style="margin-top: 18px">
         <el-form-item label="QMS 设备" prop="equipmentId">
           <el-select v-model="form.equipmentId" filterable class="full-width" placeholder="请选择设备台账">
             <el-option v-for="item in equipment" :key="item.id" :label="`${item.assetNo} · ${item.name}`" :value="item.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="来源名称（machinename / hostName）" prop="machineName">
+        <el-form-item label="来源标识（machinename / device_id / hostName）" prop="machineName">
           <el-input v-model="form.machineName" maxlength="160" show-word-limit placeholder="例如：SCBGX" />
           <div class="field-help">填写现场实际上报的名称；同一租户内不能重复映射到不同设备。</div>
         </el-form-item>
