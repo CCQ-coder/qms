@@ -86,6 +86,23 @@ QMS 面向现场网关提供 HTTPS JSON 接口；不实现、不暴露也不需�
 
 首次对接时，租户管理员先通过 `POST /api/v1/equipment/gateway-mappings` 将 QMS 设备台账映射到网关上报的 `username`（设备 `#Username`）和/或 `machineName`；标识在 QMS 中会规范化为大写，并且同一租户内不能映射到两台设备。随后在 `POST /api/v1/cnc/program-releases` 为“设备 + 条码”发布有效的程序文件、版本、SHA-256 和文件地址。
 
+飞针机电脑另用 `POST /api/v1/gateway/host-status` 上报主机状态。请求需包含 `X-Gateway-Token`；生产环境若不携带 `Authorization`，服务端会使用 `QMS_GATEWAY_TELEMETRY_TENANT_CODE` 指定的租户。也可携带该租户的 Bearer Token。服务端按租户和规范化后的电脑名只保留最新一条，成功返回 HTTP 204。示例：
+
+```json
+{
+  "hostName": "SCBGX",
+  "sampledAt": "2026-10-22T10:00:00Z",
+  "cpuPercent": 12.5,
+  "memoryTotalBytes": 17179869184,
+  "memoryAvailableBytes": 8589934592,
+  "systemDiskTotalBytes": 512110190592,
+  "systemDiskFreeBytes": 171798691840,
+  "uptimeSeconds": 3600
+}
+```
+
+`cpuPercent` 在首次采样无法计算时可为 `null`。登录用户可用 `GET /api/v1/gateway/host-status` 读取本租户各电脑的最新状态，响应为 `{ "data": [...] }`，每条记录另含 `receivedAt`。应先部署包含此接口的 QMS，再启用采集端上报。
+
 `POST /api/v1/equipment/telemetry` 接收实时或批量遥测：
 
 ```json
