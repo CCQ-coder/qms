@@ -11,6 +11,7 @@ import com.pcbqms.equipment.api.EquipmentTelemetryHistoryQuery;
 import com.pcbqms.equipment.api.EquipmentTelemetryRecordResponse;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
 import java.nio.charset.StandardCharsets;
@@ -86,8 +87,17 @@ public class EquipmentTelemetryQueryApplicationService {
         );
         boolean hasMore = rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
+        List<String> flyingProbeIds = pageRows.stream()
+            .filter(record -> "FLYING_PROBE_TEST_COUNTERS".equals(record.getEventType()))
+            .map(EquipmentTelemetryRecord::getId)
+            .toList();
+        Map<String, EquipmentTelemetryProjectionStatus> projections = flyingProbeIds.isEmpty()
+            ? Map.of()
+            : telemetryRecordMapper.selectProjectionStatuses(tenantCode, flyingProbeIds).stream()
+                .collect(Collectors.toMap(EquipmentTelemetryProjectionStatus::getTelemetryId, item -> item));
         List<EquipmentTelemetryRecordResponse> items = pageRows.stream()
-            .map(record -> toResponse(record, accessibleEquipment.get(record.getEquipmentId())))
+            .map(record -> toResponse(record, accessibleEquipment.get(record.getEquipmentId()),
+                projections.get(record.getId())))
             .filter(Objects::nonNull)
             .toList();
         String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast()) : null;
@@ -105,10 +115,12 @@ public class EquipmentTelemetryQueryApplicationService {
                 || !access.canAccess(equipment.getProcessCode())))) {
             return null;
         }
-        return toResponse(record, equipment);
+        return toResponse(record, equipment, null);
     }
 
-    private EquipmentTelemetryRecordResponse toResponse(EquipmentTelemetryRecord record, Equipment equipment) {
+    private EquipmentTelemetryRecordResponse toResponse(
+        EquipmentTelemetryRecord record, Equipment equipment, EquipmentTelemetryProjectionStatus projection
+    ) {
         if (equipment == null) return null;
         JsonNode attributes = attributesOf(record);
         return EquipmentTelemetryRecordResponse.from(
@@ -122,7 +134,8 @@ public class EquipmentTelemetryQueryApplicationService {
             textAttribute(attributes, "legacyScreenText") != null
                 ? textAttribute(attributes, "legacyScreenText") : record.getAlarmMessage(),
             integerAttribute(attributes, "goodBoardCount"),
-            integerAttribute(attributes, "badBoardCount")
+            integerAttribute(attributes, "badBoardCount"),
+            projection
         );
     }
 

@@ -168,6 +168,100 @@ class ReportingApplicationServiceTest {
         assertThat(summary.byProcess()).extracting(item -> item.processCode()).containsExactly("FQC");
     }
 
+    @Test
+    void fqcProcessFilterExcludesFinishedTasksAtOtherProcesses() {
+        TenantContext.set("customer-a", "supervisor.a");
+        InspectionTask fqcTask = task("task-fqc", "FQC", "成品检验");
+        fqcTask.setTaskType("PROCESS");
+        InspectionTask finishedTask = task("task-finished", "ELECTRICAL_TEST", "飞针电测");
+        finishedTask.setTaskType("FINISHED");
+        InspectionTask maskTask = task("task-mask", "SOLDER_MASK", "阻焊");
+        maskTask.setTaskType("PROCESS");
+        InspectionRecord failedFinishedRecord = record("task-finished", "FAIL");
+        failedFinishedRecord.setDefectSummary("开路");
+        failedFinishedRecord.setDefectiveQuantity(2);
+        InspectionRecord failedMaskRecord = record("task-mask", "FAIL");
+        failedMaskRecord.setDefectSummary("划伤");
+        failedMaskRecord.setDefectiveQuantity(3);
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(fqcTask, finishedTask, maskTask));
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(
+            record("task-fqc", "PASS"), failedFinishedRecord, failedMaskRecord));
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
+        ReportingApplicationService service = new ReportingApplicationService(
+            inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
+            inspectionAccessScopeService);
+
+        var summary = service.qualitySummary(null, null, "FQC");
+
+        assertThat(summary.totalRecords()).isEqualTo(1);
+        assertThat(summary.passRecords()).isEqualTo(1);
+        assertThat(summary.failRecords()).isZero();
+        assertThat(summary.byProcess()).extracting(item -> item.processCode())
+            .containsExactly("FQC");
+        assertThat(summary.defectRanking()).isEmpty();
+    }
+
+    @Test
+    void finishedTestSummaryIncludesFinishedTasksAndFqcWithinDateRange() {
+        TenantContext.set("customer-a", "supervisor.a");
+        InspectionTask fqcTask = task("task-fqc", "FQC", "成品检验");
+        fqcTask.setTaskType("PROCESS");
+        InspectionTask finishedTask = task("task-finished", "ELECTRICAL_TEST", "飞针电测");
+        finishedTask.setTaskType("FINISHED");
+        InspectionTask maskTask = task("task-mask", "SOLDER_MASK", "阻焊");
+        maskTask.setTaskType("PROCESS");
+        InspectionRecord fqcRecord = record("task-fqc", "PASS");
+        fqcRecord.setInspectedAt(LocalDateTime.of(2026, 9, 1, 8, 30));
+        InspectionRecord finishedRecord = record("task-finished", "FAIL");
+        finishedRecord.setInspectedAt(LocalDateTime.of(2026, 9, 1, 9, 30));
+        finishedRecord.setDefectSummary("开路");
+        finishedRecord.setDefectiveQuantity(2);
+        InspectionRecord oldFinishedRecord = record("task-finished", "PASS");
+        oldFinishedRecord.setInspectedAt(LocalDateTime.of(2026, 8, 31, 23, 59));
+        InspectionRecord maskRecord = record("task-mask", "PASS");
+        maskRecord.setInspectedAt(LocalDateTime.of(2026, 9, 1, 10, 30));
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(fqcTask, finishedTask, maskTask));
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(
+            fqcRecord, finishedRecord, oldFinishedRecord, maskRecord));
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
+        ReportingApplicationService service = new ReportingApplicationService(
+            inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
+            inspectionAccessScopeService);
+
+        var summary = service.qualitySummary(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1), null, true);
+
+        assertThat(summary.totalRecords()).isEqualTo(2);
+        assertThat(summary.passRecords()).isEqualTo(1);
+        assertThat(summary.failRecords()).isEqualTo(1);
+        assertThat(summary.byProcess()).extracting(item -> item.processCode())
+            .containsExactlyInAnyOrder("FQC", "ELECTRICAL_TEST");
+        assertThat(summary.defectRanking()).extracting(item -> item.defectSummary()).containsExactly("开路");
+        assertThat(summary.dailyTrend()).extracting(item -> item.inspectionDate()).containsExactly("2026-09-01");
+    }
+
+    @Test
+    void finishedTestSummaryRespectsInspectorProcessScope() {
+        TenantContext.set("customer-a", "tester.a");
+        InspectionTask fqcTask = task("task-fqc", "FQC", "成品检验");
+        InspectionTask finishedTask = task("task-finished", "ELECTRICAL_TEST", "飞针电测");
+        finishedTask.setTaskType("FINISHED");
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(fqcTask, finishedTask));
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(
+            record("task-fqc", "PASS"), record("task-finished", "FAIL")));
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("tester.a", "INSPECTOR", false, Set.of("FQC")));
+        ReportingApplicationService service = new ReportingApplicationService(
+            inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
+            inspectionAccessScopeService);
+
+        var summary = service.qualitySummary(null, null, null, true);
+
+        assertThat(summary.totalRecords()).isEqualTo(1);
+        assertThat(summary.byProcess()).extracting(item -> item.processCode()).containsExactly("FQC");
+    }
+
     private InspectionTask task(String id, String processCode, String processName) {
         InspectionTask task = new InspectionTask();
         task.setId(id);
