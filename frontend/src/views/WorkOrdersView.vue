@@ -161,7 +161,7 @@ onMounted(() => { void load() })
       <div class="work-order-table-wrap work-order-summary-table-wrap" :class="{ 'no-batch-column': !showBatchColumn }">
         <el-table v-loading="loading" class="work-order-data-table" :data="rows" stripe>
           <el-table-column label="生产指令号" min-width="150"><template #default="{ row }"><el-button class="work-order-detail-link" link type="primary" @click="openDetail(row)">{{ row.workOrderNo }}</el-button></template></el-table-column>
-          <el-table-column label="输入日期" min-width="112"><template #default="{ row }">{{ formatDate(row.inputDate) }}</template></el-table-column>
+          <el-table-column label="输入日期" min-width="145"><template #default="{ row }">{{ formatDate(row.inputDate) }}</template></el-table-column>
           <el-table-column v-if="showBatchColumn" label="生产批次" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ batchText(row) }}</template></el-table-column>
           <el-table-column label="厂内编号 / 客户料号" min-width="180"><template #default="{ row }"><div>{{ value(row.internalProductNo ?? row.productCode) }}</div><small>{{ value(row.customerPartNo) }}</small></template></el-table-column>
           <el-table-column label="客户" min-width="100"><template #default="{ row }">{{ value(row.customerCode) }}</template></el-table-column>
