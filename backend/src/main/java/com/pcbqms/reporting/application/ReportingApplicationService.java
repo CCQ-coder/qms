@@ -21,6 +21,7 @@ import com.pcbqms.workorder.infrastructure.persistence.ProductionBatchMapper;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,8 @@ public class ReportingApplicationService {
         Map<String, long[]> counters = new LinkedHashMap<>();
         Map<String, String> names = new LinkedHashMap<>();
         Map<String, long[]> defectCounters = new LinkedHashMap<>();
-        Map<LocalDate, long[]> trendCounters = new TreeMap<>();
+        Map<LocalDate, long[]> trendCounters = new TreeMap<LocalDate, long[]>(
+            finishedTest ? Comparator.reverseOrder() : Comparator.naturalOrder());
         long passCount = 0;
         long totalCount = 0;
         for (InspectionRecord record : records) {

@@ -262,6 +262,30 @@ class ReportingApplicationServiceTest {
         assertThat(summary.byProcess()).extracting(item -> item.processCode()).containsExactly("FQC");
     }
 
+    @Test
+    void finishedTestSummaryOrdersDetectionDatesNewestFirst() {
+        TenantContext.set("customer-a", "supervisor.a");
+        InspectionTask task = task("task-fqc", "FQC", "成品检验");
+        InspectionRecord middle = record("task-fqc", "PASS");
+        middle.setInspectedAt(LocalDateTime.of(2026, 10, 17, 8, 0));
+        InspectionRecord oldest = record("task-fqc", "PASS");
+        oldest.setInspectedAt(LocalDateTime.of(2026, 10, 15, 8, 0));
+        InspectionRecord newest = record("task-fqc", "PASS");
+        newest.setInspectedAt(LocalDateTime.of(2026, 10, 20, 8, 0));
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(middle, oldest, newest));
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
+        ReportingApplicationService service = new ReportingApplicationService(
+            inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
+            inspectionAccessScopeService);
+
+        var summary = service.qualitySummary(null, null, null, true);
+
+        assertThat(summary.dailyTrend()).extracting(item -> item.inspectionDate())
+            .containsExactly("2026-10-20", "2026-10-17", "2026-10-15");
+    }
+
     private InspectionTask task(String id, String processCode, String processName) {
         InspectionTask task = new InspectionTask();
         task.setId(id);
