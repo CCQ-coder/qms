@@ -314,12 +314,20 @@ onMounted(() => { void load() })
 .work-order-detail-tabs .el-descriptions { margin: 0; }
 .work-order-detail-tabs .el-descriptions__label { color: #475467; font-weight: 600; white-space: nowrap; }
 .work-order-detail-tabs .el-descriptions__content { color: #172b4d; word-break: break-word; }
+/* shortcut: the live bundle still renders unknown description tags; remove after the full frontend release. */
+.work-order-detail-tabs el-descriptions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #e4e7ed; border-left: 1px solid #e4e7ed; }
+.work-order-detail-tabs el-descriptions-item { display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 12px 14px; border-right: 1px solid #e4e7ed; border-bottom: 1px solid #e4e7ed; color: #172b4d; overflow-wrap: anywhere; }
+.work-order-detail-tabs el-descriptions-item::before { content: attr(label); color: #475467; font-size: 12px; font-weight: 600; }
+.work-order-detail-tabs el-descriptions-item[span="2"] { grid-column: span 2; }
+.work-order-detail-tabs el-descriptions-item[span="3"] { grid-column: span 3; }
 .work-order-detail-section + .work-order-detail-section { margin-top: 20px; }
 .work-order-detail-section-heading { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; }
 .work-order-detail-section-heading h3 { margin: 0; color: #243b5a; font-size: 15px; }
 .work-order-detail-section-heading span { color: #8090a5; font-size: 12px; }
 
 @media (max-width: 850px) {
+  .work-order-detail-tabs el-descriptions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .work-order-detail-tabs el-descriptions-item[span="3"] { grid-column: span 2; }
   .work-order-detail-dialog .el-dialog__header { padding: 18px 20px 14px; }
   .work-order-detail-dialog .el-dialog__body { padding: 16px 20px 22px; }
   .work-order-detail-header { flex-direction: column; gap: 10px; }
@@ -328,6 +336,11 @@ onMounted(() => { void load() })
   .work-order-detail-metrics > div:nth-child(2n) { border-right: 0; }
   .work-order-detail-metrics > div:nth-child(-n+3) { border-bottom: 1px solid #dbe8f5; }
   .work-order-filter-heading-actions { align-self: flex-start; }
+}
+
+@media (max-width: 560px) {
+  .work-order-detail-tabs el-descriptions { grid-template-columns: minmax(0, 1fr); }
+  .work-order-detail-tabs el-descriptions-item[span] { grid-column: span 1; }
 }
 
 @media (max-width: 1100px) {

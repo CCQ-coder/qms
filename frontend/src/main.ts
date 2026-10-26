@@ -8,6 +8,7 @@ import {
   ElCheckbox,
   ElContainer,
   ElDatePicker,
+  ElDescriptions,
   ElDialog,
   ElDivider,
   ElEmpty,
@@ -60,7 +61,7 @@ async function bootstrap() {
   app.use(createPinia()).use(router)
   app.component('PagedTable', PagedTable)
   for (const component of [
-    ElAlert, ElAside, ElButton, ElCard, ElCheckbox, ElContainer, ElDatePicker, ElDialog, ElDivider, ElEmpty,
+    ElAlert, ElAside, ElButton, ElCard, ElCheckbox, ElContainer, ElDatePicker, ElDescriptions, ElDialog, ElDivider, ElEmpty,
     ElForm, ElFormItem, ElHeader, ElIcon, ElInput, ElInputNumber, ElMain, ElMenu, ElMenuItem, ElOption, ElProgress,
     ElPagination, ElRadioButton, ElRadioGroup, ElSelect, ElSwitch, ElTabPane, ElTable, ElTableColumn, ElTabs, ElTag, ElUpload
   ]) {
