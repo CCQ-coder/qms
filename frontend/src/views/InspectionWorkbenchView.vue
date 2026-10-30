@@ -9,7 +9,7 @@ import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus } from './inspectionMonitorStatus'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
-import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
+import type { Equipment, EquipmentTelemetryRecord, FinishedTestInspectionRecord, GatewayHostStatus, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
 const backendReachable = ref(true)
@@ -32,7 +32,8 @@ const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
 const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
 const equipment = ref<Equipment[]>([])
-const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
+const hostStatuses = ref<GatewayHostStatus[]>([])
+const hostOfflineAfterSeconds = ref(300)
 const finishedTestRecords = ref<FinishedTestInspectionRecord[]>([])
 const finishedRecordsNextCursor = ref<string>()
 const finishedRecordsLoading = ref(false)
@@ -41,7 +42,7 @@ const probeSnapshots = ref<Record<string, EquipmentTelemetryRecord>>({})
 const probeFailedEquipmentIds = ref<Set<string>>(new Set())
 const summaryError = ref('')
 const equipmentError = ref('')
-const runtimeError = ref('')
+const hostStatusError = ref('')
 const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
 const recordSource = ref<'probe' | 'fqc'>('probe')
@@ -69,7 +70,7 @@ const updatedAt = ref<Date>()
 const finishedTestEquipmentType = '成品测试设备'
 
 type MonitorDevice = Equipment & {
-  runtime?: EquipmentRuntimeStatus
+  hostStatus?: GatewayHostStatus
   probe?: EquipmentTelemetryRecord
   probeError: boolean
 }
@@ -82,10 +83,17 @@ const fqcTasks = computed(() => tasks.value.filter((task) =>
   task.taskType?.toUpperCase() === 'FINISHED' || task.processCode?.toUpperCase() === 'FQC'))
 
 const monitorDevices = computed<MonitorDevice[]>(() => {
-  const runtimeByEquipmentId = new Map(runtimeStatuses.value.map((status) => [status.equipmentId, status]))
+  const hostByEquipmentId = new Map<string, GatewayHostStatus>()
+  hostStatuses.value.forEach((status) => {
+    if (!status.equipmentId) return
+    const existing = hostByEquipmentId.get(status.equipmentId)
+    if (!existing || Date.parse(status.receivedAt) > Date.parse(existing.receivedAt)) {
+      hostByEquipmentId.set(status.equipmentId, status)
+    }
+  })
   return equipment.value.filter((item) => item.equipmentType === finishedTestEquipmentType).map((device) => ({
     ...device,
-    runtime: runtimeByEquipmentId.get(device.id),
+    hostStatus: hostByEquipmentId.get(device.id),
     probe: probeSnapshots.value[device.id],
     probeError: probeFailedEquipmentIds.value.has(device.id)
   }))
@@ -317,25 +325,25 @@ async function loadCompletedFinishedRecords(cursor?: string) {
 }
 
 let monitoringVersion = 0
-let runtimePollInFlight = false
-let runtimePollTimer: number | undefined
+let hostStatusPollInFlight = false
+let hostStatusPollTimer: number | undefined
 let componentMounted = false
 
-async function pollRuntimeStatuses() {
-  if (monitoringLoading.value || runtimePollInFlight) return
-  runtimePollInFlight = true
+async function pollHostStatuses() {
+  if (monitoringLoading.value || hostStatusPollInFlight) return
+  hostStatusPollInFlight = true
   const version = monitoringVersion
   try {
-    const statuses = await qmsApi.listEquipmentRuntimeStatuses()
+    const statuses = await qmsApi.listGatewayHostStatuses()
     if (version !== monitoringVersion || !componentMounted) return
-    runtimeStatuses.value = statuses
-    runtimeError.value = ''
+    hostStatuses.value = statuses
+    hostStatusError.value = ''
   } catch {
     if (version !== monitoringVersion || !componentMounted) return
-    runtimeStatuses.value = []
-    runtimeError.value = '设备实时状态读取失败，请重试。'
+    hostStatuses.value = []
+    hostStatusError.value = '设备电脑心跳读取失败，请重试。'
   } finally {
-    runtimePollInFlight = false
+    hostStatusPollInFlight = false
   }
 }
 
@@ -343,20 +351,25 @@ async function loadMonitoringData() {
   monitoringLoading.value = true
   monitoringVersion++
   try {
-    const [summaryResult, equipmentResult, runtimeResult, recordsResult] = await Promise.allSettled([
+    const [summaryResult, equipmentResult, hostStatusResult, recordsResult, offlineThresholdResult] = await Promise.allSettled([
       qmsApi.getQualitySummary(undefined, undefined, undefined, true),
       qmsApi.listEquipment(),
-      qmsApi.listEquipmentRuntimeStatuses(),
-      loadCompletedFinishedRecords()
+      qmsApi.listGatewayHostStatuses(),
+      loadCompletedFinishedRecords(),
+      qmsApi.getTenantParameter('equipment.monitor.offline-after-seconds')
     ])
     summaryError.value = summaryResult.status === 'rejected' ? 'FQC 质量汇总读取失败，请重试。' : ''
     equipmentError.value = equipmentResult.status === 'rejected' ? '成品测试设备台账读取失败，请重试。' : ''
-    runtimeError.value = runtimeResult.status === 'rejected' ? '设备实时状态读取失败，请重试。' : ''
+    hostStatusError.value = hostStatusResult.status === 'rejected' ? '设备电脑心跳读取失败，请重试。' : ''
     if (summaryResult.status === 'fulfilled') qualitySummary.value = summaryResult.value
     if (equipmentResult.status === 'fulfilled') equipment.value = equipmentResult.value
     else equipment.value = []
-    if (runtimeResult.status === 'fulfilled') runtimeStatuses.value = runtimeResult.value
-    else runtimeStatuses.value = []
+    if (hostStatusResult.status === 'fulfilled') hostStatuses.value = hostStatusResult.value
+    else hostStatuses.value = []
+    if (offlineThresholdResult.status === 'fulfilled') {
+      const configured = Number.parseInt(offlineThresholdResult.value.value, 10)
+      if (Number.isFinite(configured)) hostOfflineAfterSeconds.value = Math.min(86_400, Math.max(30, configured))
+    }
     if (recordsResult.status === 'rejected') {
       finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
     }
@@ -369,7 +382,7 @@ async function loadMonitoringData() {
       probeSnapshotsError.value = ''
     }
     if (probesLoaded && recordsResult.status === 'fulfilled' && recordsResult.value
-      && [summaryResult, equipmentResult, runtimeResult].every((result) => result.status === 'fulfilled')) {
+      && [summaryResult, equipmentResult, hostStatusResult].every((result) => result.status === 'fulfilled')) {
       updatedAt.value = new Date()
     }
   } finally {
@@ -405,15 +418,32 @@ async function refreshRecordPanel() {
 }
 
 function deviceStatusLabel(device: MonitorDevice) {
-  if (runtimeError.value) return '状态不可用'
-  return deriveInspectionMonitorStatus(device.runtime?.online, device.probe?.receivedAt)
+  if (hostStatusError.value) return '状态不可用'
+  return deriveInspectionMonitorStatus(
+    device.hostStatus?.receivedAt,
+    device.probe?.receivedAt,
+    Date.now(),
+    hostOfflineAfterSeconds.value
+  )
 }
 
 function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' {
-  if (runtimeError.value) return 'info'
-  const status = deriveInspectionMonitorStatus(device.runtime?.online, device.probe?.receivedAt)
+  if (hostStatusError.value) return 'info'
+  const status = deviceStatusLabel(device)
   if (status === '测试中') return 'success'
   return status === '空闲' ? 'warning' : 'info'
+}
+
+function deviceComputerStatusLabel(device: MonitorDevice) {
+  if (hostStatusError.value) return '读取失败'
+  const status = deviceStatusLabel(device)
+  if (status === '测试中' || status === '空闲') return '在线'
+  return status === '未接入' ? '尚未上报' : status
+}
+
+function isDeviceComputerOnline(device: MonitorDevice) {
+  const status = deviceStatusLabel(device)
+  return status === '测试中' || status === '空闲'
 }
 
 function fqcProjectionLabel(record: EquipmentTelemetryRecord) {
@@ -554,7 +584,7 @@ onMounted(async () => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('keydown', handleKeyboardShortcut)
-  runtimePollTimer = window.setInterval(() => { void pollRuntimeStatuses() }, 30_000)
+  hostStatusPollTimer = window.setInterval(() => { void pollHostStatuses() }, 30_000)
   if (activePanel.value === 'records') void refreshFlyingProbeRecords()
   await refreshWorkbench()
   if (!componentMounted) return
@@ -563,7 +593,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   componentMounted = false
-  window.clearInterval(runtimePollTimer)
+  window.clearInterval(hostStatusPollTimer)
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
   window.removeEventListener('keydown', handleKeyboardShortcut)
@@ -600,7 +630,7 @@ onBeforeUnmount(() => {
       <section class="monitor-panel">
         <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
         <el-alert v-if="equipmentError" type="error" :closable="false" :title="equipmentError" style="margin-bottom: 12px" />
-        <el-alert v-if="runtimeError" type="error" :closable="false" :title="runtimeError" style="margin-bottom: 12px" />
+        <el-alert v-if="hostStatusError" type="error" :closable="false" :title="hostStatusError" style="margin-bottom: 12px" />
         <el-alert v-if="probeSnapshotsError" type="error" :closable="false" :title="probeSnapshotsError" style="margin-bottom: 12px" />
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-bottom: 12px" />
         <div class="section-heading">
@@ -621,7 +651,7 @@ onBeforeUnmount(() => {
             v-for="device in pagedMonitorDevices"
             :key="device.assetNo"
             class="monitor-device-card"
-            :class="{ 'monitor-device-card--selected': selectedDevice?.assetNo === device.assetNo, 'monitor-device-card--offline': !device.runtime?.online }"
+            :class="{ 'monitor-device-card--selected': selectedDevice?.assetNo === device.assetNo, 'monitor-device-card--offline': !isDeviceComputerOnline(device) }"
             type="button"
             @click="selectDevice(device.assetNo)"
           >
@@ -633,7 +663,7 @@ onBeforeUnmount(() => {
             <span class="device-task">
               <small>最新飞针 QMS 接收</small>
               <b>{{ device.probeError ? '读取失败' : formatDateTime(device.probe?.receivedAt) }}</b>
-              <em>设备状态：{{ runtimeError ? '读取失败' : device.runtime?.online ? '在线' : device.runtime ? '离线' : '尚未上报' }}</em>
+              <em>电脑状态：{{ deviceComputerStatusLabel(device) }}</em>
             </span>
             <span class="device-card-footer"><span>飞针已测 {{ device.probeError ? '—' : (device.probe?.machiningCount ?? '—') }}</span><span>FQC 检验见记录列表</span></span>
           </button>
