@@ -29,7 +29,7 @@ class EquipmentTelemetryRetentionSchedulerTest {
     }
 
     @Test
-    void rawCleanupKeepsFlyingProbeEventsUntilTheirProjectionIsDurable() {
+    void rawCleanupKeepsFlyingProbeEventsUntilTheirProjectionIsDurableAcrossDatabaseCollations() {
         JdbcTemplate jdbcTemplate = org.mockito.Mockito.mock(JdbcTemplate.class);
         EquipmentTelemetryRetentionScheduler scheduler = new EquipmentTelemetryRetentionScheduler(jdbcTemplate);
         ReflectionTestUtils.setField(scheduler, "rawRetentionDays", 7);
@@ -45,7 +45,9 @@ class EquipmentTelemetryRetentionSchedulerTest {
         assertThat(sql.getAllValues().getFirst())
             .contains("event_type <> 'FLYING_PROBE_TEST_COUNTERS'")
             .contains("EXISTS (SELECT 1 FROM qms_flying_probe_projection")
-            .contains("projection.telemetry_id = qms_equipment_telemetry.id")
-            .contains("projection.tenant_code = qms_equipment_telemetry.tenant_code");
+            .contains("projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = "
+                + "qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci")
+            .contains("projection.tenant_code COLLATE utf8mb4_0900_ai_ci = "
+                + "qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci");
     }
 }

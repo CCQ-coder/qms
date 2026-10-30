@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router
 import { accessToken } from '@/auth/oidc'
 import { localSession } from '@/auth/local-session'
 import { firstVisibleMenuPath, loadMenuAccess } from '@/navigation/menu'
+import { clearChunkLoadRecovery, recoverFromChunkLoadError } from './chunkLoadRecovery'
 
 const router = createRouter({
   history: import.meta.env.VITE_ROUTER_HASH === 'true' ? createWebHashHistory() : createWebHistory(),
@@ -59,6 +60,19 @@ router.beforeEach(async (to) => {
     }
   }
   return true
+})
+
+router.onError((error, to) => {
+  const recovered = recoverFromChunkLoadError(error, {
+    routeKey: to.fullPath,
+    storage: window.sessionStorage,
+    reload: () => window.location.reload()
+  })
+  if (!recovered) console.error('路由加载失败', error)
+})
+
+router.afterEach((to, _from, failure) => {
+  if (!failure) clearChunkLoadRecovery(to.fullPath, window.sessionStorage)
 })
 
 export default router

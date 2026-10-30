@@ -4,9 +4,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import { formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
+import { formatDateTime, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
+import { deriveInspectionMonitorStatus } from './inspectionMonitorStatus'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
 
@@ -405,13 +406,14 @@ async function refreshRecordPanel() {
 
 function deviceStatusLabel(device: MonitorDevice) {
   if (runtimeError.value) return '状态不可用'
-  return device.runtime ? statusText(device.runtime.effectiveStatus) : '未接入'
+  return deriveInspectionMonitorStatus(device.runtime?.online, device.probe?.receivedAt)
 }
 
-function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' | 'danger' {
-  if (!device.runtime?.online || runtimeError.value) return 'info'
-  if (device.runtime.effectiveStatus === 'ALARM') return 'danger'
-  return device.runtime.effectiveStatus === 'PROCESSING' ? 'success' : 'warning'
+function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' {
+  if (runtimeError.value) return 'info'
+  const status = deriveInspectionMonitorStatus(device.runtime?.online, device.probe?.receivedAt)
+  if (status === '测试中') return 'success'
+  return status === '空闲' ? 'warning' : 'info'
 }
 
 function fqcProjectionLabel(record: EquipmentTelemetryRecord) {
