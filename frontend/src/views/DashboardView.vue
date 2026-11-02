@@ -107,7 +107,6 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defe
         <div><span>已测</span><strong>{{ latestProbeRecord.machiningCount ?? '—' }}</strong></div>
         <div><span>好板</span><strong class="good-text">{{ latestProbeRecord.goodBoardCount ?? '—' }}</strong></div>
         <div><span>坏板</span><strong class="bad-text">{{ latestProbeRecord.badBoardCount ?? '—' }}</strong></div>
-        <div><span>QMS 接收时间</span><strong>{{ formatDateTime(latestProbeRecord.receivedAt) }}</strong></div>
       </div>
       <el-empty v-else description="当前查询范围内暂无飞针机采集记录" />
     </el-card>
@@ -126,7 +125,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defe
 
 <style scoped>
 .dashboard-updated--unavailable { color: #d92d20; }
-.dashboard-probe-snapshot { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.dashboard-probe-snapshot { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .dashboard-probe-snapshot > div { display: grid; gap: 6px; min-width: 0; padding: 12px 14px; border-radius: 8px; background: #f5faff; }
 .dashboard-probe-snapshot span { color: #667085; font-size: 12px; }
 .dashboard-probe-snapshot strong { overflow: hidden; color: #344054; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }

@@ -653,13 +653,11 @@ onBeforeUnmount(() => {
             </span>
             <span class="device-card-type">{{ device.assetNo }} · {{ device.equipmentType }}</span>
             <span class="device-task">
-              <small>最新飞针 QMS 接收</small>
-              <b>{{ device.probeError ? '读取失败' : formatDateTime(device.probe?.receivedAt) }}</b>
-              <em>设备状态：{{ runtimeError && !device.host ? '读取失败' : deviceOnline(device) ? '在线' : deviceOnline(device) === false ? '离线' : '尚未上报' }}</em>
+              <small>设备状态</small>
+              <b>{{ runtimeError && !device.host ? '读取失败' : deviceOnline(device) ? '在线' : deviceOnline(device) === false ? '离线' : '尚未上报' }}</b>
             </span>
             <span v-if="device.host" class="device-task">
               <small>电脑状态 · {{ device.host.hostName }}</small>
-              <em>最后心跳：{{ formatDateTime(device.host.receivedAt) }}</em>
               <em>CPU：{{ device.host.cpuPercent == null ? '采样中' : `${device.host.cpuPercent}%` }}</em>
               <em>内存可用 / 总量：{{ formatHostCapacity(device.host.memoryAvailableBytes, device.host.memoryTotalBytes) }}</em>
               <em>系统盘剩余 / 总量：{{ formatHostCapacity(device.host.systemDiskFreeBytes, device.host.systemDiskTotalBytes) }}</em>
@@ -680,7 +678,6 @@ onBeforeUnmount(() => {
             <div><span>最新飞针料号</span><strong>{{ selectedProbeRecord?.materialNo || (selectedProbeRecord ? '未上报料号' : '暂无飞针采集') }}</strong></div>
             <div><span>飞针已测 / 好板 / 坏板</span><strong>{{ selectedProbeRecord?.machiningCount ?? '—' }} / {{ selectedProbeRecord?.goodBoardCount ?? '—' }} / {{ selectedProbeRecord?.badBoardCount ?? '—' }}</strong></div>
             <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
-            <div><span>QMS 接收时间</span><strong>{{ formatDateTime(selectedProbeRecord?.receivedAt) }}</strong></div>
             <div><span>关联生产指令 / 批次</span><strong>{{ selectedAssociation }}</strong></div>
           </template>
           <div><span>FQC 待检任务</span><strong>未关联待检任务，请从列表选择</strong></div>
@@ -730,7 +727,6 @@ onBeforeUnmount(() => {
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
           <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" :fit="false" size="small" empty-text="暂无飞针机采集记录">
-            <el-table-column label="QMS 接收时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
             <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
             <el-table-column label="料号" width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
