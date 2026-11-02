@@ -8,6 +8,7 @@
 - CA 公用证书位于服务器 `/root/qms-device-tls/ca.crt`，随 XP 包以 `qms-upload-ca.crt` 分发，设备以它验证服务器证书。CA 私钥仅保留在本地 Mac，绝不提交仓库或上传服务器；服务器只持有自己的私钥及公用证书。
 - 443 的独立设备入口 [qms-flying-probe-https.conf](qms-flying-probe-https.conf) 仍可供本机诊断；公网 443 未转发，不用于设备配置。原 443 默认拒绝配置备份在 `/data/1panel/apps/openresty/openresty/conf/default/00.default.conf.bak-wtd-20261102`。
 - 管理电脑使用 `https://gongying.duckdns.org:5173` 的公信证书，无需导入设备 CA。域名与 IP 共用 5173，但由 [qms-browser-https-internal.conf](qms-browser-https-internal.conf) 和设备虚拟主机按 SNI 选择证书；设备仍使用 `https://106.227.69.144:5173` 及原 CA。公网 443 的流量未到达服务器，域名证书通过 DNS-01 签发。
+- QMS 后端的 `/data/1panel/runtime/java/qms/.env` 加入了 `export QMS_WEB_CORS_ALLOWEDORIGINS='http://localhost:5173,http://127.0.0.1:5173,http://tauri.localhost,https://gongying.duckdns.org:5173,https://106.227.69.144:5173'`。HTTPS 登录的 POST 会带 `Origin`，缺少这两个 HTTPS 来源会被后端返回 `403 Invalid CORS request`。修改后需重启 `qms` 容器；1Panel 重建 Java 运行环境时应核对该配置。修改前备份在 `/root/qms-backups/qms-cors-before-20261102.env`。
 - 从公网验证 `http://106.227.69.144:5173/` 返回 200、`https://106.227.69.144:5173/api/v1/flying-probe/device-files` 在无令牌时返回 401 且证书校验通过、明文 HTTP 上传返回 426，原登录接口返回 200，客户端 IP 记录正常。HTTP 配置备份在 `/data/1panel/www/conf.d/qms.conf.bak-before-mux-20261102`。
 - 上线前程序、配置和 MySQL `qms` 库的备份位于 `/root/qms-backups/wtd-direct-cloud-20261102/`，目录权限 700、文件权限 600；数据库转储已通过 `gzip -t`。`/data` 是不支持 Unix 权限位的 `fuseblk` 挂载，不存放证书私钥或数据库备份。
 - 原 QMS Compose 文件也备份在上述目录。1Panel 如果重新生成 Compose 或 OpenResty 容器，需要重新核对 `/var/lib/qms/uploads` 挂载和 `/etc/qms-device/server-new.key` 容器副本，防止新上传数据丢失或 HTTPS 启动失败。
@@ -60,6 +61,12 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://106.227.69.144:5173/api
 ```sh
 curl -sS -o /dev/null -w '%{http_code}\n' https://gongying.duckdns.org:5173/
 curl --cacert qms-upload-ca.crt -sS -o /dev/null -w '%{http_code}\n' https://106.227.69.144:5173/
+```
+
+无需真实账号即可检查 HTTPS 登录请求是否通过 CORS：以下空请求应返回 400 参数校验及 `Access-Control-Allow-Origin`，不应返回 403。
+
+```sh
+curl -i -H 'Origin: https://gongying.duckdns.org:5173' -H 'Content-Type: application/json' -d '{}' https://gongying.duckdns.org:5173/api/v1/auth/login
 ```
 
 域名证书由服务器 `/usr/local/bin/lego` 使用 DuckDNS DNS-01 签发；账户状态和域名令牌仅在 `/root/qms-public-tls`（权限 700/600）。[qms-browser-cert.timer](qms-browser-cert.timer) 每天检查续期，[qms-browser-cert-deploy.sh](qms-browser-cert-deploy.sh) 把证书及私钥复制到 OpenResty 容器的 `/etc/qms-public`，验证 Nginx 配置后重载。域名的 HTTP 请求自动转到 HTTPS；旧 IP 的 HTTP 入口暂时保留。`/data` 是 `fuseblk` 且不支持权限位，不能存放私钥。OpenResty 容器重建后，须先恢复 `/etc/qms-public` 和 `/etc/qms-device` 中的证书副本；若容器因缺少证书而无法启动，可用 `docker cp` 向停止的容器复制整个受限目录（容器名以实际为准）。容器启动后再执行 `systemctl start qms-browser-cert.service`，核对两个 HTTPS 入口。
