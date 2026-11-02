@@ -743,7 +743,6 @@ onBeforeUnmount(() => {
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column prop="sourceRecordNo" label="来源记录号" width="260" show-overflow-tooltip />
           </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
