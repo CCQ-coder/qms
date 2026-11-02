@@ -19,12 +19,15 @@ import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.domain.FlyingProbeRun;
 import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.domain.InspectionTemplate;
+import com.pcbqms.inspection.domain.SystemParameter;
 import com.pcbqms.inspection.infrastructure.persistence.FlyingProbeProjectionMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTaskMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTemplateMapper;
+import com.pcbqms.inspection.infrastructure.persistence.SystemParameterMapper;
 import com.pcbqms.workorder.domain.WorkOrder;
 import com.pcbqms.workorder.infrastructure.persistence.ProductionBatchMapper;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +49,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     @Mock private InspectionApplicationService inspectionApplicationService;
     @Mock private InspectionTemplateApplicationService templateApplicationService;
     @Mock private InspectionAccessScopeService accessScopeService;
+    @Mock private SystemParameterMapper systemParameterMapper;
 
     @AfterEach
     void clearTenant() {
@@ -111,6 +115,127 @@ class FlyingProbeInspectionProjectionServiceTest {
         assertThat(projection.getReason()).contains("必须恰好为 1");
         verify(taskMapper, never()).insert(any(InspectionTask.class));
         verify(projectionMapper, never()).linkTelemetry(any());
+    }
+
+    @Test
+    void configuredMiddleDigitsChooseLatestOrderReleasedBeforeFileStart() {
+        TenantContext.set("tenant-a", "admin");
+        var telemetry = event("dated", LocalDateTime.of(2026, 8, 26, 10, 7),
+            LocalDateTime.now().minusMinutes(1), 12, 8, 4);
+        telemetry.setMaterialNo("42777");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("dated")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        configuredMaterialRule();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("26040931", "02PT42777A01", LocalDate.of(2026, 4, 24)),
+            releasedOrder("26070785", "02PT42777A01", LocalDate.of(2026, 7, 29)),
+            releasedOrder("26080450", "02PT42777A01", LocalDate.of(2026, 8, 14)),
+            releasedOrder("26100529", "02PT42777A01", LocalDate.of(2026, 10, 21))));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        FlyingProbeRun run = run();
+        run.setMaterialNo("42777");
+        run.setWorkOrderNo("26080450");
+        when(projectionMapper.lockRun(any())).thenReturn(null, run);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26080450");
+        assertThat(projection.getReason()).contains("仅建立基线");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void configuredMiddleDigitsKeepSameDayOrderTieRetryable() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("same-day", now.minusHours(1), now.minusMinutes(1), 2, 2, 0);
+        telemetry.setMaterialNo("08169");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("same-day")).thenReturn(projection);
+        validEquipment();
+        configuredMaterialRule();
+        LocalDate releasedAt = now.toLocalDate().minusDays(1);
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("WO-1", "02PT08169A01", releasedAt),
+            releasedOrder("WO-2", "02PT08169A01", releasedAt)));
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+        assertThat(projection.getReason()).contains("下达日期", "数量为 2");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void configuredRuleDoesNotChooseAroundAnOrderMissingReleaseDate() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("undated-order", now.minusHours(1), now.minusMinutes(1), 2, 2, 0);
+        telemetry.setMaterialNo("42777");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("undated-order")).thenReturn(projection);
+        validEquipment();
+        configuredMaterialRule();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("WO-DATED", "02PT42777A01", now.toLocalDate().minusDays(1)),
+            releasedOrder("WO-UNDATED", "02PT42777A01", null)));
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+        assertThat(projection.getReason()).contains("下达日期缺失");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void configuredRuleRequiresNumericDeviceMaterial() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("nonnumeric", now.minusHours(1), now.minusMinutes(1), 2, 2, 0);
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("nonnumeric")).thenReturn(projection);
+        validEquipment();
+        configuredMaterialRule();
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+        assertThat(projection.getReason()).contains("数字料号");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void configuredRuleKeepsAnAlreadyBoundFileOnItsOriginalOrder() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("bound-numeric", now.minusDays(20), now.minusMinutes(1), 12, 8, 4);
+        telemetry.setMaterialNo("42777");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("bound-numeric")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        configuredMaterialRule();
+        FlyingProbeRun run = run();
+        run.setMaterialNo("42777");
+        run.setWorkOrderNo("26080450");
+        run.setLastDeviceTime(now.minusDays(19));
+        run.setTestedCount(8);
+        run.setGoodCount(5);
+        run.setBadCount(3);
+        when(projectionMapper.lockRun(any())).thenReturn(run);
+        when(workOrderMapper.selectOne(any())).thenReturn(
+            releasedOrder("26080450", "02PT42777A01", now.toLocalDate().minusDays(30)));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(inspectionApplicationService.submitAutomaticRecord(any(), any(), any())).thenReturn(
+            new InspectionRecordResponse("record-numeric", "task-numeric", "FAIL", 1, null, null, null, now));
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26080450");
+        assertThat(projection.getDeltaTested()).isEqualTo(4);
+        verify(taskMapper).insert(any(InspectionTask.class));
     }
 
     @Test
@@ -286,7 +411,22 @@ class FlyingProbeInspectionProjectionServiceTest {
     private FlyingProbeInspectionProjectionService service() {
         return new FlyingProbeInspectionProjectionService(projectionMapper, equipmentMapper, workOrderMapper,
             productionBatchMapper, templateMapper, taskMapper, inspectionApplicationService,
-            templateApplicationService, accessScopeService, new ObjectMapper());
+            templateApplicationService, accessScopeService, systemParameterMapper, new ObjectMapper());
+    }
+
+    private void configuredMaterialRule() {
+        SystemParameter parameter = new SystemParameter();
+        parameter.setParameterValue("^02PT([0-9]{5})A[0-9]{2}$");
+        when(systemParameterMapper.selectOne(any())).thenReturn(parameter);
+    }
+
+    private WorkOrder releasedOrder(String orderNo, String internalProductNo, LocalDate releasedAt) {
+        WorkOrder order = workOrder();
+        order.setId(orderNo);
+        order.setWorkOrderNo(orderNo);
+        order.setInternalProductNo(internalProductNo);
+        order.setReleasedAt(releasedAt);
+        return order;
     }
 
     private void validEquipmentAndTemplate() {

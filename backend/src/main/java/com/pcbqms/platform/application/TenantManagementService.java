@@ -73,6 +73,7 @@ public class TenantManagementService {
             VALUES (?, ?, ?, ?, 0, ?)
             """, UUID.randomUUID().toString(), draft.code(), draft.name(), draft.status(), now);
         createAdministrator(draft, now);
+        createFlyingProbeTemplate(draft.code(), now);
         synchronizeMenus(draft.code(), draft.menuCodes(), now);
         return toResponse(requireTenant(draft.code()));
     }
@@ -134,7 +135,8 @@ public class TenantManagementService {
             throw new IllegalArgumentException("登录页置顶租户不能删除，请先取消置顶");
         }
 
-        List<TenantDataCount> businessData = findBusinessData(code);
+        String systemTemplateId = pristineFlyingProbeTemplateId(code);
+        List<TenantDataCount> businessData = findBusinessData(code, systemTemplateId);
         if (!businessData.isEmpty()) {
             String summary = businessData.stream()
                 .limit(5)
@@ -145,6 +147,12 @@ public class TenantManagementService {
                 + "），不能删除。请先迁移或清理业务数据");
         }
 
+        if (systemTemplateId != null) {
+            jdbcTemplate.update("DELETE FROM qms_inspection_template_item WHERE tenant_code = ? AND template_id = ?",
+                code, systemTemplateId);
+            jdbcTemplate.update("DELETE FROM qms_inspection_template WHERE tenant_code = ? AND id = ?",
+                code, systemTemplateId);
+        }
         jdbcTemplate.update("DELETE FROM qms_user_process_scope WHERE tenant_code = ?", code);
         jdbcTemplate.update("DELETE FROM qms_user_access_profile WHERE tenant_code = ?", code);
         jdbcTemplate.update("DELETE FROM qms_administration_item WHERE tenant_code = ?", code);
@@ -176,6 +184,31 @@ public class TenantManagementService {
             VALUES (?, ?, ?, ?, 'TENANT_ADMIN', 'ACTIVE', ?, ?, ?, ?)
             """, UUID.randomUUID().toString(), draft.code(), draft.adminUserName(), draft.adminDisplayName(), passwordHash,
             passwordHash == null ? null : now, now, now);
+    }
+
+    private void createFlyingProbeTemplate(String tenantCode, LocalDateTime now) {
+        String templateId = UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+            INSERT INTO qms_inspection_template
+              (id, tenant_code, template_code, name, product_code, process_code, process_name, task_type,
+               version_no, status, created_by, created_at, updated_at)
+            VALUES (?, ?, 'FLYING_PROBE_ELECTRICAL_V1', '飞针电测增量检验标准', NULL,
+                    'FQC', '成品检验', 'FINISHED', 1, 'ACTIVE', 'system.flying-probe', ?, ?)
+            """, templateId, tenantCode, now, now);
+        jdbcTemplate.update("""
+            INSERT INTO qms_inspection_template_item
+              (id, tenant_code, template_id, sort_order, item_code, item_name, input_type, is_required,
+               lower_limit, upper_limit, unit, options_json, help_text)
+            VALUES
+              (?, ?, ?, 10, 'testedBoardCount', '本次新增已测板数', 'NUMBER', TRUE, 1, NULL, '板', NULL,
+               '以相邻有效累计快照之差计算'),
+              (?, ?, ?, 20, 'goodBoardCount', '本次新增好板数', 'NUMBER', TRUE, 0, NULL, '板', NULL,
+               '以相邻有效累计快照之差计算'),
+              (?, ?, ?, 30, 'badBoardCount', '本次新增坏板数', 'NUMBER', TRUE, 0, 0, '板', NULL,
+               '本次坏板为 0 才可判 PASS，否则 FAIL')
+            """, UUID.randomUUID().toString(), tenantCode, templateId,
+            UUID.randomUUID().toString(), tenantCode, templateId,
+            UUID.randomUUID().toString(), tenantCode, templateId);
     }
 
     private void updateAdministrator(String tenantCode, TenantDraft draft, LocalDateTime now) {
@@ -247,7 +280,39 @@ public class TenantManagementService {
             """, (resultSet, rowNumber) -> resultSet.getString("item_code"), tenantCode);
     }
 
-    private List<TenantDataCount> findBusinessData(String tenantCode) {
+    private String pristineFlyingProbeTemplateId(String tenantCode) {
+        return jdbcTemplate.queryForList("""
+            SELECT template.id FROM qms_inspection_template template
+            WHERE template.tenant_code = ? AND template.template_code = 'FLYING_PROBE_ELECTRICAL_V1'
+              AND template.created_by = 'system.flying-probe'
+              AND template.name = '飞针电测增量检验标准' AND template.product_code IS NULL
+              AND template.process_code = 'FQC' AND template.process_name = '成品检验'
+              AND template.task_type = 'FINISHED' AND template.version_no = 1
+              AND template.status = 'ACTIVE' AND template.updated_at = template.created_at
+              AND (SELECT COUNT(*) FROM qms_inspection_template_item item
+                   WHERE item.template_id = template.id) = 3
+              AND NOT EXISTS (
+                  SELECT 1 FROM qms_inspection_template_item item
+                  WHERE item.template_id = template.id AND NOT COALESCE((
+                      item.tenant_code = template.tenant_code AND item.input_type = 'NUMBER'
+                      AND item.is_required = 1 AND item.unit = '板' AND item.options_json IS NULL
+                      AND (
+                          (item.sort_order = 10 AND item.item_code = 'testedBoardCount'
+                           AND item.item_name = '本次新增已测板数' AND item.lower_limit = 1
+                           AND item.upper_limit IS NULL AND item.help_text = '以相邻有效累计快照之差计算')
+                          OR (item.sort_order = 20 AND item.item_code = 'goodBoardCount'
+                              AND item.item_name = '本次新增好板数' AND item.lower_limit = 0
+                              AND item.upper_limit IS NULL AND item.help_text = '以相邻有效累计快照之差计算')
+                          OR (item.sort_order = 30 AND item.item_code = 'badBoardCount'
+                              AND item.item_name = '本次新增坏板数' AND item.lower_limit = 0
+                              AND item.upper_limit = 0 AND item.help_text = '本次坏板为 0 才可判 PASS，否则 FAIL')
+                      )
+                  ), FALSE)
+              )
+            """, String.class, tenantCode).stream().findFirst().orElse(null);
+    }
+
+    private List<TenantDataCount> findBusinessData(String tenantCode, String systemTemplateId) {
         List<String> tenantTables = jdbcTemplate.queryForList("""
             SELECT DISTINCT table_name
             FROM information_schema.columns
@@ -256,17 +321,25 @@ public class TenantManagementService {
             """, String.class);
         return tenantTables.stream()
             .filter(tableName -> !PROVISIONING_TABLES.contains(tableName))
-            .map(tableName -> new TenantDataCount(tableName, tenantRowCount(tableName, tenantCode)))
+            .map(tableName -> new TenantDataCount(tableName, tenantRowCount(tableName, tenantCode, systemTemplateId)))
             .filter(item -> item.count() > 0)
             .toList();
     }
 
-    private int tenantRowCount(String tableName, String tenantCode) {
+    private int tenantRowCount(String tableName, String tenantCode, String systemTemplateId) {
         if (!tableName.matches("[A-Za-z0-9_]+")) {
             throw new IllegalStateException("检测到不安全的租户数据表名");
         }
-        Integer count = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM `" + tableName + "` WHERE tenant_code = ?", Integer.class, tenantCode);
+        String exclusion = systemTemplateId == null ? "" : switch (tableName) {
+            case "qms_inspection_template" -> " AND id <> ?";
+            case "qms_inspection_template_item" -> " AND template_id <> ?";
+            default -> "";
+        };
+        Integer count = exclusion.isEmpty()
+            ? jdbcTemplate.queryForObject("SELECT COUNT(*) FROM `" + tableName + "` WHERE tenant_code = ?",
+                Integer.class, tenantCode)
+            : jdbcTemplate.queryForObject("SELECT COUNT(*) FROM `" + tableName + "` WHERE tenant_code = ?" + exclusion,
+                Integer.class, tenantCode, systemTemplateId);
         return count == null ? 0 : count;
     }
 

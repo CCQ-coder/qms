@@ -1,7 +1,7 @@
 package com.pcbqms.platform.api;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
-public record UpdateTenantParameterRequest(@NotBlank(message = "不能为空") String value) {
+public record UpdateTenantParameterRequest(@NotNull(message = "不能为空") String value) {
 }
 

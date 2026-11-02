@@ -6,14 +6,18 @@ import { qmsApi } from '@/api/qms'
 const AUTO_NCR_KEY = 'quality.auto-create-ncr'
 const PRODUCT_CODE_VALIDATION_KEY = 'master-data.product-code.validation-enabled'
 const PRODUCT_CODE_PATTERN_KEY = 'master-data.product-code.pattern'
+const FLYING_PROBE_PATTERN_KEY = 'flying-probe.material-extract-pattern'
 const DEFAULT_PRODUCT_CODE_PATTERN = '[A-Za-z0-9][A-Za-z0-9._-]{0,39}'
 
 const loading = ref(false)
 const savingProductRule = ref(false)
+const savingFlyingProbeRule = ref(false)
 const savingAutoNcr = ref(false)
 const productCodeValidationEnabled = ref(false)
 const productCodePattern = ref(DEFAULT_PRODUCT_CODE_PATTERN)
 const productCodeExample = ref('PCB-4L-001')
+const flyingProbePattern = ref('')
+const flyingProbeExample = ref('02PT42777A01')
 const autoCreateNcr = ref(false)
 
 const productCodeMatches = computed(() => {
@@ -25,21 +29,52 @@ const productCodeMatches = computed(() => {
   }
 })
 
+const flyingProbeExtracted = computed(() => {
+  const pattern = flyingProbePattern.value.trim()
+  const example = flyingProbeExample.value.trim().toUpperCase()
+  if (!pattern || !example) return ''
+  try {
+    const match = new RegExp(`^(?:${pattern})$`, 'i').exec(example)
+    return match?.length === 2 && /^[0-9]+$/.test(match[1] || '') ? match[1] : ''
+  } catch {
+    return ''
+  }
+})
+
 async function load() {
   loading.value = true
   try {
-    const [autoNcrParameter, validationParameter, patternParameter] = await Promise.all([
+    const [autoNcrParameter, validationParameter, patternParameter, flyingProbeParameter] = await Promise.all([
       qmsApi.getTenantParameter(AUTO_NCR_KEY),
       qmsApi.getTenantParameter(PRODUCT_CODE_VALIDATION_KEY),
-      qmsApi.getTenantParameter(PRODUCT_CODE_PATTERN_KEY)
+      qmsApi.getTenantParameter(PRODUCT_CODE_PATTERN_KEY),
+      qmsApi.getTenantParameter(FLYING_PROBE_PATTERN_KEY)
     ])
     autoCreateNcr.value = autoNcrParameter.value === 'true'
     productCodeValidationEnabled.value = validationParameter.value === 'true'
     productCodePattern.value = patternParameter.value || DEFAULT_PRODUCT_CODE_PATTERN
+    flyingProbePattern.value = flyingProbeParameter.value || ''
   } catch {
     ElMessage.error('系统参数读取失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function saveFlyingProbeRule() {
+  const pattern = flyingProbePattern.value.trim()
+  if (pattern && !flyingProbeExtracted.value) {
+    ElMessage.warning('规则需完整匹配示例，并用唯一捕获组提取数字')
+    return
+  }
+  savingFlyingProbeRule.value = true
+  try {
+    await qmsApi.updateTenantParameter(FLYING_PROBE_PATTERN_KEY, pattern)
+    ElMessage.success(pattern ? '飞针料号提取规则已保存' : '已恢复完整编号精确匹配')
+  } catch {
+    ElMessage.error('飞针规则保存失败；请检查正则表达式和管理员权限')
+  } finally {
+    savingFlyingProbeRule.value = false
   }
 }
 
@@ -118,6 +153,21 @@ onMounted(load)
           <el-button type="primary" :loading="savingProductRule" @click="saveProductCodeRule">保存料号规则</el-button>
         </el-form>
       </div>
+    </el-card>
+
+    <el-card shadow="never" class="content-card compact-card">
+      <template #header><div class="card-header"><span>飞针料号提取</span></div></template>
+      <el-form label-position="top" class="system-parameter-form">
+        <el-form-item label="厂内编号提取规则（正则表达式，保留一个数字捕获组）">
+          <el-input v-model="flyingProbePattern" placeholder="例如：^02PT([0-9]{5})A[0-9]{2}$" />
+          <div class="field-help">从生产指令的厂内编号提取中间数字，与飞针机料号比较；同一文件选择开始时间之前最近下达的工单。保存后会重试待匹配的历史飞针记录，可能自动生成 FQC 检验；留空保存可恢复完整编号精确匹配。</div>
+        </el-form-item>
+        <el-form-item label="厂内编号示例">
+          <el-input v-model="flyingProbeExample" placeholder="例如：02PT42777A01" />
+          <div class="rule-preview" :class="flyingProbePattern.trim() ? (flyingProbeExtracted ? 'rule-preview--pass' : 'rule-preview--fail') : ''">{{ flyingProbePattern.trim() ? (flyingProbeExtracted ? `提取到飞针料号：${flyingProbeExtracted}` : '未提取到数字料号') : '未配置，按完整编号精确匹配' }}</div>
+        </el-form-item>
+        <el-button type="primary" :loading="savingFlyingProbeRule" @click="saveFlyingProbeRule">保存飞针规则</el-button>
+      </el-form>
     </el-card>
 
     <el-card shadow="never" class="content-card compact-card">

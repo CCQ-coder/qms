@@ -13,6 +13,8 @@ import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.domain.FlyingProbeRun;
 import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.domain.InspectionTemplate;
+import com.pcbqms.inspection.domain.SystemParameter;
+import com.pcbqms.inspection.infrastructure.persistence.SystemParameterMapper;
 import com.pcbqms.inspection.infrastructure.persistence.FlyingProbeProjectionMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTaskMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTemplateMapper;
@@ -24,11 +26,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +46,7 @@ import org.springframework.util.StringUtils;
 public class FlyingProbeInspectionProjectionService {
     static final String EVENT_TYPE = "FLYING_PROBE_TEST_COUNTERS";
     private static final String TEMPLATE_CODE = "FLYING_PROBE_ELECTRICAL_V1";
+    private static final String MATERIAL_EXTRACT_PATTERN_KEY = "flying-probe.material-extract-pattern";
     private static final String ADMIN = "admin";
     private final FlyingProbeProjectionMapper projectionMapper;
     private final EquipmentMapper equipmentMapper;
@@ -51,6 +57,7 @@ public class FlyingProbeInspectionProjectionService {
     private final InspectionApplicationService inspectionApplicationService;
     private final InspectionTemplateApplicationService templateApplicationService;
     private final InspectionAccessScopeService accessScopeService;
+    private final SystemParameterMapper systemParameterMapper;
     private final ObjectMapper objectMapper;
 
     @Value("${qms.equipment-telemetry.retention.raw-days:7}")
@@ -139,16 +146,46 @@ public class FlyingProbeInspectionProjectionService {
             return;
         }
         String materialKey = normalizeMaterialKey(projection.getMaterialNo());
+        Pattern materialPattern;
+        try {
+            materialPattern = materialPattern(projection.getTenantCode());
+        } catch (IllegalArgumentException exception) {
+            retryLater(projection, exception.getMessage(), now);
+            return;
+        }
+        if (materialPattern != null && !materialKey.matches("[0-9]+")) {
+            retryLater(projection, "已配置飞针料号提取规则，但设备未上报数字料号", now);
+            return;
+        }
+        boolean extractNumericKey = materialPattern != null;
         FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
         WorkOrder workOrder;
         if (run == null) {
-            List<WorkOrder> candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
-                    .eq(WorkOrder::getTenantCode, projection.getTenantCode())
-                    .apply("internal_product_no_match_key = {0}", materialKey))
-                .stream().filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
+            var query = Wrappers.lambdaQuery(WorkOrder.class).eq(WorkOrder::getTenantCode, projection.getTenantCode());
+            if (extractNumericKey) {
+                query.like(WorkOrder::getInternalProductNo, materialKey);
+            } else {
+                query.apply("internal_product_no_match_key = {0}", materialKey);
+            }
+            List<WorkOrder> candidates = workOrderMapper.selectList(query).stream()
+                .filter(order -> materialKey.equals(workOrderMaterialKey(order.getInternalProductNo(),
+                    extractNumericKey ? materialPattern : null)))
                 .toList();
+            if (extractNumericKey) {
+                if (candidates.stream().anyMatch(order -> order.getReleasedAt() == null)) {
+                    retryLater(projection, "候选生产指令下达日期缺失，无法按时间匹配", now);
+                    return;
+                }
+                LocalDate fileDate = snapshot.startTime().toLocalDate();
+                LocalDate latestRelease = candidates.stream().map(WorkOrder::getReleasedAt)
+                    .filter(date -> date != null && !date.isAfter(fileDate)).max(LocalDate::compareTo).orElse(null);
+                candidates = candidates.stream().filter(order -> latestRelease != null
+                    && latestRelease.equals(order.getReleasedAt())).toList();
+            }
             if (candidates.size() != 1) {
-                retryLater(projection, "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
+                retryLater(projection, extractNumericKey
+                    ? "飞针料号与文件开始时间按下达日期匹配生产指令数量为 " + candidates.size() + "，最近日期必须恰好为 1"
+                    : "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
                 return;
             }
             workOrder = candidates.getFirst();
@@ -167,7 +204,8 @@ public class FlyingProbeInspectionProjectionService {
                 .eq(WorkOrder::getTenantCode, projection.getTenantCode())
                 .eq(WorkOrder::getWorkOrderNo, run.getWorkOrderNo()));
             if (workOrder == null
-                || !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))) {
+                || !materialKey.equals(workOrderMaterialKey(workOrder.getInternalProductNo(),
+                    extractNumericKey ? materialPattern : null))) {
                 retryLater(projection, "文件批次工单映射发生变化，需人工核对", now);
                 return;
             }
@@ -375,6 +413,37 @@ public class FlyingProbeInspectionProjectionService {
 
     private String normalizeMaterialKey(String materialNo) {
         return StringUtils.hasText(materialNo) ? materialNo.trim().toUpperCase(Locale.ROOT) : null;
+    }
+
+    private Pattern materialPattern(String tenantCode) {
+        SystemParameter parameter = systemParameterMapper.selectOne(Wrappers.lambdaQuery(SystemParameter.class)
+            .eq(SystemParameter::getTenantCode, tenantCode)
+            .eq(SystemParameter::getParameterKey, MATERIAL_EXTRACT_PATTERN_KEY));
+        if (parameter == null || !StringUtils.hasText(parameter.getParameterValue())) {
+            return null;
+        }
+        try {
+            Pattern pattern = Pattern.compile(parameter.getParameterValue().trim(), Pattern.CASE_INSENSITIVE);
+            if (pattern.matcher("").groupCount() != 1) {
+                throw new IllegalArgumentException("飞针料号提取规则必须有且仅有一个捕获组");
+            }
+            return pattern;
+        } catch (PatternSyntaxException exception) {
+            throw new IllegalArgumentException("飞针料号提取规则无效，请在系统参数中修正", exception);
+        }
+    }
+
+    private String workOrderMaterialKey(String internalProductNo, Pattern pattern) {
+        String normalized = normalizeMaterialKey(internalProductNo);
+        if (pattern == null || normalized == null) {
+            return normalized;
+        }
+        var matcher = pattern.matcher(normalized);
+        if (!matcher.matches() || !StringUtils.hasText(matcher.group(1))) {
+            return null;
+        }
+        String captured = matcher.group(1);
+        return captured.matches("[0-9]+") ? captured : null;
     }
 
     private void skip(FlyingProbeProjection projection, String reason, LocalDateTime now) {
