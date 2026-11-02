@@ -3,7 +3,7 @@ import { requireHttpsDeviceToken } from '@/utils/device-upload-token'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
-  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery
+  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
   , MenuAccess, GatewayHostStatus
 } from '@/types/qms'
 
@@ -304,6 +304,21 @@ export const qmsApi = {
 
   async listEquipmentTelemetryHistory(query: EquipmentTelemetryHistoryQuery = {}) {
     const { data } = await http.get<ApiResponse<EquipmentTelemetryHistoryPage>>('/api/v1/equipment/telemetry/history', { params: query })
+    return data.data
+  },
+
+  async bindFlyingProbeWorkOrder(telemetryId: string, workOrderNo: string) {
+    const { data } = await http.post<ApiResponse<string>>(
+      `/api/v1/inspection/flying-probe-projections/${encodeURIComponent(telemetryId)}/bind-work-order`,
+      { workOrderNo }
+    )
+    return data.data
+  },
+
+  async listRetryableFlyingProbeProjections(page = 1, pageSize = 50) {
+    const { data } = await http.get<ApiResponse<FlyingProbeRetryableProjectionPage>>(
+      '/api/v1/inspection/flying-probe-projections/retryable', { params: { page, pageSize } }
+    )
     return data.data
   },
 

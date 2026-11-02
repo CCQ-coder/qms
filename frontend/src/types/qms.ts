@@ -469,6 +469,24 @@ export type EquipmentTelemetryHistoryPage = {
   pageSize: number
 }
 
+export type FlyingProbeRetryableProjection = {
+  id: string
+  equipmentCode?: string | null
+  machineName?: string | null
+  materialNo?: string | null
+  deviceTime: string
+  sourceFile?: string | null
+  reason?: string | null
+  workOrderNo?: string | null
+}
+
+export type FlyingProbeRetryableProjectionPage = {
+  records: FlyingProbeRetryableProjection[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 export type EquipmentMaintenance = {
   id: string
   recordNo: string

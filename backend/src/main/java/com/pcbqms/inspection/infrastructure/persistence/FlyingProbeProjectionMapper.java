@@ -1,6 +1,7 @@
 package com.pcbqms.inspection.infrastructure.persistence;
 
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.inspection.api.FlyingProbeRetryableRecordResponse;
 import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.domain.FlyingProbeRun;
 import java.time.LocalDateTime;
@@ -13,6 +14,39 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface FlyingProbeProjectionMapper {
+    @Select("""
+        WITH ranked AS (
+            SELECT telemetry_id, tenant_code, equipment_id, machine_name, material_no, device_time,
+                   source_file, source_start_time, reason, run_key, work_order_no,
+                   cumulative_tested, cumulative_good, cumulative_bad,
+                   ROW_NUMBER() OVER (PARTITION BY COALESCE(run_key, telemetry_id)
+                       ORDER BY device_time, received_at, telemetry_id) AS row_no,
+                   MAX(device_time) OVER (PARTITION BY COALESCE(run_key, telemetry_id)) AS latest_device_time
+            FROM qms_flying_probe_projection
+            WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+        )
+        SELECT p.telemetry_id AS id, e.asset_no AS equipment_code, p.machine_name, p.material_no,
+               p.device_time, p.source_file, p.source_start_time, p.reason,
+               COALESCE(r.work_order_no, p.work_order_no) AS work_order_no,
+               p.cumulative_tested, p.cumulative_good, p.cumulative_bad
+        FROM ranked p
+        LEFT JOIN qms_equipment e ON e.id = p.equipment_id COLLATE utf8mb4_0900_ai_ci
+            AND e.tenant_code = p.tenant_code COLLATE utf8mb4_0900_ai_ci
+        LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
+        WHERE p.row_no = 1
+        ORDER BY p.latest_device_time DESC, p.telemetry_id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+        """)
+    List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
+        @Param("tenantCode") String tenantCode, @Param("pageSize") int pageSize, @Param("offset") long offset);
+
+    @Select("""
+        SELECT COUNT(DISTINCT COALESCE(run_key, telemetry_id))
+        FROM qms_flying_probe_projection
+        WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+        """)
+    long countRetryableGroups(@Param("tenantCode") String tenantCode);
+
     @Select("""
         SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.machine_name,
                telemetry.material_no, telemetry.device_time, telemetry.received_at, telemetry.event_type,
@@ -101,6 +135,12 @@ public interface FlyingProbeProjectionMapper {
         """)
     int updateProjection(FlyingProbeProjection projection);
 
+    @Update("""
+        UPDATE qms_flying_probe_projection SET retry_after = CURRENT_TIMESTAMP
+        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey} AND status = 'RETRYABLE'
+        """)
+    int wakeRetryableRun(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
+
     @Select("""
         SELECT COUNT(*) FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode} AND equipment_id = #{equipmentId} AND run_key = #{runKey}
@@ -114,10 +154,12 @@ public interface FlyingProbeProjectionMapper {
     @Insert("""
         INSERT INTO qms_flying_probe_run (
             run_key, tenant_code, equipment_id, source_file, source_start_time, material_no,
-            work_order_no, tested_count, good_count, bad_count, status, updated_at
+            work_order_no, binding_source, bound_by, bound_at,
+            tested_count, good_count, bad_count, status, updated_at
         ) VALUES (
             #{runKey}, #{tenantCode}, #{equipmentId}, #{sourceFile}, #{sourceStartTime}, #{materialNo},
-            #{workOrderNo}, 0, 0, 0, 'ACTIVE', #{updatedAt}
+            #{workOrderNo}, #{bindingSource}, #{boundBy}, #{boundAt},
+            0, 0, 0, 'ACTIVE', #{updatedAt}
         ) ON DUPLICATE KEY UPDATE run_key = run_key
         """)
     int insertRunIfAbsent(FlyingProbeRun run);
@@ -128,7 +170,8 @@ public interface FlyingProbeProjectionMapper {
     @Update("""
         UPDATE qms_flying_probe_run SET last_device_time = #{lastDeviceTime},
             tested_count = #{testedCount}, good_count = #{goodCount}, bad_count = #{badCount},
-            status = #{status}, reason = #{reason}, updated_at = #{updatedAt}
+            status = #{status}, reason = #{reason}, binding_source = #{bindingSource},
+            bound_by = #{boundBy}, bound_at = #{boundAt}, updated_at = #{updatedAt}
         WHERE run_key = #{runKey}
         """)
     int updateRun(FlyingProbeRun run);

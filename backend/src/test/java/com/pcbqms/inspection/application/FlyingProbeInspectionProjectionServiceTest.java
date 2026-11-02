@@ -1,6 +1,7 @@
 package com.pcbqms.inspection.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -14,6 +15,7 @@ import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
+import com.pcbqms.inspection.api.FlyingProbeRetryableRecordResponse;
 import com.pcbqms.inspection.api.InspectionRecordResponse;
 import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.domain.FlyingProbeRun;
@@ -31,6 +33,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +57,121 @@ class FlyingProbeInspectionProjectionServiceTest {
     @AfterEach
     void clearTenant() {
         TenantContext.clear();
+    }
+
+    @Test
+    void manualBindingProjectsAFileWithNoNumericMaterialUnderTheChosenOrder() {
+        TenantContext.set("tenant-a", "supervisor");
+        var now = LocalDateTime.now();
+        var telemetry = event("manual", now.minusHours(1), now.minusMinutes(1), 3, 2, 1);
+        telemetry.setMaterialNo("NO-MATERIAL-NUMBER");
+        var projection = projection(telemetry);
+        projection.setStatus("RETRYABLE");
+        projection.setRetryAfter(now.minusMinutes(1));
+        when(projectionMapper.lockProjection("manual")).thenReturn(projection);
+        WorkOrder selected = releasedOrder("WO-SELECTED", "OTHER-PRODUCT", now.toLocalDate());
+        when(workOrderMapper.selectOne(any())).thenReturn(selected);
+        AtomicReference<FlyingProbeRun> savedRun = new AtomicReference<>();
+        when(projectionMapper.lockRun(any())).thenAnswer(call -> savedRun.get());
+        when(projectionMapper.insertRunIfAbsent(any())).thenAnswer(call -> {
+            FlyingProbeRun inserted = call.getArgument(0);
+            inserted.setStatus("ACTIVE");
+            inserted.setTestedCount(0);
+            inserted.setGoodCount(0);
+            inserted.setBadCount(0);
+            savedRun.set(inserted);
+            return 1;
+        });
+        validEquipmentAndTemplate();
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(inspectionApplicationService.submitAutomaticRecord(any(), any(), any())).thenReturn(
+            new InspectionRecordResponse("record-manual", "task-manual", "FAIL", 1, null, null, null, now));
+
+        var service = service();
+        service.bindManually("manual", "WO-SELECTED");
+        assertThat(savedRun.get().getWorkOrderNo()).isEqualTo("WO-SELECTED");
+        assertThat(savedRun.get().getBindingSource()).isEqualTo("MANUAL");
+        assertThat(savedRun.get().getBoundBy()).isEqualTo("supervisor");
+        TenantContext.set("tenant-a", "admin");
+        service.retry(projection);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-SELECTED");
+        assertThat(projection.getDeltaTested()).isEqualTo(3);
+        verify(taskMapper).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void manualBindingCannotChangeTheOrderOfAnExistingFile() {
+        TenantContext.set("tenant-a", "supervisor");
+        var telemetry = event("already-bound", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 3, 3, 0);
+        var projection = projection(telemetry);
+        projection.setStatus("RETRYABLE");
+        when(projectionMapper.lockProjection("already-bound")).thenReturn(projection);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-OTHER", "PART-1", LocalDate.now()));
+        when(projectionMapper.lockRun(any())).thenReturn(run());
+
+        assertThatThrownBy(() -> service().bindManually("already-bound", "WO-OTHER"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("已绑定");
+        verify(projectionMapper, never()).insertRunIfAbsent(any());
+        verify(projectionMapper, never()).wakeRetryableRun(any(), any());
+    }
+
+    @Test
+    void repeatingTheSameManualBindingKeepsTheOriginalAudit() {
+        TenantContext.set("tenant-a", "second-supervisor");
+        var now = LocalDateTime.now();
+        var telemetry = event("repeat", now.minusHours(1), now.minusMinutes(1), 3, 3, 0);
+        var projection = projection(telemetry);
+        projection.setStatus("RETRYABLE");
+        when(projectionMapper.lockProjection("repeat")).thenReturn(projection);
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
+        FlyingProbeRun existing = run();
+        existing.setBindingSource("MANUAL");
+        existing.setBoundBy("first-supervisor");
+        existing.setBoundAt(now.minusDays(1));
+        when(projectionMapper.lockRun(any())).thenReturn(existing);
+
+        service().bindManually("repeat", "WO-1");
+
+        assertThat(existing.getBoundBy()).isEqualTo("first-supervisor");
+        assertThat(existing.getBoundAt()).isEqualTo(now.minusDays(1));
+    }
+
+    @Test
+    void listsPersistedRetryableFilesWithinTheCurrentTenant() {
+        TenantContext.set("tenant-a", "supervisor");
+        var record = new FlyingProbeRetryableRecordResponse();
+        record.setId("old-telemetry");
+        record.setSourceFile("WTD-9/old.txt");
+        when(projectionMapper.countRetryableGroups("tenant-a")).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L)).thenReturn(List.of(record));
+
+        var page = service().listRetryable(1, 50);
+
+        assertThat(page.total()).isEqualTo(1);
+        assertThat(page.records()).extracting(FlyingProbeRetryableRecordResponse::getId)
+            .containsExactly("old-telemetry");
+    }
+
+    @Test
+    void manualBindingRejectsAnotherTenantsProjectionAndCompletedRecords() {
+        TenantContext.set("tenant-a", "supervisor");
+        var telemetry = event("other-tenant", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 3, 3, 0);
+        var projection = projection(telemetry);
+        projection.setTenantCode("tenant-b");
+        when(projectionMapper.lockProjection("other-tenant")).thenReturn(projection);
+
+        assertThatThrownBy(() -> service().bindManually("other-tenant", "WO-1"))
+            .isInstanceOf(IllegalArgumentException.class);
+        projection.setTenantCode("tenant-a");
+        projection.setStatus("PROCESSED");
+        assertThatThrownBy(() -> service().bindManually("other-tenant", "WO-1"))
+            .isInstanceOf(IllegalArgumentException.class);
+        verify(projectionMapper, never()).insertRunIfAbsent(any());
     }
 
     @Test

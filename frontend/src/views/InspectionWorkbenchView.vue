@@ -4,13 +4,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import { formatDateTime, taskTypeText } from '@/utils/display-text'
+import { loadMenuAccess, menuAccess } from '@/navigation/menu'
+import { formatDate, formatDateTime, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { formatHostCapacity, formatHostUptime } from '@/utils/host-status'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
-import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary } from '@/types/qms'
+import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
 const backendReachable = ref(true)
@@ -48,7 +49,25 @@ const equipmentError = ref('')
 const runtimeError = ref('')
 const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
-const recordSource = ref<'probe' | 'fqc'>('probe')
+const recordSource = ref<'probe' | 'retryable' | 'fqc'>('probe')
+const canBindFlyingProbe = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? ''))
+const retryableRecords = ref<FlyingProbeRetryableProjection[]>([])
+const retryableTotal = ref(0)
+const retryablePage = ref(1)
+const retryablePageSize = 50
+const retryableLoading = ref(false)
+const retryableLoaded = ref(false)
+const retryableError = ref('')
+const retryableUpdatedAt = ref<Date>()
+const bindingDialog = ref(false)
+const bindingRecord = ref<FlyingProbeRetryableProjection>()
+const bindingKeyword = ref('')
+const bindingWorkOrders = ref<WorkOrder[]>([])
+const bindingWorkOrderNo = ref('')
+const bindingSearchLoading = ref(false)
+const bindingSaving = ref(false)
+const bindingError = ref('')
+let bindingSearchVersion = 0
 const {
   records: flyingProbeRecords,
   nextCursor: flyingProbeNextCursor,
@@ -59,6 +78,10 @@ const {
   refresh: refreshFlyingProbeRecords,
   loadMore: loadMoreFlyingProbeRecords
 } = useFlyingProbeHistory((query) => qmsApi.listEquipmentTelemetryHistory(query))
+const recordPanelUpdatedAt = computed(() => recordSource.value === 'probe' ? flyingProbeUpdatedAt.value
+  : recordSource.value === 'retryable' ? retryableUpdatedAt.value : finishedRecordsUpdatedAt.value)
+const recordPanelLoading = computed(() => recordSource.value === 'probe' ? flyingProbeLoading.value
+  : recordSource.value === 'retryable' ? retryableLoading.value : finishedRecordsLoading.value)
 watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
   activePanel.value = summaryRoute ? 'summary' : panel === 'records' ? 'records' : 'monitor'
   if (activePanel.value === 'records' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
@@ -325,6 +348,24 @@ async function loadCompletedFinishedRecords(cursor?: string) {
   }
 }
 
+async function loadRetryableProjections(page = retryablePage.value) {
+  if (retryableLoading.value) return
+  retryableLoading.value = true
+  retryableError.value = ''
+  try {
+    const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize)
+    retryableRecords.value = result.records
+    retryableTotal.value = result.total
+    retryablePage.value = result.page
+    retryableLoaded.value = true
+    retryableUpdatedAt.value = new Date()
+  } catch (error) {
+    retryableError.value = error instanceof Error ? error.message : '待匹配记录读取失败，请重试。'
+  } finally {
+    retryableLoading.value = false
+  }
+}
+
 let monitoringVersion = 0
 let runtimePollInFlight = false
 let runtimePollTimer: number | undefined
@@ -411,13 +452,15 @@ function showPanel(panel: 'monitor' | 'records' | 'tasks') {
   }
 }
 
-function showRecordSource(source: 'probe' | 'fqc') {
+function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
   recordSource.value = source
   if (source === 'probe' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
+  if (source === 'retryable' && !retryableLoaded.value) void loadRetryableProjections(1)
 }
 
 async function refreshRecordPanel() {
   if (recordSource.value === 'probe') await refreshFlyingProbeRecords()
+  else if (recordSource.value === 'retryable') await loadRetryableProjections()
   else await loadCompletedFinishedRecords()
 }
 
@@ -453,6 +496,79 @@ function fqcProjectionTag(record: EquipmentTelemetryRecord): 'success' | 'warnin
   if (record.fqcInspectionRecordId) return 'success'
   if (record.fqcProjectionStatus === 'RETRYABLE') return 'warning'
   return 'info'
+}
+
+async function searchBindingWorkOrders() {
+  const keyword = bindingKeyword.value.trim()
+  const version = ++bindingSearchVersion
+  bindingWorkOrderNo.value = ''
+  bindingWorkOrders.value = []
+  bindingError.value = ''
+  bindingSearchLoading.value = false
+  if (!keyword) {
+    bindingError.value = '请输入生产指令号或厂内编号。'
+    return
+  }
+  bindingSearchLoading.value = true
+  try {
+    const page = await qmsApi.listWorkOrders({ keyword, page: 1, pageSize: 50 })
+    if (version === bindingSearchVersion) {
+      bindingWorkOrders.value = page.records
+      if (bindingRecord.value?.workOrderNo && page.records.some((order) => order.workOrderNo === bindingRecord.value?.workOrderNo)) {
+        bindingWorkOrderNo.value = bindingRecord.value.workOrderNo
+      }
+    }
+  } catch (error) {
+    if (version === bindingSearchVersion) bindingError.value = error instanceof Error ? error.message : '生产指令读取失败，请重试。'
+  } finally {
+    if (version === bindingSearchVersion) bindingSearchLoading.value = false
+  }
+}
+
+function openBindingDialog(record: FlyingProbeRetryableProjection) {
+  bindingSearchVersion++
+  bindingRecord.value = record
+  bindingKeyword.value = record.workOrderNo || record.materialNo || ''
+  bindingWorkOrders.value = []
+  bindingWorkOrderNo.value = ''
+  bindingError.value = ''
+  bindingSearchLoading.value = false
+  bindingDialog.value = true
+  if (bindingKeyword.value) void searchBindingWorkOrders()
+}
+
+async function submitBinding() {
+  const record = bindingRecord.value
+  const selected = bindingWorkOrders.value.find((order) => order.workOrderNo === bindingWorkOrderNo.value)
+  if (!record || !selected || bindingSaving.value) return
+  if (record.workOrderNo && record.workOrderNo !== selected.workOrderNo) {
+    ElMessage.warning(`该文件已绑定生产指令 ${record.workOrderNo}，不能改绑。`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `${record.workOrderNo ? '按已绑定工单重新处理' : '将这条飞针记录绑定到'}生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。同一飞针文件将固定使用该工单，之后不能改绑其他工单；待匹配快照会尝试生成 FQC。确定继续吗？`,
+      '确认手动绑定',
+      { confirmButtonText: '确认绑定', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  bindingSaving.value = true
+  try {
+    await qmsApi.bindFlyingProbeWorkOrder(record.id, selected.workOrderNo)
+    bindingDialog.value = false
+    ElMessage.success('已提交绑定，FQC 正在处理')
+    await Promise.all([
+      refreshFlyingProbeRecords(),
+      loadCompletedFinishedRecords(),
+      ...(retryableLoaded.value ? [loadRetryableProjections()] : [])
+    ])
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '手动绑定失败，请重试。')
+  } finally {
+    bindingSaving.value = false
+  }
 }
 
 function openSelectedDeviceTask() {
@@ -572,6 +688,7 @@ async function submitRecord() {
 
 onMounted(async () => {
   componentMounted = true
+  void loadMenuAccess()
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('keydown', handleKeyboardShortcut)
@@ -714,19 +831,20 @@ onBeforeUnmount(() => {
       <template #header>
         <div class="card-header">
           <div><span>设备检测记录</span><small>飞针机采集计数与已提交的 FQC 检验分别查看。</small></div>
-          <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordSource === 'probe' ? (flyingProbeUpdatedAt ? `更新于 ${formatDateTime(flyingProbeUpdatedAt)}` : '尚未读取') : (finishedRecordsUpdatedAt ? `更新于 ${formatDateTime(finishedRecordsUpdatedAt)}` : '尚未读取') }}</span><el-button link type="primary" :disabled="recordSource === 'probe' ? flyingProbeLoading : finishedRecordsLoading" @click="refreshRecordPanel">刷新</el-button></div>
+          <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordPanelUpdatedAt ? `更新于 ${formatDateTime(recordPanelUpdatedAt)}` : '尚未读取' }}</span><el-button link type="primary" :disabled="recordPanelLoading" @click="refreshRecordPanel">刷新</el-button></div>
         </div>
       </template>
       <div class="task-queue-actions" role="group" aria-label="记录来源">
         <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
+        <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" @click="showRecordSource('retryable')">全部待匹配</el-button>
         <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
       </div>
       <template v-if="recordSource === 'probe'">
-        <p class="summary-footnote">采集快照与自动生成的 FQC 检验分开展示；只有满足标准和唯一工单匹配的新增板数会生成检验记录。</p>
+        <p class="summary-footnote">采集快照与生成的 FQC 检验分开展示；自动匹配失败的记录可手动绑定生产指令。</p>
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
-          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" :fit="false" size="small" empty-text="暂无飞针机采集记录">
+          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
             <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
             <el-table-column label="料号" width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
@@ -743,9 +861,33 @@ onBeforeUnmount(() => {
                 </el-tooltip>
               </template>
             </el-table-column>
+            <el-table-column label="操作" min-width="120" fixed="right">
+              <template #default="scope">
+                <el-button v-if="canBindFlyingProbe && scope.row.fqcProjectionStatus === 'RETRYABLE'" link type="primary" @click="openBindingDialog(scope.row)">手动绑定</el-button>
+              </template>
+            </el-table-column>
           </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
+      </template>
+      <template v-else-if="recordSource === 'retryable' && canBindFlyingProbe">
+        <p class="summary-footnote">按飞针文件汇总待匹配快照；原始采集记录过期后，仍可在这里绑定或重试。</p>
+        <el-alert v-if="retryableError" type="error" :closable="false" :title="retryableError" style="margin-top: 12px" />
+        <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar"><span>共 {{ retryableTotal }} 份待匹配飞针文件</span></div>
+        <div v-if="retryableLoaded || retryableLoading" class="finished-records-table-wrap finished-records-table-wrap--retryable">
+          <el-table v-loading="retryableLoading" :data="retryableRecords" size="small" empty-text="暂无待匹配飞针文件">
+            <el-table-column label="设备检测时间" width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
+            <el-table-column label="检测设备" width="135" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
+            <el-table-column label="料号" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="来源文件" min-width="190" show-overflow-tooltip><template #default="{ row }">{{ row.sourceFile || '—' }}</template></el-table-column>
+            <el-table-column label="待匹配原因" min-width="280" show-overflow-tooltip><template #default="{ row }">{{ row.reason || '—' }}</template></el-table-column>
+            <el-table-column label="已有工单" width="145"><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openBindingDialog(row)">{{ row.workOrderNo ? '重试处理' : '手动绑定' }}</el-button></template></el-table-column>
+          </el-table>
+        </div>
+        <div v-if="retryableLoaded && retryableTotal > retryablePageSize" class="task-queue-toolbar">
+          <el-pagination :current-page="retryablePage" :page-size="retryablePageSize" :total="retryableTotal" background layout="prev, pager, next, jumper" @current-change="loadRetryableProjections" />
+        </div>
       </template>
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
@@ -789,6 +931,25 @@ onBeforeUnmount(() => {
       </paged-table>
       <div v-if="!summaryError" class="summary-footnote">当前成品检验累计：{{ fqcTotal }} 条，合格 {{ fqcPass }} 条，不合格 {{ fqcFail }} 条。</div>
     </el-card>
+
+    <el-dialog v-model="bindingDialog" title="手动绑定飞针工单" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
+      <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
+      <el-alert type="warning" :closable="false" title="同一飞针文件绑定后不能改绑其他工单；再次选择原工单可重试处理。已生成的 FQC 记录不会改动。" />
+      <el-alert v-if="bindingRecord?.workOrderNo" type="info" :closable="false" :title="`该文件已绑定工单 ${bindingRecord.workOrderNo}，只能按此工单重试处理。`" style="margin-top: 10px" />
+      <div class="binding-order-search">
+        <el-input v-model="bindingKeyword" clearable placeholder="输入生产指令号或厂内编号" @keyup.enter="searchBindingWorkOrders" />
+        <el-button :loading="bindingSearchLoading" @click="searchBindingWorkOrders">查询工单</el-button>
+      </div>
+      <el-alert v-if="bindingError" type="error" :closable="false" :title="bindingError" />
+      <el-table v-loading="bindingSearchLoading" :data="bindingWorkOrders" size="small" max-height="300" empty-text="未找到工单，请输入准确的生产指令号或厂内编号">
+        <el-table-column label="选择" width="70"><template #default="{ row }"><el-radio v-model="bindingWorkOrderNo" :value="row.workOrderNo" :disabled="Boolean(bindingRecord?.workOrderNo && bindingRecord.workOrderNo !== row.workOrderNo)" :aria-label="`选择工单 ${row.workOrderNo}`" /></template></el-table-column>
+        <el-table-column prop="workOrderNo" label="生产指令号" min-width="145" />
+        <el-table-column label="厂内编号" min-width="180"><template #default="{ row }">{{ row.internalProductNo || '—' }}</template></el-table-column>
+        <el-table-column label="下达日期" min-width="130"><template #default="{ row }">{{ formatDate(row.releasedAt) }}</template></el-table-column>
+      </el-table>
+      <p class="summary-footnote">最多显示前 50 条；如未看到目标工单，请输入更完整的工单号查询。</p>
+      <template #footer><el-button :disabled="bindingSaving" @click="bindingDialog = false">取消</el-button><el-button type="primary" :loading="bindingSaving" :disabled="!bindingWorkOrderNo" @click="submitBinding">{{ bindingRecord?.workOrderNo ? '重试处理' : '确认绑定' }}</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="recordDialog" class="inspection-record-dialog" title="提交检验记录" width="min(920px, 94vw)" :close-on-click-modal="false">
       <el-alert :title="selectedTask ? `${selectedTask.taskNo} · ${selectedTask.processName}` : ''" type="info" :closable="false" class="dialog-alert" />
