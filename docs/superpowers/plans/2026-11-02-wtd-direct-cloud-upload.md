@@ -85,6 +85,6 @@
 - Update: QMS deployment runbook and XP package update instructions with HTTPS, persistent volume, token provisioning, rollback and verification commands.
 
 - [x] Verify SSH login to `106.227.69.144`, identify the actual QMS API container, OpenResty config and persistent upload volume; back up current config/binaries.
-- [ ] Configure verified HTTPS and deploy QMS migration/API; check unauthenticated and wrong-token requests fail, a valid sample saves raw bytes and produces one telemetry/FQC result. (服务器本机 TLS、V45、无令牌 401 已验证；公网 443 和实际设备样本待验。)
+- [ ] Configure verified HTTPS and deploy QMS migration/API; check unauthenticated and wrong-token requests fail, a valid sample saves raw bytes and produces one telemetry/FQC result. (公网 5173 HTTPS、V45、无令牌及错误令牌 401 已验证；实际设备样本待验。)
 - [ ] Issue one device token, update one XP device, verify file and status reception plus idempotent retry, then roll out remaining devices.
 - [ ] Disable SCBGX matching collector/relay and local projection scheduler only after the online path is confirmed; verify no duplicate FQC and leave rollback files in place.
