@@ -51,6 +51,21 @@ class ProductionSecurityConfigurationTest {
     }
 
     @Test
+    void deviceRoutesRequireTheirOwnTokenAndBindTheirOwnTenant() throws Exception {
+        when(jdbcTemplate.query(anyString(), org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<
+                com.pcbqms.common.tenancy.FlyingProbeDeviceTenantContextFilter.DeviceIdentity>>any(),
+                org.mockito.ArgumentMatchers.any()))
+            .thenReturn(java.util.List.of(new com.pcbqms.common.tenancy.FlyingProbeDeviceTenantContextFilter.DeviceIdentity("customer-b", "飞针01")));
+        for (String path : java.util.List.of("/api/v1/flying-probe/device-files", "/api/v1/flying-probe/device-host-status")) {
+            mvc.perform(post(path)).andExpect(status().isUnauthorized());
+            mvc.perform(post(path).header("X-Gateway-Token", "gateway-secret"))
+                .andExpect(status().isUnauthorized());
+            mvc.perform(post(path).header("X-Device-Token", "A".repeat(43)).header("X-Tenant-Code", "customer-a"))
+                .andExpect(status().isNoContent());
+        }
+    }
+
+    @Test
     void gatewayOnlyTelemetryPostReachesGatewayFilter() throws Exception {
         mvc.perform(post("/api/v1/equipment/telemetry").header("X-Gateway-Token", "gateway-secret"))
             .andExpect(status().isNoContent());
@@ -90,6 +105,12 @@ class ProductionSecurityConfigurationTest {
 
     @RestController
     static class ProbeController {
+        @PostMapping({"/api/v1/flying-probe/device-files", "/api/v1/flying-probe/device-host-status"})
+        ResponseEntity<Void> deviceReceive() {
+            org.assertj.core.api.Assertions.assertThat(com.pcbqms.common.tenancy.TenantContext.tenantCode()).isEqualTo("customer-b");
+            return ResponseEntity.noContent().build();
+        }
+
         @PostMapping("/api/v1/equipment/telemetry")
         ResponseEntity<Void> receive() {
             return ResponseEntity.noContent().build();

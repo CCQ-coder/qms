@@ -11,6 +11,22 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class EquipmentGatewayMappingControllerTest {
     @Test
+    void issuesOneTimeNonCacheableCredentialAndAllowsRevocation() throws Exception {
+        var service = mock(EquipmentGatewayMappingApplicationService.class);
+        org.mockito.Mockito.when(service.issueUploadToken("mapping-1")).thenReturn("device-secret");
+        var mvc = MockMvcBuilders.standaloneSetup(new EquipmentGatewayMappingController(service)).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                "/api/v1/equipment/gateway-mappings/mapping-1/upload-token"))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.uploadToken").value("device-secret"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                "/api/v1/equipment/gateway-mappings/mapping-1/upload-token"))
+            .andExpect(status().isNoContent());
+        org.mockito.Mockito.verify(service).revokeUploadToken("mapping-1");
+    }
+
+    @Test
     void acceptsAnEditForAnExistingMapping() throws Exception {
         var service = mock(EquipmentGatewayMappingApplicationService.class);
         var mvc = MockMvcBuilders.standaloneSetup(new EquipmentGatewayMappingController(service)).build();

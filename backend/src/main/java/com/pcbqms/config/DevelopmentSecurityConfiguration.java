@@ -14,9 +14,11 @@ import org.springframework.security.web.SecurityFilterChain;
 public class DevelopmentSecurityConfiguration {
 
     @Bean
-    SecurityFilterChain developmentSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain developmentSecurityFilterChain(HttpSecurity http, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) throws Exception {
         return http
             .csrf(csrf -> csrf.disable())
+            .addFilterBefore(new com.pcbqms.common.tenancy.FlyingProbeDeviceTenantContextFilter(jdbcTemplate),
+                org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
             .build();
     }

@@ -41,6 +41,21 @@ class GatewayHostStatusApplicationServiceTest {
     }
 
     @Test
+    void upsertGuardsEveryColumnAgainstLateAndRepeatedSamples() {
+        service.record(sample(50L, 100L, 40L, 80L));
+        var sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(sql.capture(), eq("customer-b"), eq("SCBGX"),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), eq(100L), eq(50L), eq(80L), eq(40L), eq(3600L));
+        String updates = sql.getValue().substring(sql.getValue().indexOf("ON DUPLICATE KEY UPDATE"));
+        for (String column : List.of("received_at", "cpu_percent", "memory_total_bytes", "memory_available_bytes",
+                "system_disk_total_bytes", "system_disk_free_bytes", "uptime_seconds", "sampled_at")) {
+            assertThat(updates).contains(column + " = IF(VALUES(sampled_at) > sampled_at, VALUES(" + column + "), " + column + ")");
+        }
+        assertThat(updates.strip()).endsWith("sampled_at = IF(VALUES(sampled_at) > sampled_at, VALUES(sampled_at), sampled_at)");
+    }
+
+    @Test
     void recordRejectsImpossibleMetrics() {
         assertThatThrownBy(() -> service.record(sample(101L, 100L, 40L, 80L)))
             .isInstanceOf(IllegalArgumentException.class);

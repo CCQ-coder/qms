@@ -28,9 +28,50 @@ class EquipmentGatewayMappingApplicationServiceTest {
     @Mock private EquipmentGatewayUnmatchedMessageApplicationService unmatchedMessageApplicationService;
     @Mock private InspectionAccessScopeService inspectionAccessScopeService;
 
+    @org.junit.jupiter.api.BeforeAll
+    static void mappingMetadata() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+            new org.apache.ibatis.builder.MapperBuilderAssistant(new org.apache.ibatis.session.Configuration(), ""),
+            EquipmentGatewayMapping.class);
+    }
+
     @AfterEach
     void clearTenantContext() {
         TenantContext.clear();
+    }
+
+    @Test
+    void supervisorCannotIssueOrRevokeCredentials() {
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("admin only"))
+            .when(inspectionAccessScopeService).requireTenantAdministrator();
+        var service = new EquipmentGatewayMappingApplicationService(mappingMapper, equipmentMapper,
+            unmatchedMessageApplicationService, inspectionAccessScopeService);
+        assertThatThrownBy(() -> service.issueUploadToken("mapping-1"))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> service.revokeUploadToken("mapping-1"))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        org.mockito.Mockito.verifyNoInteractions(mappingMapper);
+    }
+
+    @Test
+    void uploadTokensAreRandomRotatableRevocableAndAdminOnly() throws Exception {
+        TenantContext.set("customer-a", "admin.a");
+        EquipmentGatewayMapping mapping = new EquipmentGatewayMapping();
+        mapping.setId("mapping-1"); mapping.setTenantCode("customer-a"); mapping.setMachineName("飞针01");
+        when(mappingMapper.selectById("mapping-1")).thenReturn(mapping);
+        var service = new EquipmentGatewayMappingApplicationService(mappingMapper, equipmentMapper,
+            unmatchedMessageApplicationService, inspectionAccessScopeService);
+        String first = service.issueUploadToken("mapping-1");
+        assertThat(java.util.Base64.getUrlDecoder().decode(first)).hasSize(32);
+        assertThat(mapping.getUploadTokenHash()).isEqualTo(java.util.HexFormat.of().formatHex(
+            java.security.MessageDigest.getInstance("SHA-256").digest(first.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        String second = service.issueUploadToken("mapping-1");
+        assertThat(second).isNotEqualTo(first);
+        service.revokeUploadToken("mapping-1");
+        assertThat(mapping.getUploadTokenHash()).isNull();
+        verify(inspectionAccessScopeService, org.mockito.Mockito.times(3)).requireTenantAdministrator();
+        mapping.setTenantCode("customer-b");
+        assertThatThrownBy(() -> service.issueUploadToken("mapping-1")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -63,31 +104,36 @@ class EquipmentGatewayMappingApplicationServiceTest {
         assertThat(mappings.getFirst().equipmentName()).isNull();
     }
 
-    @Test
-    void administratorCanReassignAndRenameAnExistingMapping() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"machine", "equipment", "both", "neither"})
+    void administratorCanReassignAndRenameAnExistingMapping(String changed) {
+        String targetId = changed.equals("equipment") || changed.equals("both") ? "equipment-2" : "equipment-1";
+        String machine = changed.equals("machine") || changed.equals("both") ? "CNC-15" : "CNC-OLD";
         TenantContext.set("customer-a", "admin.a");
         EquipmentGatewayMapping mapping = new EquipmentGatewayMapping();
         mapping.setId("mapping-1");
         mapping.setTenantCode("customer-a");
-        mapping.setEquipmentId(null);
+        mapping.setEquipmentId("equipment-1");
         mapping.setMachineName("CNC-OLD");
+        mapping.setUploadTokenHash("old-device-token-hash");
         Equipment equipment = new Equipment();
-        equipment.setId("equipment-2");
+        equipment.setId(targetId);
         equipment.setTenantCode("customer-a");
         equipment.setAssetNo("EQ-2");
         equipment.setName("Machine 2");
         when(mappingMapper.selectById("mapping-1")).thenReturn(mapping);
-        when(equipmentMapper.selectById("equipment-2")).thenReturn(equipment);
+        when(equipmentMapper.selectById(targetId)).thenReturn(equipment);
         when(mappingMapper.selectList(any())).thenReturn(List.of(mapping));
         EquipmentGatewayMappingApplicationService service = new EquipmentGatewayMappingApplicationService(
             mappingMapper, equipmentMapper, unmatchedMessageApplicationService, inspectionAccessScopeService);
 
         var response = service.update("mapping-1", new SaveEquipmentGatewayMappingRequest(
-            "equipment-2", null, " cnc-15 "));
+            targetId, null, machine));
 
         assertThat(response.equipmentCode()).isEqualTo("EQ-2");
-        assertThat(response.machineName()).isEqualTo("CNC-15");
-        assertThat(mapping.getEquipmentId()).isEqualTo("equipment-2");
+        assertThat(response.machineName()).isEqualTo(machine);
+        assertThat(mapping.getEquipmentId()).isEqualTo(targetId);
+        assertThat(mapping.getUploadTokenHash()).isEqualTo(changed.equals("neither") ? "old-device-token-hash" : null);
         verify(mappingMapper).updateById(mapping);
     }
 

@@ -1,6 +1,7 @@
 package com.pcbqms.config;
 
 import com.pcbqms.common.tenancy.JwtTenantContextFilter;
+import com.pcbqms.common.tenancy.FlyingProbeDeviceTenantContextFilter;
 import com.pcbqms.common.tenancy.GatewayTelemetryTenantContextFilter;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import java.util.ArrayList;
@@ -47,11 +48,14 @@ public class ProductionSecurityConfiguration {
                     "/manifest.webmanifest", "/runtime-config.js", "/sw.js").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/auth/tenants").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/flying-probe/device-files",
+                    "/api/v1/flying-probe/device-host-status").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/equipment/telemetry").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/gateway/host-status").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
             .addFilterAfter(jwtTenantContextFilter, BearerTokenAuthenticationFilter.class)
+            .addFilterAfter(new FlyingProbeDeviceTenantContextFilter(jdbcTemplate), JwtTenantContextFilter.class)
             .addFilterAfter(new GatewayTelemetryTenantContextFilter(
                 gatewayAuthentication, jdbcTemplate, telemetryTenantCode), JwtTenantContextFilter.class)
             .build();

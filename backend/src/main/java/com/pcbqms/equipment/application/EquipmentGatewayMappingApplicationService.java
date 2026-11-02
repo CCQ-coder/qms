@@ -81,6 +81,10 @@ public class EquipmentGatewayMappingApplicationService {
         if (findMappings(username, machineName).stream().anyMatch(other -> !id.equals(other.getId()))) {
             throw new IllegalArgumentException("该网关设备标识已经映射到 QMS 设备");
         }
+        if (!java.util.Objects.equals(mapping.getEquipmentId(), equipment.getId())
+            || !java.util.Objects.equals(mapping.getMachineName(), machineName)) {
+            saveUploadToken(mapping, null);
+        }
         mapping.setEquipmentId(equipment.getId());
         mapping.setSourceUsername(username);
         mapping.setMachineName(machineName);
@@ -95,6 +99,47 @@ public class EquipmentGatewayMappingApplicationService {
         requireGatewayMappingManagementAccess();
         requireMapping(id);
         mappingMapper.deleteById(id);
+    }
+
+    @Transactional
+    public String issueUploadToken(String id) {
+        inspectionAccessScopeService.requireTenantAdministrator();
+        EquipmentGatewayMapping mapping = requireMapping(id);
+        if (!StringUtils.hasText(mapping.getMachineName())) {
+            throw new IllegalArgumentException("设备上传需要 machineName 映射");
+        }
+        byte[] bytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(bytes);
+        String token = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        saveUploadToken(mapping, hashUploadToken(token));
+        return token;
+    }
+
+    @Transactional
+    public void revokeUploadToken(String id) {
+        inspectionAccessScopeService.requireTenantAdministrator();
+        EquipmentGatewayMapping mapping = requireMapping(id);
+        saveUploadToken(mapping, null);
+    }
+
+    private void saveUploadToken(EquipmentGatewayMapping mapping, String hash) {
+        mapping.setUploadTokenHash(hash);
+        mapping.setUpdatedAt(LocalDateTime.now());
+        // Mapping edits must not restore a credential that was concurrently revoked or rotated.
+        mappingMapper.update(null, Wrappers.lambdaUpdate(EquipmentGatewayMapping.class)
+            .eq(EquipmentGatewayMapping::getId, mapping.getId())
+            .eq(EquipmentGatewayMapping::getTenantCode, TenantContext.tenantCode())
+            .set(EquipmentGatewayMapping::getUploadTokenHash, hash)
+            .set(EquipmentGatewayMapping::getUpdatedAt, mapping.getUpdatedAt()));
+    }
+
+    public static String hashUploadToken(String token) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private EquipmentGatewayMapping requireMapping(String id) {

@@ -39,6 +39,19 @@ public class EquipmentGatewayMappingController {
         return ApiResponse.of(mappingApplicationService.update(mappingId, request));
     }
 
+    @PostMapping("/{mappingId}/upload-token")
+    public org.springframework.http.ResponseEntity<ApiResponse<java.util.Map<String, String>>> issueUploadToken(
+            @PathVariable String mappingId) {
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+            .body(ApiResponse.of(java.util.Map.of("uploadToken", mappingApplicationService.issueUploadToken(mappingId))));
+    }
+
+    @DeleteMapping("/{mappingId}/upload-token")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeUploadToken(@PathVariable String mappingId) {
+        mappingApplicationService.revokeUploadToken(mappingId);
+    }
+
     @DeleteMapping("/{mappingId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String mappingId) {

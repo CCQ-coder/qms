@@ -41,11 +41,14 @@ public class GatewayHostStatusApplicationService {
                 system_disk_free_bytes, uptime_seconds
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
-                sampled_at = VALUES(sampled_at), received_at = VALUES(received_at),
-                cpu_percent = VALUES(cpu_percent), memory_total_bytes = VALUES(memory_total_bytes),
-                memory_available_bytes = VALUES(memory_available_bytes),
-                system_disk_total_bytes = VALUES(system_disk_total_bytes),
-                system_disk_free_bytes = VALUES(system_disk_free_bytes), uptime_seconds = VALUES(uptime_seconds)
+                received_at = IF(VALUES(sampled_at) > sampled_at, VALUES(received_at), received_at),
+                cpu_percent = IF(VALUES(sampled_at) > sampled_at, VALUES(cpu_percent), cpu_percent),
+                memory_total_bytes = IF(VALUES(sampled_at) > sampled_at, VALUES(memory_total_bytes), memory_total_bytes),
+                memory_available_bytes = IF(VALUES(sampled_at) > sampled_at, VALUES(memory_available_bytes), memory_available_bytes),
+                system_disk_total_bytes = IF(VALUES(sampled_at) > sampled_at, VALUES(system_disk_total_bytes), system_disk_total_bytes),
+                system_disk_free_bytes = IF(VALUES(sampled_at) > sampled_at, VALUES(system_disk_free_bytes), system_disk_free_bytes),
+                uptime_seconds = IF(VALUES(sampled_at) > sampled_at, VALUES(uptime_seconds), uptime_seconds),
+                sampled_at = IF(VALUES(sampled_at) > sampled_at, VALUES(sampled_at), sampled_at)
             """, TenantContext.tenantCode(), hostName,
             Timestamp.from(request.sampledAt().toInstant()), Timestamp.from(Instant.now()), request.cpuPercent(),
             request.memoryTotalBytes(), request.memoryAvailableBytes(), request.systemDiskTotalBytes(),

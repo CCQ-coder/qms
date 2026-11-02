@@ -23,7 +23,8 @@ public class JwtTenantContextFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path.startsWith("/actuator/")
+        return FlyingProbeDeviceTenantContextFilter.isDeviceRequest(request)
+            || path.startsWith("/actuator/")
             || path.equals("/hessian/monitor")
             || path.startsWith("/api/v1/auth/")
             || (request.getMethod().equals("POST") && (path.equals("/api/v1/equipment/telemetry")
