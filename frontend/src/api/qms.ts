@@ -1,4 +1,5 @@
 import { http } from '@/api/http'
+import { requireHttpsDeviceToken } from '@/utils/device-upload-token'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
@@ -259,6 +260,17 @@ export const qmsApi = {
   async listGatewayHostStatuses() {
     const { data } = await http.get<ApiResponse<GatewayHostStatus[]>>('/api/v1/gateway/host-status')
     return data.data
+  },
+
+  async issueEquipmentUploadToken(mappingId: string) {
+    requireHttpsDeviceToken(window.location.href, http.defaults.baseURL)
+    const { data } = await http.post<ApiResponse<{ uploadToken: string }>>(`/api/v1/equipment/gateway-mappings/${mappingId}/upload-token`)
+    return data.data.uploadToken
+  },
+
+  async revokeEquipmentUploadToken(mappingId: string) {
+    requireHttpsDeviceToken(window.location.href, http.defaults.baseURL)
+    await http.delete(`/api/v1/equipment/gateway-mappings/${mappingId}/upload-token`)
   },
 
   async createEquipmentGatewayMapping(payload: { equipmentId: string, machineName: string }) {

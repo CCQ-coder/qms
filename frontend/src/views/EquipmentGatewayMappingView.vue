@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { isAxiosError } from 'axios'
-import { nextTick, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type InputInstance } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime } from '@/utils/display-text'
+import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import type { Equipment, EquipmentGatewayMapping } from '@/types/qms'
 
 const loading = ref(false)
@@ -14,6 +15,15 @@ const mappings = ref<EquipmentGatewayMapping[]>([])
 const equipment = ref<Equipment[]>([])
 const deletingMappingId = ref<string>()
 const editingMappingId = ref<string>()
+const tokenMappingId = ref<string>()
+const tokenDialog = ref(false)
+const uploadToken = ref('')
+const tokenDeviceName = ref('')
+const tokenInput = ref<InputInstance>()
+const secureAdminUrl = new URL(window.location.href)
+secureAdminUrl.protocol = 'https:'
+const tokenHttpsAvailable = window.location.protocol === 'https:'
+const canManageTokens = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN'].includes(menuAccess.value?.roleCode ?? ''))
 const form = reactive({ equipmentId: '', machineName: '', username: '' })
 const rules: FormRules = {
   equipmentId: [{ required: true, message: '请选择 QMS 设备', trigger: 'change' }],
@@ -101,12 +111,60 @@ async function remove(mapping: EquipmentGatewayMapping) {
   }
 }
 
+async function issueToken(mapping: EquipmentGatewayMapping) {
+  try {
+    await ElMessageBox.confirm(`为“${mapping.machineName}”签发上传令牌？已有令牌将立即失效，需更新设备配置。`,
+      '签发 / 轮换设备令牌', { confirmButtonText: '签发', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  tokenMappingId.value = mapping.id
+  uploadToken.value = ''
+  try {
+    uploadToken.value = await qmsApi.issueEquipmentUploadToken(mapping.id)
+    tokenDeviceName.value = mapping.machineName ?? ''
+    tokenDialog.value = true
+  } catch (error) {
+    ElMessage.error(requestErrorMessage(error, '设备上传令牌签发失败'))
+  } finally {
+    tokenMappingId.value = undefined
+  }
+}
+
+async function revokeToken(mapping: EquipmentGatewayMapping) {
+  try {
+    await ElMessageBox.confirm(`撤销“${mapping.machineName}”的上传令牌？该设备将无法上传，直到管理员重新签发。`,
+      '撤销设备令牌', { confirmButtonText: '撤销', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  tokenMappingId.value = mapping.id
+  try {
+    await qmsApi.revokeEquipmentUploadToken(mapping.id)
+    uploadToken.value = ''
+    ElMessage.success('设备上传令牌已撤销')
+  } catch (error) {
+    ElMessage.error(requestErrorMessage(error, '设备上传令牌撤销失败'))
+  } finally {
+    tokenMappingId.value = undefined
+  }
+}
+
+async function copyToken() {
+  tokenInput.value?.input?.focus()
+  tokenInput.value?.input?.select()
+  try {
+    if (window.isSecureContext && navigator.clipboard) await navigator.clipboard.writeText(uploadToken.value)
+    else if (!document.execCommand('copy')) throw new Error('copy failed')
+    ElMessage.success('上传令牌已复制，请写入该设备配置')
+  } catch {
+    ElMessage.warning('自动复制失败，请复制已选中的令牌')
+  }
+}
+
 function requestErrorMessage(error: unknown, fallback: string) {
   const message = isAxiosError(error) ? error.response?.data?.message : error instanceof Error ? error.message : undefined
   return typeof message === 'string' && message.trim() ? message : fallback
 }
 
-onMounted(() => { void load() })
+onMounted(() => { void loadMenuAccess(); void load() })
+onBeforeUnmount(() => { uploadToken.value = '' })
 </script>
 
 <template>
@@ -120,11 +178,15 @@ onMounted(() => { void load() })
       </template>
 
       <el-alert
-        title="将现场设备的 machinename 或采集电脑的 hostName 绑定到 QMS 设备台账。名称匹配会自动忽略首尾空格和英文大小写。"
+        title="将现场设备的 machinename、电脑 hostName 或直传设备 device_id 绑定到 QMS 设备台账。修改目标设备或来源名称会撤销已有上传令牌，需管理员重新签发。"
         type="info"
         :closable="false"
         show-icon
       />
+      <el-alert v-if="canManageTokens && !tokenHttpsAvailable" type="warning" :closable="false" show-icon style="margin-top: 12px">
+        上传令牌只能通过 HTTPS 签发或撤销。请先信任安装包内的 qms-upload-ca.crt，再
+        <a :href="secureAdminUrl.href">使用 HTTPS 打开本页</a>并重新登录。
+      </el-alert>
       <p v-if="!equipment.length" class="field-help">请先在“设备台账”新增需要接收监控数据的设备。</p>
 
       <paged-table :data="mappings" empty-text="暂无设备网关映射" style="margin-top: 16px">
@@ -136,14 +198,24 @@ onMounted(() => { void load() })
         <el-table-column label="最后更新" min-width="180">
           <template #default="scope">{{ formatDateTime(scope.row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" :width="canManageTokens ? 355 : 150" fixed="right">
           <template #default="scope">
             <el-button type="primary" link :disabled="!equipment.length" @click="openEdit(scope.row)">编辑</el-button>
             <el-button type="danger" link :loading="deletingMappingId === scope.row.id" @click="remove(scope.row)">删除</el-button>
+            <template v-if="canManageTokens">
+              <el-button type="primary" link :disabled="!tokenHttpsAvailable || !scope.row.machineName || !scope.row.equipmentId || !!tokenMappingId" @click="issueToken(scope.row)">签发 / 轮换令牌</el-button>
+              <el-button type="danger" link :disabled="!tokenHttpsAvailable || !!tokenMappingId" @click="revokeToken(scope.row)">撤销令牌</el-button>
+            </template>
           </template>
         </el-table-column>
       </paged-table>
     </el-card>
+
+    <el-dialog v-model="tokenDialog" :title="`设备上传令牌 · ${tokenDeviceName}`" width="min(620px, 94vw)" :close-on-click-modal="false" destroy-on-close @close="uploadToken = ''">
+      <el-alert title="令牌仅显示这一次。请复制到该设备 sync_config.json 的 upload_token；关闭后无法再次查看，重新签发会使旧令牌失效。" type="warning" :closable="false" show-icon />
+      <el-input ref="tokenInput" :model-value="uploadToken" readonly autocomplete="off" aria-label="设备上传令牌" style="margin-top: 16px" />
+      <template #footer><el-button @click="tokenDialog = false">关闭</el-button><el-button type="primary" @click="copyToken">复制令牌</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="editingMappingId ? '编辑设备网关映射' : '新增设备网关映射'" width="min(560px, 94vw)" :close-on-click-modal="false">
       <el-alert title="填写现场上报的 machinename 或采集电脑的 hostName；标特福旧软件的 username 是操作员，不能作为设备标识。" type="info" :closable="false" show-icon />

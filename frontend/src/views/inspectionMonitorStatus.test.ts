@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { deriveInspectionMonitorStatus } from './inspectionMonitorStatus.ts'
+import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus.ts'
 
 const NOW_MS = Date.parse('2026-10-29T08:00:00.000Z')
 
@@ -30,4 +30,23 @@ test('online runtime with probe data one millisecond older than seven minutes is
 
 test('online runtime with an invalid probe timestamp is 空闲', () => {
   assert.equal(deriveInspectionMonitorStatus(true, 'not-a-timestamp', NOW_MS), '空闲')
+})
+
+
+test('fresh host heartbeat keeps an idle device online without telemetry', () => {
+  assert.equal(inspectionDeviceOnline(undefined, '2026-10-29T07:59:00.000Z', NOW_MS), true)
+  assert.equal(inspectionDeviceOnline(false, '2026-10-29T07:59:00.000Z', NOW_MS), true)
+  assert.equal(deriveInspectionMonitorStatus(inspectionDeviceOnline(false, '2026-10-29T07:59:00.000Z', NOW_MS), undefined, NOW_MS), '空闲')
+})
+
+test('stale heartbeat takes precedence over telemetry and honors configured timeout', () => {
+  assert.equal(inspectionDeviceOnline(true, '2026-10-29T07:54:00.000Z', NOW_MS), false)
+  assert.equal(inspectionDeviceOnline(true, '2026-10-29T07:54:00.000Z', NOW_MS, 600), true)
+  assert.equal(inspectionDeviceOnline(true, 'invalid', NOW_MS), false)
+})
+
+test('legacy equipment without host heartbeat keeps its runtime state', () => {
+  assert.equal(inspectionDeviceOnline(undefined, undefined, NOW_MS), undefined)
+  assert.equal(inspectionDeviceOnline(false, undefined, NOW_MS), false)
+  assert.equal(inspectionDeviceOnline(true, undefined, NOW_MS), true)
 })
