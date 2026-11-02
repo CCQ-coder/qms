@@ -2,12 +2,13 @@
 
 ## 线上现状
 
-- 服务器：`106.227.69.144`，QMS Docker 容器名 `qms`，程序 `/data/qms/qms-api.jar`，配置 `/data/qms/application.yml`，持久上传目录 `/data/qms/uploads`（容器内 `/app/uploads`）。
+- 服务器：`106.227.69.144`，QMS Docker 容器名 `qms`，程序 `/data/qms/qms-api.jar`，配置 `/data/qms/application.yml`。持久上传目录是系统盘 `/var/lib/qms/uploads`，通过 `/data/1panel/runtime/java/qms/docker-compose.yml` 挂载为容器内 `/app/uploads`；重建容器后已验证健康检查 200 和目录可写。
 - 公网 5173 通过 [qms-5173-stream.conf](qms-5173-stream.conf) 区分 HTTP 和 TLS。原 HTTP 页面由 [qms-http.conf](qms-http.conf) 在本机 5174 提供；设备 HTTPS 由 [qms-device-https-internal.conf](qms-device-https-internal.conf) 在本机 5175 提供。代理使用 PROXY 协议恢复客户端 IP。
 - 设备 HTTPS 入口配置为 [qms-flying-probe-https.conf](qms-flying-probe-https.conf)；线上文件位于 `/data/1panel/www/conf.d/qms-flying-probe-https.conf`。私钥的受限原件位于 `/root/qms-device-tls/server.key`，OpenResty 容器内受限副本位于 `/etc/qms-device/server.key`；容器重建后需从原件重新 `docker cp`。公用证书随 XP 包分发。
 - 443 的独立设备入口 [qms-flying-probe-https.conf](qms-flying-probe-https.conf) 仍可供本机诊断；公网 443 未转发，不用于设备配置。原 443 默认拒绝配置备份在 `/data/1panel/apps/openresty/openresty/conf/default/00.default.conf.bak-wtd-20261102`。
 - 从公网验证 `http://106.227.69.144:5173/` 返回 200、`https://106.227.69.144:5173/api/v1/flying-probe/device-files` 在无令牌时返回 401 且证书校验通过、明文 HTTP 上传返回 426，原登录接口返回 200，客户端 IP 记录正常。HTTP 配置备份在 `/data/1panel/www/conf.d/qms.conf.bak-before-mux-20261102`。
 - 上线前程序、配置和 MySQL `qms` 库的备份位于 `/root/qms-backups/wtd-direct-cloud-20261102/`，目录权限 700、文件权限 600；数据库转储已通过 `gzip -t`。`/data` 是不支持 Unix 权限位的 `fuseblk` 挂载，不存放证书私钥或数据库备份。
+- 原 QMS Compose 文件也备份在上述目录。1Panel 如果重新生成 Compose 或 OpenResty 容器，需要重新核对 `/var/lib/qms/uploads` 挂载和 `/etc/qms-device/server.key` 容器副本，防止新上传数据丢失或 HTTPS 启动失败。
 - QMS 新 JAR 已部署，健康检查和页面返回 200，Flyway `V45` 成功；无令牌 HTTPS 设备请求与现有无令牌网关请求均返回 401。尚未签发任何设备上传令牌或切换 XP 设备。
 - 当前线上 `qms` 库有 1 个租户、0 条设备台账和 0 条网关映射。设备台账将由用户手动新增；每台设备还需创建 `machineName=device_id` 的网关映射并签发上传令牌，否则上传无法关联设备。
 
