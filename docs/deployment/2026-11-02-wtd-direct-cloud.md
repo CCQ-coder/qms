@@ -9,6 +9,7 @@
 - HTTP 5173 已阻止两个设备上传路径（返回 426），配置备份在 `/data/1panel/www/conf.d/qms.conf.bak-wtd-20261102`，当前配置样本为 [qms-http.conf](qms-http.conf)。原有 QMS 页面仍返回 200。
 - 上线前程序、配置和 MySQL `qms` 库的备份位于 `/data/qms/backups/wtd-direct-cloud-20261102/`；数据库转储已通过 `gzip -t`。
 - QMS 新 JAR 已部署，健康检查和页面返回 200，Flyway `V45` 成功；无令牌 HTTPS 设备请求与现有无令牌网关请求均返回 401。尚未签发任何设备上传令牌或切换 XP 设备。
+- 当前线上 `qms` 库有 1 个租户、0 条设备台账和 0 条网关映射。需从 SCBGX 核对并迁移旺通达设备台账/映射，否则设备文件无法关联设备；不要仅凭接口健康检查判断迁移完成。
 
 ## 上线顺序
 
