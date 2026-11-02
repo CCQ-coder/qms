@@ -7,6 +7,7 @@
 - 5173 的设备 TLS 配置为 [qms-device-https-internal.conf](qms-device-https-internal.conf)，线上文件位于 `/data/1panel/www/conf.d/qms-device-https-internal.conf`。独立 CA 签发的服务器证书位于宿主机 `/data/1panel/apps/openresty/openresty/conf/ssl/qms-device/server-new.crt`，容器内路径为 `/usr/local/openresty/nginx/conf/ssl/qms-device/server-new.crt`。服务器私钥原件位于 `/root/qms-device-tls/server-new.key`（权限 600），容器内受限副本位于 `/etc/qms-device/server-new.key`；容器重建后需从原件重新 `docker cp` 并恢复受限权限。
 - CA 公用证书位于服务器 `/root/qms-device-tls/ca.crt`，随 XP 包以 `qms-upload-ca.crt` 分发，设备以它验证服务器证书。CA 私钥仅保留在本地 Mac，绝不提交仓库或上传服务器；服务器只持有自己的私钥及公用证书。
 - 443 的独立设备入口 [qms-flying-probe-https.conf](qms-flying-probe-https.conf) 仍可供本机诊断；公网 443 未转发，不用于设备配置。原 443 默认拒绝配置备份在 `/data/1panel/apps/openresty/openresty/conf/default/00.default.conf.bak-wtd-20261102`。
+- 管理电脑使用 `https://gongying.duckdns.org:5173` 的公信证书，无需导入设备 CA。域名与 IP 共用 5173，但由 [qms-browser-https-internal.conf](qms-browser-https-internal.conf) 和设备虚拟主机按 SNI 选择证书；设备仍使用 `https://106.227.69.144:5173` 及原 CA。公网 443 的流量未到达服务器，域名证书通过 DNS-01 签发。
 - 从公网验证 `http://106.227.69.144:5173/` 返回 200、`https://106.227.69.144:5173/api/v1/flying-probe/device-files` 在无令牌时返回 401 且证书校验通过、明文 HTTP 上传返回 426，原登录接口返回 200，客户端 IP 记录正常。HTTP 配置备份在 `/data/1panel/www/conf.d/qms.conf.bak-before-mux-20261102`。
 - 上线前程序、配置和 MySQL `qms` 库的备份位于 `/root/qms-backups/wtd-direct-cloud-20261102/`，目录权限 700、文件权限 600；数据库转储已通过 `gzip -t`。`/data` 是不支持 Unix 权限位的 `fuseblk` 挂载，不存放证书私钥或数据库备份。
 - 原 QMS Compose 文件也备份在上述目录。1Panel 如果重新生成 Compose 或 OpenResty 容器，需要重新核对 `/var/lib/qms/uploads` 挂载和 `/etc/qms-device/server-new.key` 容器副本，防止新上传数据丢失或 HTTPS 启动失败。
@@ -25,7 +26,7 @@
 
 ## 管理员配置设备
 
-1. 从已提交的 XP 客户端仓库或本地可信安装包取得 CA 公用证书 `qms-upload-ca.crt`，导入管理电脑的受信任根证书存储，再打开 `https://106.227.69.144:5173`。不要从明文 HTTP QMS 页面下载信任证书，也不要跳过浏览器证书警告。HTTP 与 HTTPS 的登录存储按来源隔离，切换到 HTTPS 后需要重新登录；使用租户管理员或平台主管理员账号。
+1. 打开 `https://gongying.duckdns.org:5173`，使用租户管理员或平台主管理员账号登录。新域名与旧 IP/HTTP 入口的登录存储按来源隔离，首次使用需重新登录；管理电脑无需安装 `qms-upload-ca.crt`。不要从明文 HTTP QMS 页面下载信任证书，也不要跳过浏览器证书警告。
 2. 在“设备管理 → 设备台账”新增现场设备。需要出现在成品测试监控卡片上的设备，类型选“成品测试设备”。
 3. 在“设备管理 → 设备网关映射”新增映射，选择刚建的台账设备，来源名称填写设备配置中完全对应的 `device_id`（即 `machineName=device_id`）。
 4. 在该映射行点击“签发 / 轮换令牌”，确认后复制仅显示一次的令牌，写入该设备 `sync_config.json` 的 `upload_token`。同时设置 `device_id`、`server_url=https://106.227.69.144:5173` 和 `ca_cert=qms-upload-ca.crt`。关闭令牌对话框后无法再次查看明文；HTTP 页面会禁用签发与撤销按钮并给出 HTTPS 链接。
@@ -53,6 +54,15 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://106.227.69.144:5173/
 curl --cacert qms-upload-ca.crt -sS -o /dev/null -w '%{http_code}\n' -X POST https://106.227.69.144:5173/api/v1/flying-probe/device-files
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://106.227.69.144:5173/api/v1/flying-probe/device-files
 ```
+
+管理电脑入口应以系统默认 CA 验证成功；设备 IP 入口仍应以包内 CA 验证成功：
+
+```sh
+curl -sS -o /dev/null -w '%{http_code}\n' https://gongying.duckdns.org:5173/
+curl --cacert qms-upload-ca.crt -sS -o /dev/null -w '%{http_code}\n' https://106.227.69.144:5173/
+```
+
+域名证书由服务器 `/usr/local/bin/lego` 使用 DuckDNS DNS-01 签发；账户状态和域名令牌仅在 `/root/qms-public-tls`（权限 700/600）。[qms-browser-cert.timer](qms-browser-cert.timer) 每天检查续期，[qms-browser-cert-deploy.sh](qms-browser-cert-deploy.sh) 把证书及私钥复制到 OpenResty 容器的 `/etc/qms-public`，验证 Nginx 配置后重载。域名的 HTTP 请求自动转到 HTTPS；旧 IP 的 HTTP 入口暂时保留。`/data` 是 `fuseblk` 且不支持权限位，不能存放私钥。OpenResty 容器重建后，须先恢复 `/etc/qms-public` 和 `/etc/qms-device` 中的证书副本；若容器因缺少证书而无法启动，可用 `docker cp` 向停止的容器复制整个受限目录（容器名以实际为准）。容器启动后再执行 `systemctl start qms-browser-cert.service`，核对两个 HTTPS 入口。
 
 5173 的 stream 配置必须保留 `ssl_preread on` 和 `proxy_protocol on`，5174/5175 两个本机监听也必须保留 `proxy_protocol`，使旧 HTTP 页面和设备 HTTPS 同时可用。独立 443 配置只用于本机诊断，不需要新增公网 443 转发。
 
