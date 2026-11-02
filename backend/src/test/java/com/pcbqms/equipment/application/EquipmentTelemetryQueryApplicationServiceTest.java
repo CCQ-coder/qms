@@ -16,8 +16,10 @@ import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
@@ -125,6 +127,40 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         assertThat(mockingDetails(telemetryRecordMapper).getInvocations()).singleElement().satisfies(invocation ->
             assertThat(Arrays.asList(invocation.getArguments())).contains("FLYING_PROBE_TEST_COUNTERS")
         );
+    }
+
+    @Test
+    void flyingProbeHistoryCursorUsesDeviceDetectionTime() {
+        TenantContext.set("customer-b", "admin");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        equipment.setAssetNo("WTD-1");
+        EquipmentTelemetryRecord latest = new EquipmentTelemetryRecord();
+        latest.setId("probe-latest");
+        latest.setEquipmentId("equipment-1");
+        latest.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        latest.setDeviceTime(LocalDateTime.of(2026, 11, 1, 9, 0));
+        latest.setReceivedAt(LocalDateTime.of(2026, 11, 2, 15, 0));
+        EquipmentTelemetryRecord older = new EquipmentTelemetryRecord();
+        older.setId("probe-older");
+        older.setEquipmentId("equipment-1");
+        older.setEventType("FLYING_PROBE_TEST_COUNTERS");
+
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
+        when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
+            eq("FLYING_PROBE_TEST_COUNTERS"))).thenReturn(List.of(latest, older));
+        when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-latest")))
+            .thenReturn(List.of());
+
+        var page = new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 1, "FLYING_PROBE_TEST_COUNTERS"));
+
+        String cursor = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
+        assertThat(cursor).startsWith("2026-11-01T09:00");
     }
 
     @Test
