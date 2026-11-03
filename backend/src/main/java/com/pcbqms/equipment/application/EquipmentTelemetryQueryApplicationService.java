@@ -72,6 +72,8 @@ public class EquipmentTelemetryQueryApplicationService {
         if (fromTime.isAfter(toTime)) {
             throw new IllegalArgumentException("遥测历史开始时间不能晚于结束时间");
         }
+        String eventType = StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null;
+        boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType);
         Cursor cursor = decodeCursor(query.cursor());
         int pageSize = query.resolvedLimit();
         List<EquipmentTelemetryRecord> rows = telemetryRecordMapper.selectHistory(
@@ -80,10 +82,10 @@ public class EquipmentTelemetryQueryApplicationService {
             selectedEquipmentId == null && !access.fullDataAccess() ? List.copyOf(accessibleEquipment.keySet()) : null,
             fromTime,
             toTime,
-            cursor == null ? null : cursor.receivedAt(),
+            cursor == null ? null : cursor.time(),
             cursor == null ? null : cursor.id(),
             pageSize + 1,
-            StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null
+            eventType
         );
         boolean hasMore = rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
@@ -100,7 +102,7 @@ public class EquipmentTelemetryQueryApplicationService {
                 projections.get(record.getId())))
             .filter(Objects::nonNull)
             .toList();
-        String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast()) : null;
+        String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast(), sortByDeviceTime) : null;
         return new EquipmentTelemetryHistoryPageResponse(items, nextCursor, pageSize);
     }
 
@@ -167,8 +169,9 @@ public class EquipmentTelemetryQueryApplicationService {
         return value.isIntegralNumber() && value.canConvertToInt() ? value.intValue() : null;
     }
 
-    private String encodeCursor(EquipmentTelemetryRecord record) {
-        String value = record.getReceivedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "|" + record.getId();
+    private String encodeCursor(EquipmentTelemetryRecord record, boolean sortByDeviceTime) {
+        LocalDateTime time = sortByDeviceTime ? record.getDeviceTime() : record.getReceivedAt();
+        String value = time.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "|" + record.getId();
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -184,6 +187,6 @@ public class EquipmentTelemetryQueryApplicationService {
         }
     }
 
-    private record Cursor(LocalDateTime receivedAt, String id) {
+    private record Cursor(LocalDateTime time, String id) {
     }
 }

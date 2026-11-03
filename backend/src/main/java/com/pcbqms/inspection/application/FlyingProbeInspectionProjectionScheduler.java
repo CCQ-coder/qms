@@ -1,9 +1,16 @@
 package com.pcbqms.inspection.application;
 
 import com.pcbqms.common.tenancy.TenantContext;
+import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.infrastructure.persistence.FlyingProbeProjectionMapper;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +34,8 @@ public class FlyingProbeInspectionProjectionScheduler {
     private int configuredBatchSize;
     @Value("${qms.equipment-telemetry.retention.raw-days:7}")
     private int rawRetentionDays;
+    @Value("${qms.inspection.flying-probe.retry-workers:4}")
+    private int retryWorkers = 4;
 
     @Scheduled(fixedDelayString = "${qms.inspection.flying-probe.fixed-delay-ms:5000}")
     public void projectPending() {
@@ -42,19 +51,7 @@ public class FlyingProbeInspectionProjectionScheduler {
                     tenantCode, now, recentCutoff, recentLimit);
                 var olderRetryable = projectionMapper.selectOlderRetryable(
                     tenantCode, now, recentCutoff, Math.max(1, batchSize - recentRetryable.size()));
-                for (var pending : Stream.concat(recentRetryable.stream(), olderRetryable.stream()).toList()) {
-                    try {
-                        projectionService.retry(pending);
-                    } catch (RuntimeException exception) {
-                        log.warn("飞针历史投影重试失败，租户={}，遥测={}", tenantCode, pending.getTelemetryId(), exception);
-                        try {
-                            projectionService.markRetryFailure(pending);
-                        } catch (RuntimeException markingFailure) {
-                            log.error("飞针历史投影失败状态无法保存，租户={}，遥测={}", tenantCode,
-                                pending.getTelemetryId(), markingFailure);
-                        }
-                    }
-                }
+                retryPending(tenantCode, Stream.concat(recentRetryable.stream(), olderRetryable.stream()).toList());
                 var recentUnprojected = projectionMapper.selectRecentUnprojected(
                     tenantCode, recentCutoff, recentLimit);
                 var olderUnprojected = projectionMapper.selectOlderUnprojected(
@@ -74,6 +71,44 @@ public class FlyingProbeInspectionProjectionScheduler {
                 }
             } finally {
                 TenantContext.clear();
+            }
+        }
+    }
+
+    private void retryPending(String tenantCode, List<FlyingProbeProjection> pending) {
+        var byRun = pending.stream().collect(Collectors.groupingBy(
+            row -> row.getRunKey() == null ? "equipment:" + row.getEquipmentId() : row.getRunKey(),
+            LinkedHashMap::new, Collectors.toList()));
+        if (byRun.size() <= 1 || retryWorkers <= 1) {
+            pending.forEach(row -> retryOne(tenantCode, row));
+            return;
+        }
+        int workers = Math.clamp(retryWorkers, 1, 8);
+        try (var executor = Executors.newFixedThreadPool(workers)) {
+            var jobs = byRun.values().stream().map(group -> CompletableFuture.runAsync(() -> {
+                TenantContext.set(tenantCode, "admin");
+                try {
+                    group.sort(Comparator.comparing(FlyingProbeProjection::getDeviceTime,
+                        Comparator.nullsFirst(Comparator.naturalOrder())));
+                    group.forEach(row -> retryOne(tenantCode, row));
+                } finally {
+                    TenantContext.clear();
+                }
+            }, executor)).toArray(CompletableFuture[]::new);
+            CompletableFuture.allOf(jobs).join();
+        }
+    }
+
+    private void retryOne(String tenantCode, FlyingProbeProjection pending) {
+        try {
+            projectionService.retry(pending);
+        } catch (RuntimeException exception) {
+            log.warn("飞针历史投影重试失败，租户={}，遥测={}", tenantCode, pending.getTelemetryId(), exception);
+            try {
+                projectionService.markRetryFailure(pending);
+            } catch (RuntimeException markingFailure) {
+                log.error("飞针历史投影失败状态无法保存，租户={}，遥测={}", tenantCode,
+                    pending.getTelemetryId(), markingFailure);
             }
         }
     }

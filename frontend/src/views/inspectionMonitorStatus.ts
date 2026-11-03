@@ -1,3 +1,5 @@
+import { isHostOnline } from '../utils/host-status.ts'
+
 export type InspectionMonitorStatus = '未接入' | '离线' | '测试中' | '空闲'
 
 const ACTIVE_WINDOW_MS = 7 * 60 * 1000
@@ -15,4 +17,13 @@ export function deriveInspectionMonitorStatus(
   if (!Number.isFinite(receivedAtMs)) return '空闲'
 
   return nowMs - receivedAtMs <= ACTIVE_WINDOW_MS ? '测试中' : '空闲'
+}
+
+export function inspectionDeviceOnline(
+  runtimeOnline: boolean | undefined,
+  hostReceivedAt?: string,
+  nowMs: number = Date.now(),
+  offlineAfterSeconds = 300
+): boolean | undefined {
+  return hostReceivedAt === undefined ? runtimeOnline : isHostOnline(hostReceivedAt, nowMs, offlineAfterSeconds)
 }

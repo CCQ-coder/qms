@@ -100,6 +100,10 @@ qms:
     enabled: ${QMS_OCR_ENABLED:false}
     base-url: ${QMS_OCR_BASE_URL:http://localhost:8000}
   inspection:
+    flying-probe:
+      fixed-delay-ms: ${QMS_FLYING_PROBE_FIXED_DELAY_MS:5000}
+      batch-size: ${QMS_FLYING_PROBE_BATCH_SIZE:100}
+      retry-workers: ${QMS_FLYING_PROBE_RETRY_WORKERS:4}
     auto-generation:
       enabled: ${QMS_AUTO_INSPECTION_ENABLED:true}
       fixed-delay-ms: ${QMS_AUTO_INSPECTION_DELAY_MS:300000}

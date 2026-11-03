@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -17,6 +18,9 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -30,6 +34,54 @@ class FlyingProbeInspectionProjectionSchedulerTest {
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private FlyingProbeProjectionMapper projectionMapper;
     @Mock private FlyingProbeInspectionProjectionService projectionService;
+
+    @Test
+    void retriesDifferentFilesConcurrentlyWithTenantContext() {
+        FlyingProbeProjection first = projection("first");
+        first.setRunKey("run-a");
+        FlyingProbeProjection second = projection("second");
+        second.setRunKey("run-b");
+        when(jdbcTemplate.queryForList(any(String.class), eq(String.class))).thenReturn(List.of("tenant-a"));
+        when(projectionMapper.selectRecentRetryable(eq("tenant-a"), any(), any(), eq(75)))
+            .thenReturn(List.of(first, second));
+        CountDownLatch bothStarted = new CountDownLatch(2);
+        doAnswer(call -> {
+            assertThat(TenantContext.tenantCode()).isEqualTo("tenant-a");
+            bothStarted.countDown();
+            assertThat(bothStarted.await(2, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(projectionService).retry(any());
+
+        scheduler(100).projectPending();
+
+        verify(projectionService).retry(first);
+        verify(projectionService).retry(second);
+    }
+
+    @Test
+    void retriesTheSameFileInDeviceTimeOrder() {
+        FlyingProbeProjection newer = projection("newer");
+        newer.setRunKey("same-run");
+        newer.setDeviceTime(LocalDateTime.of(2026, 11, 3, 10, 1));
+        FlyingProbeProjection older = projection("older");
+        older.setRunKey("same-run");
+        older.setDeviceTime(LocalDateTime.of(2026, 11, 3, 10, 0));
+        FlyingProbeProjection another = projection("another");
+        another.setRunKey("other-run");
+        when(jdbcTemplate.queryForList(any(String.class), eq(String.class))).thenReturn(List.of("tenant-a"));
+        when(projectionMapper.selectRecentRetryable(eq("tenant-a"), any(), any(), eq(75)))
+            .thenReturn(List.of(newer, older, another));
+        var order = new ConcurrentLinkedQueue<String>();
+        doAnswer(call -> {
+            FlyingProbeProjection row = call.getArgument(0);
+            order.add(row.getTelemetryId());
+            return null;
+        }).when(projectionService).retry(any());
+
+        scheduler(100).projectPending();
+
+        assertThat(order.stream().filter(id -> !id.equals("another")).toList()).containsExactly("older", "newer");
+    }
 
     @Test
     void givesRecentFilesPriorityAndKeepsOlderBacklogMoving() {

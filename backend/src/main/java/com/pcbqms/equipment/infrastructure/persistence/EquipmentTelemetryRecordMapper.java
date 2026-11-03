@@ -76,11 +76,26 @@ public interface EquipmentTelemetryRecordMapper {
         <if test="toTime != null">
             AND received_at &lt;= #{toTime}
         </if>
-        <if test="cursorReceivedAt != null">
-            AND (received_at &lt; #{cursorReceivedAt}
-                 OR (received_at = #{cursorReceivedAt} AND id &lt; #{cursorId}))
+        <if test="cursorTime != null">
+            <choose>
+                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS'">
+                    AND (device_time &lt; #{cursorTime}
+                         OR (device_time = #{cursorTime} AND id &lt; #{cursorId}))
+                </when>
+                <otherwise>
+                    AND (received_at &lt; #{cursorTime}
+                         OR (received_at = #{cursorTime} AND id &lt; #{cursorId}))
+                </otherwise>
+            </choose>
         </if>
-        ORDER BY received_at DESC, id DESC
+        <choose>
+            <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS'">
+                ORDER BY device_time DESC, id DESC
+            </when>
+            <otherwise>
+                ORDER BY received_at DESC, id DESC
+            </otherwise>
+        </choose>
         LIMIT #{limit}
         </script>
         """)
@@ -90,7 +105,7 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("equipmentIds") List<String> equipmentIds,
         @Param("fromTime") LocalDateTime fromTime,
         @Param("toTime") LocalDateTime toTime,
-        @Param("cursorReceivedAt") LocalDateTime cursorReceivedAt,
+        @Param("cursorTime") LocalDateTime cursorTime,
         @Param("cursorId") String cursorId,
         @Param("limit") int limit,
         @Param("eventType") String eventType

@@ -9,6 +9,8 @@ import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
+import com.pcbqms.inspection.api.FlyingProbeRetryablePageResponse;
+import com.pcbqms.inspection.api.FlyingProbeRetryableRecordResponse;
 import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.domain.FlyingProbeRun;
 import com.pcbqms.inspection.domain.InspectionTask;
@@ -77,6 +79,98 @@ public class FlyingProbeInspectionProjectionService {
         }
     }
 
+    public FlyingProbeRetryablePageResponse listRetryable(Integer requestedPage, Integer requestedPageSize) {
+        accessScopeService.requireSupervisorOrAdministrator();
+        long page = requestedPage == null ? 1 : Math.max(1, requestedPage);
+        int pageSize = requestedPageSize == null ? 50 : Math.clamp(requestedPageSize, 10, 100);
+        String tenantCode = TenantContext.tenantCode();
+        long total = projectionMapper.countRetryableGroups(tenantCode);
+        long offset = (page - 1) * pageSize;
+        List<FlyingProbeRetryableRecordResponse> records = offset < total
+            ? projectionMapper.selectRetryableGroups(tenantCode, pageSize, offset)
+            : List.of();
+        return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
+    }
+
+    @Transactional
+    public String bindManually(String telemetryId, String requestedWorkOrderNo) {
+        accessScopeService.requireSupervisorOrAdministrator();
+        if (!StringUtils.hasText(requestedWorkOrderNo) || requestedWorkOrderNo.trim().length() > 80) {
+            throw new IllegalArgumentException("请选择有效的生产指令");
+        }
+        String tenantCode = TenantContext.tenantCode();
+        FlyingProbeProjection projection = projectionMapper.lockProjection(telemetryId);
+        if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
+            throw new IllegalArgumentException("当前租户不存在此飞针记录");
+        }
+        if (!"RETRYABLE".equals(projection.getStatus())) {
+            throw new IllegalArgumentException("仅待匹配的飞针记录可手动绑定");
+        }
+        Snapshot snapshot = parse(projection);
+        String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
+        if (projection.getRunKey() != null && !runKey.equals(projection.getRunKey())) {
+            throw new IllegalArgumentException("飞针文件身份已变化，无法手动绑定");
+        }
+        String workOrderNo = requestedWorkOrderNo.trim();
+        WorkOrder workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
+            .eq(WorkOrder::getTenantCode, tenantCode)
+            .eq(WorkOrder::getWorkOrderNo, workOrderNo));
+        if (workOrder == null) {
+            throw new IllegalArgumentException("当前租户不存在所选生产指令");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        FlyingProbeRun run = projectionMapper.lockRun(runKey);
+        if (run == null) {
+            FlyingProbeRun newRun = new FlyingProbeRun();
+            newRun.setRunKey(runKey);
+            newRun.setTenantCode(tenantCode);
+            newRun.setEquipmentId(projection.getEquipmentId());
+            newRun.setSourceFile(snapshot.sourceFile());
+            newRun.setSourceStartTime(snapshot.startTime());
+            newRun.setMaterialNo(projection.getMaterialNo());
+            newRun.setWorkOrderNo(workOrderNo);
+            newRun.setBindingSource("MANUAL");
+            newRun.setBoundBy(TenantContext.actor());
+            newRun.setBoundAt(now);
+            newRun.setUpdatedAt(now);
+            projectionMapper.insertRunIfAbsent(newRun);
+            run = projectionMapper.lockRun(runKey);
+        }
+        if (run == null || !tenantCode.equals(run.getTenantCode())
+            || !projection.getEquipmentId().equals(run.getEquipmentId())
+            || !normalizeMaterialKey(projection.getMaterialNo()).equals(normalizeMaterialKey(run.getMaterialNo()))
+            || !"ACTIVE".equals(run.getStatus())) {
+            throw new IllegalArgumentException("飞针文件状态已变化，无法手动绑定");
+        }
+        if (!workOrderNo.equals(run.getWorkOrderNo())) {
+            throw new IllegalArgumentException("同一飞针文件已绑定其他生产指令，不能改绑已处理的 FQC");
+        }
+        if (!"MANUAL".equals(run.getBindingSource())) {
+            run.setBindingSource("MANUAL");
+            run.setBoundBy(TenantContext.actor());
+            run.setBoundAt(now);
+            run.setUpdatedAt(now);
+            projectionMapper.updateRun(run);
+        }
+        projection.setSourceFile(snapshot.sourceFile());
+        projection.setSourceStartTime(snapshot.startTime());
+        projection.setRunKey(runKey);
+        projection.setCumulativeTested(snapshot.counts().tested());
+        projection.setCumulativeGood(snapshot.counts().good());
+        projection.setCumulativeBad(snapshot.counts().bad());
+        projection.setReason("已手动绑定生产指令，等待生成 FQC");
+        projection.setRetryAfter(now);
+        projection.setProcessedAt(now);
+        projectionMapper.updateProjection(projection);
+        return runKey;
+    }
+
+    @Transactional
+    public void wakeManuallyBoundRun(String runKey) {
+        accessScopeService.requireSupervisorOrAdministrator();
+        projectionMapper.wakeRetryableRun(TenantContext.tenantCode(), runKey);
+    }
+
     /** Called after the projection transaction has rolled back, so a bad row cannot block the next batch. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markUnexpectedFailure(EquipmentTelemetryRecord telemetry) {
@@ -140,12 +234,13 @@ public class FlyingProbeInspectionProjectionService {
         }
         String materialKey = normalizeMaterialKey(projection.getMaterialNo());
         FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
+        boolean manuallyBound = run != null && "MANUAL".equals(run.getBindingSource());
         WorkOrder workOrder;
         if (run == null) {
             List<WorkOrder> candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
                     .eq(WorkOrder::getTenantCode, projection.getTenantCode())
-                    .apply("internal_product_no_match_key = {0}", materialKey))
-                .stream().filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
+                    .apply("internal_product_no_match_key = {0}", materialKey)).stream()
+                .filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
                 .toList();
             if (candidates.size() != 1) {
                 retryLater(projection, "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
@@ -166,8 +261,8 @@ public class FlyingProbeInspectionProjectionService {
             workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
                 .eq(WorkOrder::getTenantCode, projection.getTenantCode())
                 .eq(WorkOrder::getWorkOrderNo, run.getWorkOrderNo()));
-            if (workOrder == null
-                || !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))) {
+            if (workOrder == null || (!manuallyBound
+                && !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo())))) {
                 retryLater(projection, "文件批次工单映射发生变化，需人工核对", now);
                 return;
             }
@@ -196,6 +291,7 @@ public class FlyingProbeInspectionProjectionService {
             newRun.setSourceStartTime(snapshot.startTime());
             newRun.setMaterialNo(projection.getMaterialNo());
             newRun.setWorkOrderNo(workOrder.getWorkOrderNo());
+            newRun.setBindingSource("AUTO");
             newRun.setUpdatedAt(now);
             projectionMapper.insertRunIfAbsent(newRun);
             run = projectionMapper.lockRun(projection.getRunKey());

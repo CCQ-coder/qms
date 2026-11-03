@@ -14,6 +14,9 @@ public class FlyingProbeRun {
     private LocalDateTime sourceStartTime;
     private String materialNo;
     private String workOrderNo;
+    private String bindingSource;
+    private String boundBy;
+    private LocalDateTime boundAt;
     private LocalDateTime lastDeviceTime;
     private Integer testedCount;
     private Integer goodCount;
