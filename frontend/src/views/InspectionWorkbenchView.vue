@@ -737,7 +737,6 @@ onBeforeUnmount(() => {
     <nav v-if="!isSummaryRoute" class="finished-test-tabs" aria-label="成品测试页面模块">
       <button :class="{ active: activePanel === 'monitor' }" type="button" @click="showPanel('monitor')">实时监控</button>
       <button :class="{ active: activePanel === 'records' }" type="button" @click="showPanel('records')">设备检测记录</button>
-      <button :class="{ active: activePanel === 'tasks' }" type="button" @click="showPanel('tasks')">待检任务</button>
     </nav>
 
     <template v-if="activePanel === 'monitor'">
