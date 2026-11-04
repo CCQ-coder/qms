@@ -9,7 +9,7 @@ import { equipmentStatusTagType, formatDate, formatDateTime, statusText, taskTyp
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, inspectionDeviceOnline, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
-import { useFlyingProbeHistory } from './useFlyingProbeHistory'
+import { flyingProbePassRate, useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
@@ -486,24 +486,6 @@ function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' 
   return status === '空闲' ? 'warning' : 'info'
 }
 
-function fqcProjectionLabel(record: EquipmentTelemetryRecord) {
-  if (record.fqcProjectionStatus === 'PROCESSED') {
-    if (record.fqcInspectionRecordId) return '已生成 FQC'
-    if (record.fqcProjectionReason?.includes('基线')) return '已作基线'
-    return record.fqcDeltaTested === 0 ? '无新增板' : '已处理'
-  }
-  if (record.fqcProjectionStatus === 'RETRYABLE') return '待匹配'
-  if (record.fqcProjectionStatus === 'SKIPPED') return '已跳过'
-  if (record.fqcProjectionStatus === 'PENDING') return '待处理'
-  return record.fqcProjectionStatus || '待处理'
-}
-
-function fqcProjectionTag(record: EquipmentTelemetryRecord): 'success' | 'warning' | 'info' {
-  if (record.fqcInspectionRecordId) return 'success'
-  if (record.fqcProjectionStatus === 'RETRYABLE') return 'warning'
-  return 'info'
-}
-
 async function searchBindingWorkOrders() {
   const keyword = bindingKeyword.value.trim()
   const version = ++bindingSearchVersion
@@ -850,21 +832,7 @@ onBeforeUnmount(() => {
             <el-table-column label="已测" width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
             <el-table-column label="好板" width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="坏板" width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
-            <el-table-column label="FQC 处理" width="200">
-              <template #default="scope">
-                <el-tooltip :content="scope.row.fqcProjectionReason || ''" :disabled="!scope.row.fqcProjectionReason" placement="top">
-                  <div class="fqc-projection-state">
-                    <el-tag size="small" :type="fqcProjectionTag(scope.row)">{{ fqcProjectionLabel(scope.row) }}</el-tag>
-                    <span v-if="scope.row.fqcProjectionReason" class="fqc-projection-reason">{{ scope.row.fqcProjectionReason }}</span>
-                  </div>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" min-width="120" fixed="right">
-              <template #default="scope">
-                <el-button v-if="canBindFlyingProbe && scope.row.fqcProjectionStatus === 'RETRYABLE'" link type="primary" @click="openBindingDialog(scope.row)">手动绑定</el-button>
-              </template>
-            </el-table-column>
+            <el-table-column label="实时合格率" width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
           </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>

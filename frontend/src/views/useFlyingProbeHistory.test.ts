@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { useFlyingProbeHistory } from './useFlyingProbeHistory.ts'
+import { flyingProbePassRate, useFlyingProbeHistory } from './useFlyingProbeHistory.ts'
 import type { EquipmentTelemetryRecord } from '../types/qms.ts'
 
 function record(id: string): EquipmentTelemetryRecord {
@@ -18,6 +18,12 @@ function record(id: string): EquipmentTelemetryRecord {
     badBoardCount: 1
   }
 }
+
+test('shows each flying-probe record pass rate from its own counters', () => {
+  assert.equal(flyingProbePassRate({ ...record('a'), machiningCount: 17, goodBoardCount: 13 }), '76.47%')
+  assert.equal(flyingProbePassRate({ ...record('b'), machiningCount: 0 }), '—')
+  assert.equal(flyingProbePassRate({ ...record('c'), goodBoardCount: undefined }), '—')
+})
 
 test('loads only flying-probe history and exposes its next cursor', async () => {
   const queries: unknown[] = []

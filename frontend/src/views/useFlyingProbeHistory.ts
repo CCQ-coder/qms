@@ -1,6 +1,12 @@
 import { ref } from 'vue'
 import type { EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, EquipmentTelemetryRecord } from '../types/qms'
 
+export function flyingProbePassRate(record: EquipmentTelemetryRecord) {
+  const tested = record.machiningCount
+  const good = record.goodBoardCount
+  return tested != null && tested > 0 && good != null ? `${(good / tested * 100).toFixed(2)}%` : '—'
+}
+
 export function useFlyingProbeHistory(
   fetchPage: (query: EquipmentTelemetryHistoryQuery) => Promise<EquipmentTelemetryHistoryPage>
 ) {
