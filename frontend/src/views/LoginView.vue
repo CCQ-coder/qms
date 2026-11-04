@@ -61,12 +61,10 @@ async function signIn() {
         <div class="login-brand-mark">Q</div>
         <p class="eyebrow">PCB QUALITY MANAGEMENT SYSTEM</p>
         <h1>欢迎使用 PCB QMS</h1>
-        <p>登录后依据账号角色查看相应的质量检测、追溯分析、设备与系统管理功能。</p>
-        <div class="login-feature-list"><span>成品测试实时监控</span><span>不良品闭环与质量追溯</span><span>设备维护与系统配置</span></div>
       </div>
 
       <div class="login-form-wrap">
-        <div><p class="login-kicker">账号登录</p><h2>{{ oidcEnabled ? '企业统一身份认证' : 'QMS 账号登录' }}</h2><p>{{ oidcEnabled ? '将跳转至企业身份提供方完成登录。' : '使用管理员创建并授权的 QMS 账号登录。' }}</p></div>
+        <div><p class="login-kicker">账号登录</p><h2>{{ oidcEnabled ? '企业统一身份认证' : 'QMS 账号登录' }}</h2><p v-if="oidcEnabled">将跳转至企业身份提供方完成登录。</p></div>
         <el-form v-if="!oidcEnabled" label-position="top" @submit.prevent="signIn">
           <el-form-item label="所属组织">
             <el-select v-model="tenantCode" :loading="tenantLoading" placeholder="请选择组织" style="width: 100%">

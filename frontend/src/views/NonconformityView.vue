@@ -137,7 +137,6 @@ onMounted(load)
 
 <template>
   <section class="page-stack">
-    <el-alert type="info" :closable="false" show-icon title="检测人发起 CAPA，主管验证并关闭。" />
     <el-card shadow="never" class="content-card" v-loading="loading">
       <template #header><div class="card-header"><span>不良品处置单</span><div><el-button type="primary" @click="openManualDialog">新增</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
       <paged-table :data="ncrs" empty-text="暂无不良品处置单">

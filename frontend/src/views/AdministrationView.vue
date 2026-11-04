@@ -12,7 +12,6 @@ type CatalogConfiguration = {
   type: AdministrationCatalogType
   title: string
   eyebrow: string
-  description: string
   noun: string
   parentLabel?: string
   parentPlaceholder?: string
@@ -22,12 +21,10 @@ type CatalogConfiguration = {
 const configurations: Record<string, CatalogConfiguration> = {
   ROLE: {
     type: 'ROLE', title: '角色权限', eyebrow: '系统管理', noun: '角色',
-    description: '维护系统角色的数据范围和可见菜单；标准角色编码可与用户管理中的角色对应。',
     attributes: [{ key: 'dataScope', label: '数据范围', placeholder: '例如：全部数据 / 已分配工序' }]
   },
   ORGANIZATION: {
     type: 'ORGANIZATION', title: '组织机构', eyebrow: '系统管理', noun: '组织机构',
-    description: '维护工厂、事业部和班组等组织层级，为部门归属和责任分配提供基础。',
     parentLabel: '上级组织编码', parentPlaceholder: '留空表示顶级组织',
     attributes: [
       { key: 'organizationType', label: '组织类型', placeholder: '例如：工厂 / 车间 / 班组' },
@@ -36,18 +33,15 @@ const configurations: Record<string, CatalogConfiguration> = {
   },
   DEPARTMENT: {
     type: 'DEPARTMENT', title: '部门设置', eyebrow: '系统管理', noun: '部门',
-    description: '维护质量、生产、设备等部门资料，可关联所属组织及负责人。',
     parentLabel: '所属组织编码', parentPlaceholder: '例如：PCB-FACTORY',
     attributes: [{ key: 'manager', label: '部门负责人', placeholder: '负责人姓名或账号' }]
   },
   SCRAP_REASON: {
     type: 'SCRAP_REASON', title: '报废原因设置', eyebrow: '系统管理', noun: '报废原因',
-    description: '维护不良品处置、报废分析使用的原因编码和分类。',
     attributes: [{ key: 'category', label: '原因分类', placeholder: '例如：电气不良 / 外观不良' }]
   },
   DICTIONARY: {
     type: 'DICTIONARY', title: '字典管理', eyebrow: '系统管理', noun: '字典',
-    description: '集中维护业务字典及其可选值，便于质量、设备与报表模块统一引用。',
     attributes: [
       { key: 'dataType', label: '字典类型', placeholder: '例如：业务字典 / 基础字典' },
       { key: 'values', label: '字典值', placeholder: '多个值以逗号分隔', multiline: true }
@@ -55,7 +49,6 @@ const configurations: Record<string, CatalogConfiguration> = {
   },
   INTERFACE: {
     type: 'INTERFACE', title: '接口配置', eyebrow: '系统管理', noun: '接口',
-    description: '维护 ERP、设备网关等集成端点及同步方式；敏感凭据不在页面中保存。',
     attributes: [
       { key: 'endpoint', label: '接口地址', placeholder: '例如：https://erp.example.com/api' },
       { key: 'authType', label: '认证方式', placeholder: '例如：API Key / OAuth2' },
@@ -64,7 +57,6 @@ const configurations: Record<string, CatalogConfiguration> = {
   },
   APPROVAL_FLOW: {
     type: 'APPROVAL_FLOW', title: '审批流', eyebrow: '系统管理', noun: '审批流',
-    description: '维护不良品处置等业务的触发条件与审批角色，供业务流程配置使用。',
     attributes: [
       { key: 'businessType', label: '适用业务', placeholder: '例如：不良品处置' },
       { key: 'approverRole', label: '审批角色编码', placeholder: '例如：SUPERVISOR' },
@@ -73,12 +65,10 @@ const configurations: Record<string, CatalogConfiguration> = {
   },
   EQUIPMENT_TYPE: {
     type: 'EQUIPMENT_TYPE', title: '设备类型', eyebrow: '设备管理', noun: '设备类型',
-    description: '维护设备台账可选择的设备类型。停用的类型不会出现在新增设备的选项中。',
     attributes: []
   },
   EQUIPMENT_TEMPLATE: {
     type: 'EQUIPMENT_TEMPLATE', title: '设备项目模板', eyebrow: '设备管理', noun: '项目模板',
-    description: '维护点检、保养和维修项目模板，可按设备类型和周期建立标准作业项目。',
     attributes: [
       { key: 'maintenanceType', label: '维护类型', placeholder: 'INSPECTION / MAINTENANCE / REPAIR' },
       { key: 'equipmentType', label: '适用设备类型', placeholder: '例如：成品电测设备' },
@@ -280,7 +270,7 @@ onMounted(load)
   <section class="page-stack" v-loading="loading">
     <template v-if="isAuditLog">
       <div class="hero-card compact-hero">
-        <div><p class="eyebrow">系统管理</p><h2>操作日志</h2><p>记录管理配置的创建、修改和初始化操作，按模块筛选查看。</p></div>
+        <div><p class="eyebrow">系统管理</p><h2>操作日志</h2></div>
       </div>
       <el-card shadow="never" class="content-card">
         <div class="toolbar"><el-select v-model="auditModule" clearable placeholder="全部模块" style="width: 220px"><el-option v-for="item in Object.values(configurations)" :key="item.type" :label="item.title" :value="item.type" /></el-select><el-button type="primary" @click="load">查询</el-button></div>
@@ -290,7 +280,7 @@ onMounted(load)
 
     <template v-else>
       <div class="hero-card compact-hero">
-        <div><p class="eyebrow">{{ configuration.eyebrow }}</p><h2>{{ configuration.title }}</h2><p>{{ configuration.description }}</p></div>
+        <div><p class="eyebrow">{{ configuration.eyebrow }}</p><h2>{{ configuration.title }}</h2></div>
       </div>
       <el-card shadow="never" class="content-card">
         <template #header><div class="card-header"><span>{{ configuration.title }}列表</span><div><el-button @click="load">刷新</el-button><el-button type="primary" @click="openCreate">新建{{ configuration.noun }}</el-button></div></div></template>

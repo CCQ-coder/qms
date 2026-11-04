@@ -317,7 +317,6 @@ onMounted(() => { void loadTasks() })
       <div>
         <p class="eyebrow">制程质量控制</p>
         <h2>工序检验</h2>
-        <p>设备检测或现场首检完成后，在此核对生产指令、填写检验结果，并将不合格项转入处置流程。</p>
       </div>
       <div class="process-inspection-hero-actions">
         <span class="process-sync"><i></i>任务数据已同步</span>
@@ -349,7 +348,6 @@ onMounted(() => { void loadTasks() })
       </div>
 
       <template v-if="activeTab === 'pending'">
-        <p class="process-tab-intro">工序待检任务将在核对生产指令与批次后进入检验确认；完成检验后自动转入“工序已检”。</p>
         <div class="process-filter-grid">
           <label class="process-filter-field process-filter-field--wide">
             <span>快速查询</span>
@@ -377,7 +375,6 @@ onMounted(() => { void loadTasks() })
 
         <div class="process-table-heading">
           <span>共查询到 <strong>{{ totalRows }}</strong> 条待检任务</span>
-          <small>双击待检任务可直接进入检验确认。</small>
         </div>
         <div class="process-table-wrap">
           <el-table :data="paginatedPendingRows" stripe empty-text="暂无工序待检任务" @row-dblclick="(row: InspectionTask) => openRecord(row)">
@@ -395,7 +392,6 @@ onMounted(() => { void loadTasks() })
       </template>
 
       <template v-else>
-        <p class="process-tab-intro">工序检验单保留生产指令归属、适用检验方案、逐项结果、良品数和不良品数；可打开查看完整检验明细。</p>
         <div class="process-completed-filter-grid">
           <label class="process-filter-field"><span>检验日期</span><el-date-picker v-model="completedDateRange" type="daterange" unlink-panels value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" /></label>
           <label class="process-filter-field"><span>检验单号</span><el-input v-model="completedRecordNo" clearable placeholder="输入检验单号" /></label>
@@ -408,7 +404,6 @@ onMounted(() => { void loadTasks() })
 
         <div class="process-table-heading">
           <span>共查询到 <strong>{{ totalRows }}</strong> 条工序已检数据</span>
-          <small>检验结果和后续处置状态均来自已提交的检验记录。</small>
         </div>
         <div class="process-table-wrap">
           <el-table :data="paginatedCompletedRows" stripe empty-text="暂无工序已检记录">

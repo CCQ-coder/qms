@@ -119,12 +119,6 @@ onMounted(() => { void load() })
         </div>
       </template>
 
-      <el-alert
-        title="将现场设备的 machinename 或采集电脑的 hostName 绑定到 QMS 设备台账。名称匹配会自动忽略首尾空格和英文大小写。"
-        type="info"
-        :closable="false"
-        show-icon
-      />
       <p v-if="!equipment.length" class="field-help">请先在“设备台账”新增需要接收监控数据的设备。</p>
 
       <paged-table :data="mappings" empty-text="暂无设备网关映射" style="margin-top: 16px">

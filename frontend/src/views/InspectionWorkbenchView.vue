@@ -725,7 +725,6 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">FQC 成品检测</p>
         <h2>成品测试实时监控工作台</h2>
-        <p>集中查看成品测试工位、待检队列和质量结果；检测记录可通过扫码或任务列表直接处理。</p>
       </div>
       <div class="finished-test-hero-actions">
         <span class="workstation-connection" :class="workstationConnectionClass"><i></i>{{ workstationConnectionLabel }}</span>
@@ -750,7 +749,6 @@ onBeforeUnmount(() => {
         <div class="section-heading">
           <div>
             <h3>成品测试多设备实时监控</h3>
-            <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；设备上报与已提交 FQC 检验分别统计。</p>
           </div>
           <div v-if="!summaryError" class="shift-summary">
             <span>FQC <strong>{{ fqcTotal }}</strong></span>
@@ -809,7 +807,7 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'tasks'" shadow="never" class="content-card task-queue-card">
       <template #header>
         <div class="card-header">
-          <div><span>成品测试待检任务</span><small>任务按当前登录用户的工序权限返回，支持扫码定位后直接填写检验。</small></div>
+          <div><span>成品测试待检任务</span></div>
           <div class="task-queue-actions"><el-button link type="primary" @click="refreshWorkbench">刷新</el-button><el-button type="primary" size="small" :disabled="!filteredTasks.length" @click="openNextTask">处理下一条</el-button></div>
         </div>
       </template>
@@ -832,7 +830,7 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>
         <div class="card-header">
-          <div><span>设备检测记录</span><small>飞针机采集计数与已提交的 FQC 检验分别查看。</small></div>
+          <div><span>设备检测记录</span></div>
           <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordPanelUpdatedAt ? `更新于 ${formatDateTime(recordPanelUpdatedAt)}` : '尚未读取' }}</span><el-button link type="primary" :disabled="recordPanelLoading" @click="refreshRecordPanel">刷新</el-button></div>
         </div>
       </template>
@@ -842,7 +840,6 @@ onBeforeUnmount(() => {
         <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
       </div>
       <template v-if="recordSource === 'probe'">
-        <p class="summary-footnote">采集快照与生成的 FQC 检验分开展示；自动匹配失败的记录可手动绑定生产指令。</p>
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
@@ -873,7 +870,6 @@ onBeforeUnmount(() => {
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
       </template>
       <template v-else-if="recordSource === 'retryable' && canBindFlyingProbe">
-        <p class="summary-footnote">按飞针文件汇总待匹配快照；原始采集记录过期后，仍可在这里绑定或重试。</p>
         <el-alert v-if="retryableError" type="error" :closable="false" :title="retryableError" style="margin-top: 12px" />
         <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar"><span>共 {{ retryableTotal }} 份待匹配飞针文件</span></div>
         <div v-if="retryableLoaded || retryableLoading" class="finished-records-table-wrap finished-records-table-wrap--retryable">
@@ -919,7 +915,7 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card summary-table-card">
       <template #header>
         <div class="card-header">
-          <div><span>成品测试汇总表</span><small>已提交的成品检验记录按日期汇总；若当前权限内没有成品测试记录，将显示为空。</small></div>
+          <div><span>成品测试汇总表</span></div>
           <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
         </div>
       </template>

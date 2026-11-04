@@ -134,10 +134,10 @@ onBeforeUnmount(() => {
   <section class="page-stack" v-loading="loading">
     <template v-if="isAnalyticsPage">
     <el-card shadow="never" class="content-card"><div class="report-filter"><span>检验日期</span><el-date-picker v-model="reportDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable /><el-button type="primary" :loading="loading" @click="loadSummary">查询</el-button><span class="filter-hint">当前范围：{{ dateRangeLabel }}</span></div></el-card>
-    <div class="metric-grid report-metrics"><article class="metric-card"><span>检验记录</span><strong>{{ summary.totalRecords }}</strong><small>{{ dateRangeLabel }} · 当前权限范围</small></article><article class="metric-card success"><span>一次合格率</span><strong>{{ summary.firstPassRate }}%</strong><small>按可见已提交记录计算</small></article><article class="metric-card"><span>合格记录</span><strong>{{ summary.passRecords }}</strong><small>合格</small></article><article class="metric-card warning"><span>不合格记录</span><strong>{{ summary.failRecords }}</strong><small>不合格</small></article></div>
+    <div class="metric-grid report-metrics"><article class="metric-card"><span>检验记录</span><strong>{{ summary.totalRecords }}</strong></article><article class="metric-card success"><span>一次合格率</span><strong>{{ summary.firstPassRate }}%</strong></article><article class="metric-card"><span>合格记录</span><strong>{{ summary.passRecords }}</strong></article><article class="metric-card warning"><span>不合格记录</span><strong>{{ summary.failRecords }}</strong></article></div>
 
     <el-card shadow="never" class="content-card">
-      <template #header><div class="card-header"><span>质量趋势</span><small>一次合格率与不合格记录按检验日期汇总</small></div></template>
+      <template #header><div class="card-header"><span>质量趋势</span></div></template>
       <div v-if="summary.dailyTrend.length" ref="trendChartRef" class="quality-trend-chart" />
       <el-empty v-else description="当前日期范围暂无可见检验趋势数据" />
     </el-card>

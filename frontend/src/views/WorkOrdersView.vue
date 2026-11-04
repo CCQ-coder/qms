@@ -128,7 +128,6 @@ onMounted(() => { void load() })
       <div class="work-order-filter-heading">
         <div>
           <h2>生产指令查询</h2>
-          <p>生产指令由 ERP 同步、QMS 补充质量状态；查询结果仅供查看和追溯，不支持在此页修改来源数据。</p>
         </div>
         <div class="work-order-filter-heading-actions">
           <span class="work-order-sync"><i></i>本页最新同步 {{ latestSyncTime }}</span>
@@ -155,7 +154,7 @@ onMounted(() => { void load() })
 
     <el-card class="content-card work-order-list-card" shadow="never">
       <div class="work-order-list-heading">
-        <div><h2>生产指令列表</h2><p>默认显示现场排产、投料面积和入库信息；板材、尺寸与工艺明细请点击生产指令号查看。</p></div>
+        <div><h2>生产指令列表</h2></div>
       </div>
 
       <div class="work-order-table-wrap work-order-summary-table-wrap" :class="{ 'no-batch-column': !showBatchColumn }">

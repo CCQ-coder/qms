@@ -95,12 +95,11 @@ onMounted(load)
       <div>
         <p class="eyebrow">租户级配置</p>
         <h2>系统参数</h2>
-        <p>参数仅影响当前租户。修改料号规则后，新建产品资料会立即按新规则校验。</p>
       </div>
     </div>
 
     <el-card shadow="never" class="content-card">
-      <template #header><div class="card-header"><span>料号规则</span><span class="helper-text">替代独立的料号规则配置页面</span></div></template>
+      <template #header><div class="card-header"><span>料号规则</span></div></template>
       <div class="system-parameter-section">
         <div class="parameter-row">
           <div><strong>启用料号格式校验</strong><p>开启后，新增产品资料的料号必须匹配下方规则。</p></div>

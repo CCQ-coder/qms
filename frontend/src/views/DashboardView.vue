@@ -23,7 +23,7 @@ async function load() {
       qmsApi.listEquipmentTelemetryHistory({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1 })
     ])
     summaryError.value = dashboardResult.status === 'rejected' ? '质量流程状态读取失败，请刷新重试。' : ''
-    qualityError.value = qualityResult.status === 'rejected' ? '检验记录与缺陷汇总读取失败，请刷新重试。' : ''
+    qualityError.value = qualityResult.status === 'rejected' ? '质量汇总读取失败，请刷新重试。' : ''
     summary.value = dashboardResult.status === 'fulfilled' ? dashboardResult.value : undefined
     quality.value = qualityResult.status === 'fulfilled' ? qualityResult.value : undefined
     if (probeResult.status === 'fulfilled') {
@@ -52,20 +52,20 @@ onMounted(() => { void load() })
 <template>
   <section class="dashboard-page" v-loading="loading">
     <div class="dashboard-intro">
-      <div><h2>质量总览</h2><p>同步汇总成品测试、待检任务、工序检验与不良处置数据，展示当前质量业务状态。</p></div>
+      <div><h2>质量总览</h2></div>
       <span class="dashboard-updated" :class="{ 'dashboard-updated--unavailable': summaryError || qualityError || !businessUpdatedAt }"><i></i>最近完整更新 {{ updatedAtLabel }}</span>
     </div>
 
     <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" />
     <el-alert v-if="qualityError" type="error" :closable="false" :title="qualityError" />
     <div class="dashboard-metrics">
-      <article class="dashboard-metric"><span>检验记录总数</span><strong>{{ quality ? quality.totalRecords.toLocaleString() : '—' }}</strong><small>当前权限范围内的已提交记录</small></article>
-      <article class="dashboard-metric success"><span>一次合格率</span><strong>{{ quality ? `${quality.firstPassRate.toFixed(2)}%` : '—' }}</strong><small>合格记录数 ÷ 检验记录总数</small></article>
-      <article class="dashboard-metric success"><span>已完成检验</span><strong>{{ summary ? summary.completedInspectionTasks.toLocaleString() : '—' }}</strong><small>累计完成的检验任务</small></article>
+      <article class="dashboard-metric"><span>检验记录总数</span><strong>{{ quality ? quality.totalRecords.toLocaleString() : '—' }}</strong></article>
+      <article class="dashboard-metric success"><span>一次合格率</span><strong>{{ quality ? `${quality.firstPassRate.toFixed(2)}%` : '—' }}</strong></article>
+      <article class="dashboard-metric success"><span>已完成检验</span><strong>{{ summary ? summary.completedInspectionTasks.toLocaleString() : '—' }}</strong></article>
     </div>
 
     <el-card shadow="never" class="content-card dashboard-probe-card">
-      <template #header><div class="dashboard-card-heading"><div><h3>飞针机采集状态</h3><p>展示最新一条设备计数快照；正式 FQC 检验按已提交记录统计。</p></div><el-button @click="$router.push({ path: '/inspection', query: { panel: 'records' } })">查看设备记录</el-button></div></template>
+      <template #header><div class="dashboard-card-heading"><div><h3>飞针机采集状态</h3></div><el-button @click="$router.push({ path: '/inspection', query: { panel: 'records' } })">查看设备记录</el-button></div></template>
       <el-alert v-if="probeError" :title="probeError" type="error" :closable="false" />
       <div v-else-if="latestProbeRecord" class="dashboard-probe-snapshot">
         <div><span>检测设备</span><strong>{{ latestProbeRecord.equipmentCode }}</strong></div>
@@ -79,7 +79,7 @@ onMounted(() => { void load() })
     </el-card>
 
     <el-card shadow="never" class="content-card dashboard-flow-card">
-      <template #header><div class="dashboard-card-heading"><div><h3>质量流程状态</h3><p>各指标直接关联当前业务模块，点击入口可继续处理或查看报表。</p></div><div class="dashboard-actions"><el-button @click="$router.push('/inspection')">进入成品测试</el-button><el-button @click="$router.push('/nonconformities')">进入不良品处理</el-button><el-button type="primary" @click="$router.push('/analytics')">进入质量报表</el-button></div></div></template>
+      <template #header><div class="dashboard-card-heading"><div><h3>质量流程状态</h3></div><div class="dashboard-actions"><el-button @click="$router.push('/inspection')">进入成品测试</el-button><el-button @click="$router.push('/nonconformities')">进入不良品处理</el-button><el-button type="primary" @click="$router.push('/analytics')">进入质量报表</el-button></div></div></template>
       <div class="dashboard-flow-grid"><article><span>待检任务</span><strong>{{ summary?.pendingInspectionTasks ?? '—' }}</strong></article><article class="attention"><span>进行中工单</span><strong>{{ summary?.activeWorkOrders ?? '—' }}</strong></article><article class="good"><span>已完成检验</span><strong>{{ summary?.completedInspectionTasks ?? '—' }}</strong></article><article class="good"><span>一次合格率</span><strong>{{ summary ? `${summary.firstPassRate.toFixed(2)}%` : '—' }}</strong></article></div>
     </el-card>
 

@@ -265,7 +265,6 @@ onMounted(load)
     <template v-if="isLedgerPage">
     <el-card shadow="never" class="content-card">
       <template #header><div class="card-header"><span>设备台账</span><el-button type="primary" @click="openEquipment">新增设备</el-button></div></template>
-      <el-alert title="设备类型为固定选项：类型选择“成品测试设备”的设备，会自动展示在“成品测试实时监控工作台”。" type="info" :closable="false" show-icon class="equipment-monitor-tip" />
       <div class="toolbar equipment-filter-bar"><el-input v-model="equipmentFilters.keyword" clearable placeholder="设备编号、名称、厂商、型号、责任人" style="width: 280px" @keyup.enter="searchEquipment" /><el-select v-model="equipmentFilters.equipmentType" clearable placeholder="全部设备类型" style="width: 180px"><el-option v-for="item in equipmentTypes" :key="item.code" :label="item.name" :value="item.name" /></el-select><el-select v-model="equipmentFilters.status" clearable placeholder="全部状态" style="width: 130px"><el-option label="在用" value="IN_USE" /><el-option label="维护中" value="MAINTENANCE" /><el-option label="停用" value="DISABLED" /><el-option label="告警中" value="ALARM" /></el-select><el-button @click="resetEquipmentFilters">重置</el-button><el-button type="primary" @click="searchEquipment">查询</el-button></div>
       <el-table :data="equipment" empty-text="暂无设备台账">
         <el-table-column prop="assetNo" label="设备编号" min-width="145" />
@@ -309,7 +308,7 @@ onMounted(load)
     </template>
 
     <el-card v-else shadow="never" class="content-card">
-      <template #header><div class="card-header"><span>设备告警</span><small>维护项目实测值超出标准时自动生成；完成该设备的维修记录后自动消警。</small></div></template>
+      <template #header><div class="card-header"><span>设备告警</span></div></template>
       <paged-table :data="alerts" empty-text="暂无未消除告警">
         <el-table-column prop="alertNo" label="告警编号" min-width="155" />
         <el-table-column prop="equipmentAssetNo" label="设备编号" min-width="130" />
