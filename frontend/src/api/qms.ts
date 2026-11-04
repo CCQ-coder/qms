@@ -1,7 +1,7 @@
 import { http } from '@/api/http'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
-  InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
+  InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary, FinishedTestAnalysis,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
   , MenuAccess, GatewayHostStatus
 } from '@/types/qms'
@@ -362,6 +362,16 @@ export const qmsApi = {
   async getQualitySummary(from?: string, to?: string, processCode?: string, finishedTest?: boolean) {
     const { data } = await http.get<ApiResponse<QualitySummary>>('/api/v1/reports/quality-summary', { params: { from, to, processCode, finishedTest } })
     return data.data
+  },
+
+  async getFinishedTestAnalysis(from?: string, to?: string) {
+    const { data } = await http.get<ApiResponse<FinishedTestAnalysis>>('/api/v1/reports/finished-test-analysis', { params: { from, to } })
+    return data.data
+  },
+
+  async downloadFinishedTestAnalysisExcel(from?: string, to?: string) {
+    const { data } = await http.get('/api/v1/reports/finished-test-analysis.xlsx', { params: { from, to }, responseType: 'blob' })
+    return data as Blob
   },
 
   async downloadQualitySummaryExcel(from?: string, to?: string) {

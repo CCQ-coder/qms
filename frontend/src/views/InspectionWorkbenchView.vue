@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
+import FinishedTestAnalysis from '@/components/FinishedTestAnalysis.vue'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { equipmentStatusTagType, formatDate, formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
@@ -880,23 +881,7 @@ onBeforeUnmount(() => {
       </template>
     </el-card>
 
-    <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card summary-table-card">
-      <template #header>
-        <div class="card-header">
-          <div><span>成品测试汇总表</span></div>
-          <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
-        </div>
-      </template>
-      <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
-      <paged-table v-else :data="qualitySummary.dailyTrend" empty-text="暂无已提交的质量记录">
-        <el-table-column prop="inspectionDate" label="检测日期" min-width="140" />
-        <el-table-column prop="totalRecords" label="检测总数" min-width="130" align="right" />
-        <el-table-column prop="passRecords" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.passRecords }}</span></template></el-table-column>
-        <el-table-column prop="failRecords" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.failRecords }}</span></template></el-table-column>
-        <el-table-column label="一次合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
-      </paged-table>
-      <div v-if="!summaryError" class="summary-footnote">当前成品检验累计：{{ fqcTotal }} 条，合格 {{ fqcPass }} 条，不合格 {{ fqcFail }} 条。</div>
-    </el-card>
+    <FinishedTestAnalysis v-if="activePanel === 'summary'" initial-dimension="date" />
 
     <el-dialog v-model="bindingDialog" title="手动绑定飞针工单" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
       <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>

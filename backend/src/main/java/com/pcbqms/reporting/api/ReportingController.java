@@ -2,6 +2,7 @@ package com.pcbqms.reporting.api;
 
 import com.pcbqms.common.api.ApiResponse;
 import com.pcbqms.reporting.application.ReportingApplicationService;
+import com.pcbqms.reporting.application.FinishedTestAnalysisApplicationService;
 import lombok.RequiredArgsConstructor;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -20,6 +21,27 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ReportingController {
     private final ReportingApplicationService reportingApplicationService;
+    private final FinishedTestAnalysisApplicationService finishedTestAnalysisApplicationService;
+
+    @GetMapping("/finished-test-analysis")
+    public ApiResponse<FinishedTestAnalysisResponse> finishedTestAnalysis(
+        @RequestParam(required = false) LocalDate from,
+        @RequestParam(required = false) LocalDate to
+    ) {
+        return ApiResponse.of(finishedTestAnalysisApplicationService.analyze(from, to));
+    }
+
+    @GetMapping("/finished-test-analysis.xlsx")
+    public ResponseEntity<byte[]> exportFinishedTestAnalysis(
+        @RequestParam(required = false) LocalDate from,
+        @RequestParam(required = false) LocalDate to
+    ) {
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename("PCB-成品测试分析.xlsx", StandardCharsets.UTF_8).build().toString())
+            .body(finishedTestAnalysisApplicationService.exportExcel(from, to));
+    }
 
     @GetMapping("/quality-summary")
     public ApiResponse<QualitySummaryResponse> qualitySummary(

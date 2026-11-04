@@ -561,6 +561,29 @@ export type QualitySummary = {
   dailyTrend: QualityTrendMetric[]
 }
 
+export type FinishedTestGroupMetric = {
+  key: string
+  recordCount: number
+  totalBoards: number
+  goodBoards: number
+  badBoards: number
+  unknownQuantityRecords: number
+  passRate: number
+}
+
+export type FinishedTestAnalysis = {
+  recordCount: number
+  totalBoards: number
+  goodBoards: number
+  badBoards: number
+  unknownQuantityRecords: number
+  passRate: number
+  byDate: FinishedTestGroupMetric[]
+  byWorkOrder: FinishedTestGroupMetric[]
+  byMaterial: FinishedTestGroupMetric[]
+  byEquipment: FinishedTestGroupMetric[]
+}
+
 export type DefectRankingMetric = {
   defectSummary: string
   failedRecords: number
