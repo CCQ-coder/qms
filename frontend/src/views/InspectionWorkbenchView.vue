@@ -8,7 +8,7 @@ import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { formatDate, formatDateTime, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
-import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus'
+import { deriveInspectionMonitorStatus, inspectionDeviceOnline, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
@@ -124,7 +124,8 @@ const monitorDevices = computed<MonitorDevice[]>(() => {
 })
 const monitorPage = ref(1)
 const monitorPageSize = ref(10)
-const pagedMonitorDevices = computed(() => paginateRows(monitorDevices.value, monitorPage.value, monitorPageSize.value))
+const pagedMonitorDevices = computed(() => paginateRows(
+  sortInspectionMonitorDevices(monitorDevices.value, deviceStatusLabel), monitorPage.value, monitorPageSize.value))
 watch(() => monitorDevices.value.length, (count) => {
   monitorPage.value = clampPage(monitorPage.value, count, monitorPageSize.value)
 })

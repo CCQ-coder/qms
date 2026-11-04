@@ -2,6 +2,15 @@ import { isHostOnline } from '../utils/host-status.ts'
 
 export type InspectionMonitorStatus = '未接入' | '离线' | '测试中' | '空闲'
 
+const STATUS_PRIORITY = { 测试中: 0, 空闲: 1, 离线: 2, 未接入: 3, 状态不可用: 4 } as const
+
+export function sortInspectionMonitorDevices<T>(
+  devices: readonly T[],
+  statusOf: (device: T) => InspectionMonitorStatus | '状态不可用'
+): T[] {
+  return [...devices].sort((left, right) => STATUS_PRIORITY[statusOf(left)] - STATUS_PRIORITY[statusOf(right)])
+}
+
 const ACTIVE_WINDOW_MS = 7 * 60 * 1000
 
 export function deriveInspectionMonitorStatus(

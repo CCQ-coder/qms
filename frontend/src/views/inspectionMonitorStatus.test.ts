@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus.ts'
+import { deriveInspectionMonitorStatus, inspectionDeviceOnline, sortInspectionMonitorDevices } from './inspectionMonitorStatus.ts'
 
 const NOW_MS = Date.parse('2026-10-29T08:00:00.000Z')
 
@@ -36,4 +36,20 @@ test('fresh host heartbeat overrides stale runtime telemetry', () => {
   assert.equal(inspectionDeviceOnline(false, '2026-10-29T07:59:00.000Z', NOW_MS), true)
   assert.equal(inspectionDeviceOnline(true, '2026-10-29T07:54:00.000Z', NOW_MS), false)
   assert.equal(inspectionDeviceOnline(undefined, undefined, NOW_MS), undefined)
+})
+
+test('device priority keeps the default order within each status', () => {
+  const devices = [
+    { id: 'offline-1', status: '离线' },
+    { id: 'online-1', status: '空闲' },
+    { id: 'testing-1', status: '测试中' },
+    { id: 'online-2', status: '空闲' },
+    { id: 'testing-2', status: '测试中' },
+    { id: 'offline-2', status: '离线' },
+    { id: 'missing', status: '未接入' }
+  ] as const
+
+  assert.deepEqual(sortInspectionMonitorDevices(devices, (device) => device.status).map((device) => device.id),
+    ['testing-1', 'testing-2', 'online-1', 'online-2', 'offline-1', 'offline-2', 'missing'])
+  assert.equal(devices[0].id, 'offline-1')
 })
