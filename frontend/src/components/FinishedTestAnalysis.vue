@@ -124,7 +124,6 @@ onBeforeUnmount(() => { requestVersion++; window.removeEventListener('resize', r
         <span>检测日期</span>
         <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="2026-10-20" end-placeholder="结束日期" clearable :disabled-date="(day: Date) => day.getTime() < new Date(2026, 9, 20).getTime()" />
         <el-button type="primary" :loading="loading" @click="load">查询</el-button>
-        <span class="filter-hint">2026-10-20 起</span>
       </div>
     </el-card>
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
