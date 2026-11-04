@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.equipment.domain.Equipment;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
 import com.pcbqms.inspection.api.CreateInspectionTaskRequest;
@@ -143,7 +144,8 @@ public class InspectionApplicationService {
         }
         List<String> processCodes = access.fullDataAccess() ? null : new ArrayList<>(access.processCodes());
         List<InspectionRecord> fetched = inspectionRecordMapper.selectFinishedPage(
-            tenantCode, processCodes, cursorTime, cursorId, limit + 1);
+            tenantCode, FinishedTestDataWindow.START,
+            processCodes, cursorTime, cursorId, limit + 1);
         boolean hasMore = fetched.size() > limit;
         List<InspectionRecord> records = hasMore ? fetched.subList(0, limit) : fetched;
         if (records.isEmpty()) {

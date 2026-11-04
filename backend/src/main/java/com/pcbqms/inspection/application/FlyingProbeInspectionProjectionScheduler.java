@@ -1,6 +1,7 @@
 package com.pcbqms.inspection.application;
 
 import com.pcbqms.common.tenancy.TenantContext;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.infrastructure.persistence.FlyingProbeProjectionMapper;
 import java.time.LocalDateTime;
@@ -43,6 +44,7 @@ public class FlyingProbeInspectionProjectionScheduler {
         int recentLimit = Math.max(1, batchSize - Math.max(1, batchSize / 4));
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime recentCutoff = now.minusDays(rawRetentionDays).truncatedTo(ChronoUnit.SECONDS);
+        if (recentCutoff.isBefore(FinishedTestDataWindow.START)) recentCutoff = FinishedTestDataWindow.START;
         for (String tenantCode : jdbcTemplate.queryForList(
             "SELECT code FROM qms_tenant WHERE status = 'ACTIVE' ORDER BY code", String.class)) {
             TenantContext.set(tenantCode, "admin");
@@ -50,12 +52,14 @@ public class FlyingProbeInspectionProjectionScheduler {
                 var recentRetryable = projectionMapper.selectRecentRetryable(
                     tenantCode, now, recentCutoff, recentLimit);
                 var olderRetryable = projectionMapper.selectOlderRetryable(
-                    tenantCode, now, recentCutoff, Math.max(1, batchSize - recentRetryable.size()));
+                    tenantCode, now, recentCutoff, FinishedTestDataWindow.START,
+                    Math.max(1, batchSize - recentRetryable.size()));
                 retryPending(tenantCode, Stream.concat(recentRetryable.stream(), olderRetryable.stream()).toList());
                 var recentUnprojected = projectionMapper.selectRecentUnprojected(
                     tenantCode, recentCutoff, recentLimit);
                 var olderUnprojected = projectionMapper.selectOlderUnprojected(
-                    tenantCode, recentCutoff, Math.max(1, batchSize - recentUnprojected.size()));
+                    tenantCode, recentCutoff, FinishedTestDataWindow.START,
+                    Math.max(1, batchSize - recentUnprojected.size()));
                 for (var telemetry : Stream.concat(recentUnprojected.stream(), olderUnprojected.stream()).toList()) {
                     try {
                         projectionService.projectNew(telemetry);

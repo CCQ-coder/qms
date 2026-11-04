@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.domain.Equipment;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
@@ -84,10 +85,10 @@ public class FlyingProbeInspectionProjectionService {
         long page = requestedPage == null ? 1 : Math.max(1, requestedPage);
         int pageSize = requestedPageSize == null ? 50 : Math.clamp(requestedPageSize, 10, 100);
         String tenantCode = TenantContext.tenantCode();
-        long total = projectionMapper.countRetryableGroups(tenantCode);
+        long total = projectionMapper.countRetryableGroups(tenantCode, FinishedTestDataWindow.START);
         long offset = (page - 1) * pageSize;
         List<FlyingProbeRetryableRecordResponse> records = offset < total
-            ? projectionMapper.selectRetryableGroups(tenantCode, pageSize, offset)
+            ? projectionMapper.selectRetryableGroups(tenantCode, FinishedTestDataWindow.START, pageSize, offset)
             : List.of();
         return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
     }
@@ -228,7 +229,7 @@ public class FlyingProbeInspectionProjectionService {
             retryLater(projection, "设备台账不是当前租户的成品测试设备", now);
             return;
         }
-        if (projectionMapper.countEarlierUnresolved(projection) > 0) {
+        if (projectionMapper.countEarlierUnresolved(projection, FinishedTestDataWindow.START) > 0) {
             retryLater(projection, "同一飞针文件的更早快照仍待匹配", now);
             return;
         }
@@ -311,7 +312,8 @@ public class FlyingProbeInspectionProjectionService {
         projection.setBatchNo(batch == null ? null : batch.getBatchNo());
         // The first retained sample of an old file is only a baseline. Its earlier
         // increments may have expired from raw telemetry, so their quantity is unknown.
-        if (run.getLastDeviceTime() == null && snapshot.startTime().isBefore(now.minusDays(rawRetentionDays))) {
+        if ((run.getLastDeviceTime() == null && snapshot.startTime().isBefore(now.minusDays(rawRetentionDays)))
+            || (run.getLastDeviceTime() != null && run.getLastDeviceTime().isBefore(FinishedTestDataWindow.START))) {
             run.setLastDeviceTime(projection.getDeviceTime());
             run.setTestedCount(snapshot.counts().tested());
             run.setGoodCount(snapshot.counts().good());

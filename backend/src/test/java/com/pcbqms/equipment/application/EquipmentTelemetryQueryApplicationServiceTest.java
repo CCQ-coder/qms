@@ -14,6 +14,7 @@ import com.pcbqms.equipment.api.EquipmentTelemetryHistoryQuery;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
 import java.nio.charset.StandardCharsets;
@@ -161,6 +162,25 @@ class EquipmentTelemetryQueryApplicationServiceTest {
 
         String cursor = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
         assertThat(cursor).startsWith("2026-11-01T09:00");
+    }
+
+    @Test
+    void flyingProbeHistoryNeverQueriesBeforeTheDataStart() {
+        TenantContext.set("customer-b", "admin");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
+
+        new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper()
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null,
+            LocalDateTime.of(2024, 1, 1, 0, 0), null, null, 20, "FLYING_PROBE_TEST_COUNTERS"));
+
+        assertThat(mockingDetails(telemetryRecordMapper).getInvocations()).singleElement().satisfies(invocation ->
+            assertThat(invocation.getArguments()[3]).isEqualTo(FinishedTestDataWindow.START));
     }
 
     @Test

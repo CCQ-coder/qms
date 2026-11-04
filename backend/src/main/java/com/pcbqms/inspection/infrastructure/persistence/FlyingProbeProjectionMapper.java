@@ -24,6 +24,7 @@ public interface FlyingProbeProjectionMapper {
                    MAX(device_time) OVER (PARTITION BY COALESCE(run_key, telemetry_id)) AS latest_device_time
             FROM qms_flying_probe_projection
             WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+              AND device_time >= #{dataStart}
         )
         SELECT p.telemetry_id AS id, e.asset_no AS equipment_code, p.machine_name, p.material_no,
                p.device_time, p.source_file, p.source_start_time, p.reason,
@@ -38,14 +39,17 @@ public interface FlyingProbeProjectionMapper {
         LIMIT #{pageSize} OFFSET #{offset}
         """)
     List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
-        @Param("tenantCode") String tenantCode, @Param("pageSize") int pageSize, @Param("offset") long offset);
+        @Param("tenantCode") String tenantCode, @Param("dataStart") LocalDateTime dataStart,
+        @Param("pageSize") int pageSize, @Param("offset") long offset);
 
     @Select("""
         SELECT COUNT(DISTINCT COALESCE(run_key, telemetry_id))
         FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+          AND device_time >= #{dataStart}
         """)
-    long countRetryableGroups(@Param("tenantCode") String tenantCode);
+    long countRetryableGroups(@Param("tenantCode") String tenantCode,
+                              @Param("dataStart") LocalDateTime dataStart);
 
     @Select("""
         SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.machine_name,
@@ -77,6 +81,7 @@ public interface FlyingProbeProjectionMapper {
           AND (telemetry.device_time < #{cutoff}
                OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(telemetry.raw_payload, '$.attributes.startTime')), '')
                   < DATE_FORMAT(#{cutoff}, '%Y-%m-%dT%H:%i:%s'))
+          AND telemetry.device_time >= #{dataStart}
           AND NOT EXISTS (
               SELECT 1 FROM qms_flying_probe_projection projection
               WHERE projection.telemetry_id = telemetry.id
@@ -85,7 +90,8 @@ public interface FlyingProbeProjectionMapper {
         LIMIT #{limit}
         """)
     List<EquipmentTelemetryRecord> selectOlderUnprojected(
-        @Param("tenantCode") String tenantCode, @Param("cutoff") LocalDateTime cutoff, @Param("limit") int limit);
+        @Param("tenantCode") String tenantCode, @Param("cutoff") LocalDateTime cutoff,
+        @Param("dataStart") LocalDateTime dataStart, @Param("limit") int limit);
 
     @Select("""
         SELECT * FROM qms_flying_probe_projection
@@ -102,12 +108,14 @@ public interface FlyingProbeProjectionMapper {
         SELECT * FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE' AND retry_after <= #{now}
           AND (source_start_time < #{cutoff} OR source_start_time IS NULL)
+          AND device_time >= #{dataStart}
         ORDER BY device_time, received_at, telemetry_id
         LIMIT #{limit}
         """)
     List<FlyingProbeProjection> selectOlderRetryable(
         @Param("tenantCode") String tenantCode, @Param("now") LocalDateTime now,
-        @Param("cutoff") LocalDateTime cutoff, @Param("limit") int limit);
+        @Param("cutoff") LocalDateTime cutoff, @Param("dataStart") LocalDateTime dataStart,
+        @Param("limit") int limit);
 
     @Insert("""
         INSERT INTO qms_flying_probe_projection (
@@ -143,13 +151,16 @@ public interface FlyingProbeProjectionMapper {
 
     @Select("""
         SELECT COUNT(*) FROM qms_flying_probe_projection
-        WHERE tenant_code = #{tenantCode} AND equipment_id = #{equipmentId} AND run_key = #{runKey}
-          AND status = 'RETRYABLE' AND telemetry_id <> #{telemetryId}
-          AND (device_time < #{deviceTime}
-               OR (device_time = #{deviceTime} AND received_at < #{receivedAt})
-               OR (device_time = #{deviceTime} AND received_at = #{receivedAt} AND telemetry_id < #{telemetryId}))
+        WHERE tenant_code = #{projection.tenantCode} AND equipment_id = #{projection.equipmentId}
+          AND run_key = #{projection.runKey} AND device_time >= #{dataStart}
+          AND status = 'RETRYABLE' AND telemetry_id <> #{projection.telemetryId}
+          AND (device_time < #{projection.deviceTime}
+               OR (device_time = #{projection.deviceTime} AND received_at < #{projection.receivedAt})
+               OR (device_time = #{projection.deviceTime} AND received_at = #{projection.receivedAt}
+                   AND telemetry_id < #{projection.telemetryId}))
         """)
-    long countEarlierUnresolved(FlyingProbeProjection projection);
+    long countEarlierUnresolved(@Param("projection") FlyingProbeProjection projection,
+                                @Param("dataStart") LocalDateTime dataStart);
 
     @Insert("""
         INSERT INTO qms_flying_probe_run (

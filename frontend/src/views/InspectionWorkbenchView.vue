@@ -395,7 +395,7 @@ async function loadMonitoringData() {
   monitoringVersion++
   try {
     const [summaryResult, equipmentResult, runtimeResult, recordsResult, hostResult, thresholdResult] = await Promise.allSettled([
-      qmsApi.getQualitySummary(undefined, undefined, undefined, true),
+      qmsApi.getQualitySummary('2026-10-20', undefined, undefined, true),
       qmsApi.listEquipment(),
       qmsApi.listEquipmentRuntimeStatuses(),
       loadCompletedFinishedRecords(),

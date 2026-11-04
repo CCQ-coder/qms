@@ -16,6 +16,7 @@ public interface InspectionRecordMapper extends BaseMapper<InspectionRecord> {
         JOIN qms_inspection_task task ON task.id = record.task_id AND task.tenant_code = record.tenant_code
         WHERE record.tenant_code = #{tenantCode} AND task.status = 'COMPLETED'
           AND (task.task_type = 'FINISHED' OR task.process_code = 'FQC')
+          AND record.inspected_at >= #{dataStart}
         <if test="processCodes != null">
           AND task.process_code IN
           <foreach collection="processCodes" item="code" open="(" separator="," close=")">#{code}</foreach>
@@ -29,7 +30,8 @@ public interface InspectionRecordMapper extends BaseMapper<InspectionRecord> {
         </script>
         """)
     List<InspectionRecord> selectFinishedPage(
-        @Param("tenantCode") String tenantCode, @Param("processCodes") List<String> processCodes,
+        @Param("tenantCode") String tenantCode, @Param("dataStart") LocalDateTime dataStart,
+        @Param("processCodes") List<String> processCodes,
         @Param("cursorTime") LocalDateTime cursorTime, @Param("cursorId") String cursorId,
         @Param("limit") int limit);
 }

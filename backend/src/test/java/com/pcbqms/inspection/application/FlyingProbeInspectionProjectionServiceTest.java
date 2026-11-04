@@ -13,6 +13,7 @@ import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
 import com.pcbqms.inspection.api.FlyingProbeRetryableRecordResponse;
@@ -143,8 +144,9 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a")).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L)).thenReturn(List.of(record));
+        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START)).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L))
+            .thenReturn(List.of(record));
 
         var page = service().listRetryable(1, 50);
 
@@ -209,6 +211,32 @@ class FlyingProbeInspectionProjectionServiceTest {
         assertThat(projections.get("first").getStatus()).isEqualTo("PROCESSED");
         assertThat(projections.get("second").getStatus()).isEqualTo("PROCESSED");
         verify(taskMapper, times(2)).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void firstSnapshotAfterDataStartBaselinesAnOlderRun() {
+        TenantContext.set("tenant-a", "admin");
+        var telemetry = event("after-cutoff", LocalDateTime.of(2026, 10, 18, 9, 0),
+            LocalDateTime.of(2026, 10, 20, 9, 0), 10, 8, 2);
+        var projection = projection(telemetry);
+        FlyingProbeRun run = run();
+        run.setLastDeviceTime(LocalDateTime.of(2026, 10, 19, 23, 0));
+        run.setTestedCount(7);
+        run.setGoodCount(6);
+        run.setBadCount(1);
+        when(projectionMapper.lockProjection("after-cutoff")).thenReturn(projection);
+        when(projectionMapper.lockRun(any())).thenReturn(run);
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        validEquipmentAndTemplate();
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getDeltaTested()).isZero();
+        assertThat(run.getTestedCount()).isEqualTo(10);
+        verify(inspectionApplicationService, never()).submitAutomaticRecord(any(), any(), any());
+        verify(projectionMapper).countEarlierUnresolved(projection, FinishedTestDataWindow.START);
     }
 
     @Test

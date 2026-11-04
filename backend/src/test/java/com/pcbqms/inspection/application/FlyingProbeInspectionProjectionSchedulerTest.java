@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.infrastructure.persistence.FlyingProbeProjectionMapper;
 import java.time.LocalDateTime;
@@ -92,11 +93,11 @@ class FlyingProbeInspectionProjectionSchedulerTest {
         when(jdbcTemplate.queryForList(any(String.class), eq(String.class))).thenReturn(List.of("tenant-a"));
         when(projectionMapper.selectRecentRetryable(eq("tenant-a"), any(), any(), eq(75)))
             .thenReturn(List.of(recentRetry));
-        when(projectionMapper.selectOlderRetryable(eq("tenant-a"), any(), any(), eq(99)))
+        when(projectionMapper.selectOlderRetryable(eq("tenant-a"), any(), any(), eq(FinishedTestDataWindow.START), eq(99)))
             .thenReturn(List.of(olderRetry));
         when(projectionMapper.selectRecentUnprojected(eq("tenant-a"), any(), eq(75)))
             .thenReturn(List.of(recent));
-        when(projectionMapper.selectOlderUnprojected(eq("tenant-a"), any(), eq(99)))
+        when(projectionMapper.selectOlderUnprojected(eq("tenant-a"), any(), eq(FinishedTestDataWindow.START), eq(99)))
             .thenReturn(List.of(older));
         var scheduler = scheduler(100);
         LocalDateTime before = LocalDateTime.now().minusDays(7).truncatedTo(ChronoUnit.SECONDS);
@@ -112,7 +113,8 @@ class FlyingProbeInspectionProjectionSchedulerTest {
         ArgumentCaptor<LocalDateTime> cutoffs = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(projectionMapper).selectRecentUnprojected(eq("tenant-a"), cutoffs.capture(), eq(75));
         assertThat(cutoffs.getValue()).isBetween(before, after);
-        verify(projectionMapper).selectOlderUnprojected(eq("tenant-a"), eq(cutoffs.getValue()), eq(99));
+        verify(projectionMapper).selectOlderUnprojected(eq("tenant-a"), eq(cutoffs.getValue()),
+            eq(FinishedTestDataWindow.START), eq(99));
         assertThatThrownBy(TenantContext::tenantCode).isInstanceOf(IllegalStateException.class);
     }
 
@@ -142,12 +144,12 @@ class FlyingProbeInspectionProjectionSchedulerTest {
         when(jdbcTemplate.queryForList(any(String.class), eq(String.class))).thenReturn(List.of("tenant-a"));
         when(projectionMapper.selectRecentUnprojected(eq("tenant-a"), any(), eq(75)))
             .thenReturn(Collections.nCopies(75, recent));
-        when(projectionMapper.selectOlderUnprojected(eq("tenant-a"), any(), eq(25)))
+        when(projectionMapper.selectOlderUnprojected(eq("tenant-a"), any(), eq(FinishedTestDataWindow.START), eq(25)))
             .thenReturn(List.of(older));
 
         scheduler(100).projectPending();
 
-        verify(projectionMapper).selectOlderUnprojected(eq("tenant-a"), any(), eq(25));
+        verify(projectionMapper).selectOlderUnprojected(eq("tenant-a"), any(), eq(FinishedTestDataWindow.START), eq(25));
         verify(projectionService).projectNew(older);
     }
 

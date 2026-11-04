@@ -11,6 +11,7 @@ import com.pcbqms.equipment.api.EquipmentTelemetryHistoryQuery;
 import com.pcbqms.equipment.api.EquipmentTelemetryRecordResponse;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
@@ -74,6 +75,9 @@ public class EquipmentTelemetryQueryApplicationService {
         }
         String eventType = StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null;
         boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType);
+        if (sortByDeviceTime && fromTime.isBefore(FinishedTestDataWindow.START)) {
+            fromTime = FinishedTestDataWindow.START;
+        }
         Cursor cursor = decodeCursor(query.cursor());
         int pageSize = query.resolvedLimit();
         List<EquipmentTelemetryRecord> rows = telemetryRecordMapper.selectHistory(

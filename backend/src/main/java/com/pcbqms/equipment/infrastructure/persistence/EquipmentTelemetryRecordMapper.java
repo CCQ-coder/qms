@@ -61,6 +61,9 @@ public interface EquipmentTelemetryRecordMapper {
         <if test="eventType != null">
             AND event_type = #{eventType}
         </if>
+        <if test="eventType == 'FLYING_PROBE_TEST_COUNTERS'">
+            AND device_time &gt;= #{fromTime}
+        </if>
         <if test="equipmentId != null and equipmentId != ''">
             AND equipment_id = #{equipmentId}
         </if>

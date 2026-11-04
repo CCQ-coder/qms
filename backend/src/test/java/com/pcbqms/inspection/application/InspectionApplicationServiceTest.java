@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
+import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
 import com.pcbqms.inspection.domain.InspectionRecord;
@@ -124,7 +125,7 @@ class InspectionApplicationServiceTest {
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("tester.a", "INSPECTOR", false, Set.of("FQC")));
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
-        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(int.class)))
+        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(), any(int.class)))
             .thenReturn(List.of(record));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder));
         when(productionBatchMapper.selectList(any())).thenReturn(List.of(batch));
@@ -165,7 +166,7 @@ class InspectionApplicationServiceTest {
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
-        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(int.class)))
+        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(), any(int.class)))
             .thenReturn(List.of(record));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder));
         when(objectMapper.readValue(any(String.class), any(com.fasterxml.jackson.core.type.TypeReference.class)))
@@ -229,9 +230,11 @@ class InspectionApplicationServiceTest {
         older.setInspectedAt(LocalDateTime.of(2026, 10, 22, 10, 0));
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
-        when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), isNull(), isNull(), isNull(), eq(2)))
+        when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), eq(FinishedTestDataWindow.START),
+            isNull(), isNull(), isNull(), eq(2)))
             .thenReturn(List.of(newer, older));
-        when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), isNull(), eq(newer.getInspectedAt()),
+        when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), eq(FinishedTestDataWindow.START),
+            isNull(), eq(newer.getInspectedAt()),
             eq(newer.getId()), eq(2))).thenReturn(List.of(older));
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
