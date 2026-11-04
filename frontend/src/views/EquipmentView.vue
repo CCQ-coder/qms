@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import { formatDateTime, statusText } from '@/utils/display-text'
+import { equipmentStatusTagType, formatDateTime, statusText } from '@/utils/display-text'
 import type { Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentType } from '@/types/qms'
 
 const loading = ref(false)
@@ -60,10 +60,6 @@ const equipmentPageEnd = computed(() => Math.min(equipmentCurrentPage.value * eq
 
 function maintenanceTypeText(type: string) {
   return ({ INSPECTION: '点检', MAINTENANCE: '保养', REPAIR: '维修', CALIBRATION: '校准/检定' })[type] ?? type
-}
-
-function equipmentStatusTagType(status: string) {
-  return ({ ALARM: 'danger', MAINTENANCE: 'warning', DISABLED: 'info' } as Record<string, 'danger' | 'warning' | 'info'>)[status] ?? 'success'
 }
 
 async function load() {

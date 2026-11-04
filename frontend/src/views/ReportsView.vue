@@ -147,10 +147,6 @@ onBeforeUnmount(() => {
       <paged-table :key="dateRangeLabel" :data="summary.byProcess" empty-text="暂无检验数据"><el-table-column prop="processCode" label="工序编码" min-width="130" /><el-table-column prop="processName" label="工序名称" min-width="150" /><el-table-column prop="totalRecords" label="检验记录" min-width="110" /><el-table-column prop="passRecords" label="合格" min-width="100" /><el-table-column prop="failRecords" label="不合格" min-width="100" /><el-table-column label="一次合格率" min-width="125"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="10" /></template></el-table-column></paged-table>
     </el-card>
 
-    <el-card shadow="never" class="content-card">
-      <template #header><div class="card-header"><span>缺陷排行（Top 10）</span><small>按当前权限范围内的不合格检验记录汇总</small></div></template>
-      <paged-table :key="dateRangeLabel" :data="summary.defectRanking" empty-text="暂无不良缺陷数据"><el-table-column type="index" label="排名" width="80" /><el-table-column prop="defectSummary" label="缺陷说明" min-width="260" show-overflow-tooltip /><el-table-column prop="failedRecords" label="不合格记录数" min-width="140" /><el-table-column prop="defectiveQuantity" label="不良数量" min-width="120" /></paged-table>
-    </el-card>
     </template>
 
     <section v-else>

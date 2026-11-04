@@ -1,6 +1,11 @@
 import { isHostOnline } from '../utils/host-status.ts'
+import { statusText } from '../utils/display-text.ts'
 
 export type InspectionMonitorStatus = '未接入' | '离线' | '测试中' | '空闲'
+
+export function monitorStatusLabel(status: InspectionMonitorStatus | '状态不可用', equipmentStatus: string): string {
+  return status === '未接入' ? statusText(equipmentStatus) : status
+}
 
 const STATUS_PRIORITY = { 测试中: 0, 空闲: 1, 离线: 2, 未接入: 3, 状态不可用: 4 } as const
 

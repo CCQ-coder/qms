@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { use, init, type ECharts } from 'echarts/core'
-import { PieChart } from 'echarts/charts'
-import { LegendComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import { computed, onMounted, ref } from 'vue'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime } from '@/utils/display-text'
 import type { DashboardSummary, EquipmentTelemetryRecord, QualitySummary } from '@/types/qms'
-
-use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const loading = ref(true)
 const summary = ref<DashboardSummary>()
@@ -20,30 +14,6 @@ const probeError = ref('')
 const latestProbeRecord = computed(() => probeRecords.value[0])
 const businessUpdatedAt = ref<Date>()
 const updatedAtLabel = computed(() => businessUpdatedAt.value ? formatDateTime(businessUpdatedAt.value) : loading.value ? '读取中' : '尚未完整读取')
-const defectChartRef = ref<HTMLElement>()
-let defectChart: ECharts | undefined
-
-function renderCharts() {
-  defectChart?.dispose()
-  defectChart = undefined
-  const currentQuality = quality.value
-  if (defectChartRef.value && currentQuality?.defectRanking.length) {
-    defectChart = init(defectChartRef.value)
-    defectChart.setOption({
-      color: ['#d92d4b', '#b77900', '#7a36df', '#1570ef', '#12b76a', '#f79009'],
-      tooltip: { trigger: 'item', formatter: '{b}：{c} 条（{d}%）' },
-      legend: { type: 'scroll', orient: 'vertical', right: 4, top: 'middle', icon: 'circle', textStyle: { color: '#344054' } },
-      series: [{
-        type: 'pie', radius: ['48%', '72%'], center: ['35%', '52%'], avoidLabelOverlap: true,
-        label: { show: true, position: 'center', formatter: `{count|${currentQuality.failRecords}}\n{label|不合格}`, rich: { count: { color: '#101828', fontSize: 22, fontWeight: 700, lineHeight: 28 }, label: { color: '#667085', fontSize: 12 } } },
-        labelLine: { show: false }, data: currentQuality.defectRanking.map((item) => ({ name: item.defectSummary || '未填写缺陷', value: item.failedRecords }))
-      }]
-    })
-  }
-}
-
-function resizeCharts() { defectChart?.resize() }
-
 async function load() {
   loading.value = true
   try {
@@ -66,8 +36,6 @@ async function load() {
     if (dashboardResult.status === 'fulfilled' && qualityResult.status === 'fulfilled') {
       businessUpdatedAt.value = new Date()
     }
-    await nextTick()
-    renderCharts()
   } catch {
     summary.value = undefined
     quality.value = undefined
@@ -78,8 +46,7 @@ async function load() {
   } finally { loading.value = false }
 }
 
-onMounted(() => { window.addEventListener('resize', resizeCharts); void load() })
-onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defectChart?.dispose() })
+onMounted(() => { void load() })
 </script>
 
 <template>
@@ -94,7 +61,6 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defe
     <div class="dashboard-metrics">
       <article class="dashboard-metric"><span>检验记录总数</span><strong>{{ quality ? quality.totalRecords.toLocaleString() : '—' }}</strong><small>当前权限范围内的已提交记录</small></article>
       <article class="dashboard-metric success"><span>一次合格率</span><strong>{{ quality ? `${quality.firstPassRate.toFixed(2)}%` : '—' }}</strong><small>合格记录数 ÷ 检验记录总数</small></article>
-      <article class="dashboard-metric danger"><span>待检数量</span><strong>{{ summary ? summary.pendingInspectionTasks.toLocaleString() : '—' }}</strong><small>尚未完成的检验任务</small></article>
       <article class="dashboard-metric success"><span>已完成检验</span><strong>{{ summary ? summary.completedInspectionTasks.toLocaleString() : '—' }}</strong><small>累计完成的检验任务</small></article>
     </div>
 
@@ -117,10 +83,6 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defe
       <div class="dashboard-flow-grid"><article><span>待检任务</span><strong>{{ summary?.pendingInspectionTasks ?? '—' }}</strong></article><article class="attention"><span>进行中工单</span><strong>{{ summary?.activeWorkOrders ?? '—' }}</strong></article><article class="good"><span>已完成检验</span><strong>{{ summary?.completedInspectionTasks ?? '—' }}</strong></article><article class="good"><span>一次合格率</span><strong>{{ summary ? `${summary.firstPassRate.toFixed(2)}%` : '—' }}</strong></article></div>
     </el-card>
 
-    <el-card shadow="never" class="content-card dashboard-chart-card dashboard-defect-card">
-      <template #header><div class="dashboard-card-heading"><div><h3>不良缺陷分布</h3><p>按当前权限范围内的不合格检验记录汇总。</p></div><el-button @click="load">刷新看板</el-button></div></template>
-      <div v-if="quality?.defectRanking.length" ref="defectChartRef" class="dashboard-defect-chart" /><el-empty v-else :description="qualityError ? '缺陷数据暂不可用' : '当前暂无不良缺陷数据'" />
-    </el-card>
   </section>
 </template>
 

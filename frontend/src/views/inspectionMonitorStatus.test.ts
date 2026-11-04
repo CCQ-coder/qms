@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { deriveInspectionMonitorStatus, inspectionDeviceOnline, sortInspectionMonitorDevices } from './inspectionMonitorStatus.ts'
+import { deriveInspectionMonitorStatus, inspectionDeviceOnline, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus.ts'
 
 const NOW_MS = Date.parse('2026-10-29T08:00:00.000Z')
 
 test('missing runtime remains 未接入', () => {
   assert.equal(deriveInspectionMonitorStatus(undefined, '2026-10-29T07:59:00.000Z', NOW_MS), '未接入')
+})
+
+test('missing runtime displays equipment ledger status', () => {
+  assert.equal(monitorStatusLabel('未接入', 'IN_USE'), '在用')
+  assert.equal(monitorStatusLabel('未接入', 'MAINTENANCE'), '维护中')
+  assert.equal(monitorStatusLabel('离线', 'IN_USE'), '离线')
 })
 
 test('offline runtime remains 离线 even with recent probe data', () => {

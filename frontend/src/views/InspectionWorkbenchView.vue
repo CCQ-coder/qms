@@ -5,10 +5,10 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
-import { formatDate, formatDateTime, taskTypeText } from '@/utils/display-text'
+import { equipmentStatusTagType, formatDate, formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
-import { deriveInspectionMonitorStatus, inspectionDeviceOnline, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
+import { deriveInspectionMonitorStatus, inspectionDeviceOnline, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
 import { useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
@@ -125,7 +125,7 @@ const monitorDevices = computed<MonitorDevice[]>(() => {
 const monitorPage = ref(1)
 const monitorPageSize = ref(10)
 const pagedMonitorDevices = computed(() => paginateRows(
-  sortInspectionMonitorDevices(monitorDevices.value, deviceStatusLabel), monitorPage.value, monitorPageSize.value))
+  sortInspectionMonitorDevices(monitorDevices.value, deviceMonitorStatus), monitorPage.value, monitorPageSize.value))
 watch(() => monitorDevices.value.length, (count) => {
   monitorPage.value = clampPage(monitorPage.value, count, monitorPageSize.value)
 })
@@ -469,14 +469,19 @@ function deviceOnline(device: MonitorDevice) {
   return inspectionDeviceOnline(device.runtime?.online, device.host?.receivedAt, Date.now(), offlineAfterSeconds.value)
 }
 
-function deviceStatusLabel(device: MonitorDevice) {
+function deviceMonitorStatus(device: MonitorDevice) {
   if (runtimeError.value && !device.host) return '状态不可用'
   return deriveInspectionMonitorStatus(deviceOnline(device), device.probe?.receivedAt)
 }
 
-function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' {
+function deviceStatusLabel(device: MonitorDevice) {
+  return monitorStatusLabel(deviceMonitorStatus(device), device.status)
+}
+
+function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' | 'danger' {
   if (runtimeError.value && !device.host) return 'info'
-  const status = deriveInspectionMonitorStatus(deviceOnline(device), device.probe?.receivedAt)
+  const status = deviceMonitorStatus(device)
+  if (status === '未接入') return equipmentStatusTagType(device.status)
   if (status === '测试中') return 'success'
   return status === '空闲' ? 'warning' : 'info'
 }
@@ -749,7 +754,7 @@ onBeforeUnmount(() => {
             <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；设备上报与已提交 FQC 检验分别统计。</p>
           </div>
           <div v-if="!summaryError" class="shift-summary">
-            <span>FQC 已提交 <strong>{{ fqcTotal }}</strong></span>
+            <span>FQC <strong>{{ fqcTotal }}</strong></span>
             <span>合格 <strong class="good-text">{{ fqcPass }}</strong></span>
             <span>不合格 <strong class="bad-text">{{ fqcFail }}</strong></span>
             <span>一次合格率 <strong class="good-text">{{ fqcPassRate }}%</strong></span>
@@ -772,7 +777,7 @@ onBeforeUnmount(() => {
             <span class="device-card-type">{{ device.assetNo }} · {{ device.equipmentType }}</span>
             <span class="device-task">
               <small>设备状态</small>
-              <b>{{ runtimeError && !device.host ? '读取失败' : deviceOnline(device) ? '在线' : deviceOnline(device) === false ? '离线' : '尚未上报' }}</b>
+              <b>{{ runtimeError && !device.host ? '读取失败' : deviceOnline(device) ? '在线' : deviceOnline(device) === false ? '离线' : statusText(device.status) }}</b>
             </span>
             <span v-if="device.host" class="device-task">
               <small>采集电脑 · {{ device.host.hostName }}</small>
