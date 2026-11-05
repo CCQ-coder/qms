@@ -26,6 +26,16 @@ class GatewayIntegrationAuthenticationTest {
     }
 
     @Test
+    void acceptsEitherConfiguredGatewayToken() {
+        GatewayIntegrationAuthentication authentication = new GatewayIntegrationAuthentication("old-secret, new-secret");
+
+        assertThatCode(() -> authentication.verify("old-secret")).doesNotThrowAnyException();
+        assertThatCode(() -> authentication.verify("new-secret")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> authentication.verify("other-secret"))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
     void isConfiguredReportsBlankToken() {
         assertThat(new GatewayIntegrationAuthentication(" ").isConfigured()).isFalse();
         assertThat(new GatewayIntegrationAuthentication("gateway-secret").isConfigured()).isTrue();
