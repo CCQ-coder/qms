@@ -43,6 +43,7 @@ class EquipmentTelemetryRetentionSchedulerTest {
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbcTemplate, org.mockito.Mockito.times(2)).update(sql.capture(), any(LocalDateTime.class));
         assertThat(sql.getAllValues().getFirst())
+            .contains("event_type <> 'ZHONGBO_TEST_REPORT'")
             .contains("event_type <> 'FLYING_PROBE_TEST_COUNTERS'")
             .contains("EXISTS (SELECT 1 FROM qms_flying_probe_projection")
             .contains("projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = "

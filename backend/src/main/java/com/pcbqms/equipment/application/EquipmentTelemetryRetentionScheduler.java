@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class EquipmentTelemetryRetentionScheduler {
     private static final String DELETE_RAW_SQL = """
         DELETE FROM qms_equipment_telemetry WHERE received_at < ?
+          AND event_type <> 'ZHONGBO_TEST_REPORT'
           AND (event_type <> 'FLYING_PROBE_TEST_COUNTERS'
                OR EXISTS (SELECT 1 FROM qms_flying_probe_projection projection
                           WHERE projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci

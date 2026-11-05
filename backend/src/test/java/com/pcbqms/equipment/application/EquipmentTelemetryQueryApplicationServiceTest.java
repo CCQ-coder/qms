@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -175,6 +177,24 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         assertThat(mockingDetails(telemetryRecordMapper).getInvocations()).singleElement().satisfies(invocation ->
             assertThat(Arrays.asList(invocation.getArguments())).contains("FLYING_PROBE_TEST_COUNTERS")
         );
+    }
+
+    @Test
+    void zhongboHistoryHasNoDefaultRawTelemetryCutoff() {
+        TenantContext.set("customer-b", "admin");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
+
+        new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "ZHONGBO_TEST_REPORT"));
+
+        verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), any(),
+            isNull(), isNull(), eq(21), eq("ZHONGBO_TEST_REPORT"));
     }
 
     @Test

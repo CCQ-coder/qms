@@ -2,7 +2,7 @@ package com.pcbqms.equipment.api;
 
 import java.time.LocalDateTime;
 
-/** Cursor-based query for the short-lived, second-level telemetry stream. */
+/** Cursor-based query for telemetry history; Zhongbo test reports are retained. */
 public record EquipmentTelemetryHistoryQuery(
     String equipmentId,
     LocalDateTime fromTime,

@@ -69,11 +69,12 @@ public class EquipmentTelemetryQueryApplicationService {
             return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit());
         }
         LocalDateTime toTime = query.toTime() == null ? LocalDateTime.now() : query.toTime();
-        LocalDateTime fromTime = query.fromTime() == null ? toTime.minusDays(Math.max(rawRetentionDays, 1)) : query.fromTime();
-        if (fromTime.isAfter(toTime)) {
+        String eventType = StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null;
+        LocalDateTime fromTime = query.fromTime() == null && !"ZHONGBO_TEST_REPORT".equals(eventType)
+            ? toTime.minusDays(Math.max(rawRetentionDays, 1)) : query.fromTime();
+        if (fromTime != null && fromTime.isAfter(toTime)) {
             throw new IllegalArgumentException("遥测历史开始时间不能晚于结束时间");
         }
-        String eventType = StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null;
         boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType);
         Cursor cursor = decodeCursor(query.cursor());
         int pageSize = query.resolvedLimit();
