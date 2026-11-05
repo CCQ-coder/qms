@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { useFlyingProbeHistory } from './useFlyingProbeHistory.ts'
+import { useTelemetryHistory } from './useTelemetryHistory.ts'
 import type { EquipmentTelemetryRecord } from '../types/qms.ts'
 
 function record(id: string): EquipmentTelemetryRecord {
@@ -21,10 +21,10 @@ function record(id: string): EquipmentTelemetryRecord {
 
 test('loads only flying-probe history and exposes its next cursor', async () => {
   const queries: unknown[] = []
-  const history = useFlyingProbeHistory(async (query) => {
+  const history = useTelemetryHistory(async (query) => {
     queries.push(query)
     return { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
-  })
+  }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh()
 
@@ -37,12 +37,12 @@ test('loads only flying-probe history and exposes its next cursor', async () => 
 
 test('appends the next page once and stops when there is no cursor', async () => {
   const queries: unknown[] = []
-  const history = useFlyingProbeHistory(async (query) => {
+  const history = useTelemetryHistory(async (query) => {
     queries.push(query)
     return query.cursor
       ? { items: [record('older')], pageSize: 100 }
       : { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
-  })
+  }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh()
   const newestPageRefreshedAt = history.updatedAt.value
@@ -60,12 +60,12 @@ test('appends the next page once and stops when there is no cursor', async () =>
 
 test('reports failed page loads without replacing previously loaded records', async () => {
   let failNextPage = true
-  const history = useFlyingProbeHistory(async (query) => {
+  const history = useTelemetryHistory(async (query) => {
     if (query.cursor && failNextPage) throw new Error('HTTP 500')
     return query.cursor
       ? { items: [record('older')], pageSize: 100 }
       : { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
-  })
+  }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh()
   await history.loadMore()
@@ -78,4 +78,16 @@ test('reports failed page loads without replacing previously loaded records', as
   await history.loadMore()
   assert.deepEqual(history.records.value.map((item) => item.id), ['newest', 'older'])
   assert.equal(history.error.value, '')
+})
+
+test('loads Zhongbo reports using their own event type', async () => {
+  const queries: unknown[] = []
+  const history = useTelemetryHistory(async (query) => {
+    queries.push(query)
+    return { items: [], pageSize: 100 }
+  }, 'ZHONGBO_TEST_REPORT', '众博信测试报告')
+
+  await history.refresh()
+
+  assert.deepEqual(queries, [{ eventType: 'ZHONGBO_TEST_REPORT', limit: 100 }])
 })

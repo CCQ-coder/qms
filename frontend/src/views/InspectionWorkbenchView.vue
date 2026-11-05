@@ -10,7 +10,7 @@ import { clampPage, paginateRows } from '@/utils/pagination'
 import { formatHostCapacity, formatHostUptime } from '@/utils/host-status'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus'
-import { useFlyingProbeHistory } from './useFlyingProbeHistory'
+import { useTelemetryHistory } from './useTelemetryHistory'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
@@ -49,7 +49,7 @@ const equipmentError = ref('')
 const runtimeError = ref('')
 const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
-const recordSource = ref<'probe' | 'retryable' | 'fqc'>('probe')
+const recordSource = ref<'probe' | 'zhongbo' | 'retryable' | 'fqc'>('probe')
 const canBindFlyingProbe = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? ''))
 const retryableRecords = ref<FlyingProbeRetryableProjection[]>([])
 const retryableTotal = ref(0)
@@ -77,10 +77,22 @@ const {
   updatedAt: flyingProbeUpdatedAt,
   refresh: refreshFlyingProbeRecords,
   loadMore: loadMoreFlyingProbeRecords
-} = useFlyingProbeHistory((query) => qmsApi.listEquipmentTelemetryHistory(query))
+} = useTelemetryHistory((query) => qmsApi.listEquipmentTelemetryHistory(query), 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
+const {
+  records: zhongboReports,
+  nextCursor: zhongboNextCursor,
+  loading: zhongboLoading,
+  loaded: zhongboLoaded,
+  error: zhongboError,
+  updatedAt: zhongboUpdatedAt,
+  refresh: refreshZhongboReports,
+  loadMore: loadMoreZhongboReports
+} = useTelemetryHistory((query) => qmsApi.listEquipmentTelemetryHistory(query), 'ZHONGBO_TEST_REPORT', '众博信测试报告')
 const recordPanelUpdatedAt = computed(() => recordSource.value === 'probe' ? flyingProbeUpdatedAt.value
+  : recordSource.value === 'zhongbo' ? zhongboUpdatedAt.value
   : recordSource.value === 'retryable' ? retryableUpdatedAt.value : finishedRecordsUpdatedAt.value)
 const recordPanelLoading = computed(() => recordSource.value === 'probe' ? flyingProbeLoading.value
+  : recordSource.value === 'zhongbo' ? zhongboLoading.value
   : recordSource.value === 'retryable' ? retryableLoading.value : finishedRecordsLoading.value)
 watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
   activePanel.value = summaryRoute ? 'summary' : panel === 'records' ? 'records' : 'monitor'
@@ -452,14 +464,16 @@ function showPanel(panel: 'monitor' | 'records' | 'tasks') {
   }
 }
 
-function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
+function showRecordSource(source: 'probe' | 'zhongbo' | 'retryable' | 'fqc') {
   recordSource.value = source
   if (source === 'probe' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
+  if (source === 'zhongbo' && !zhongboLoaded.value) void refreshZhongboReports()
   if (source === 'retryable' && !retryableLoaded.value) void loadRetryableProjections(1)
 }
 
 async function refreshRecordPanel() {
   if (recordSource.value === 'probe') await refreshFlyingProbeRecords()
+  else if (recordSource.value === 'zhongbo') await refreshZhongboReports()
   else if (recordSource.value === 'retryable') await loadRetryableProjections()
   else await loadCompletedFinishedRecords()
 }
@@ -836,6 +850,7 @@ onBeforeUnmount(() => {
       </template>
       <div class="task-queue-actions" role="group" aria-label="记录来源">
         <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
+        <el-button :type="recordSource === 'zhongbo' ? 'primary' : 'default'" @click="showRecordSource('zhongbo')">众博信测试报告</el-button>
         <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" @click="showRecordSource('retryable')">全部待匹配</el-button>
         <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
       </div>
@@ -869,6 +884,45 @@ onBeforeUnmount(() => {
           </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
+      </template>
+      <template v-else-if="recordSource === 'zhongbo'">
+        <p class="summary-footnote">展示设备原始测试指标；已测板数和错误板数按上报原值展示，暂不计入 FQC。</p>
+        <el-alert v-if="zhongboError" type="error" :closable="false" :title="zhongboError" style="margin-top: 12px" />
+        <div v-if="zhongboLoaded || zhongboLoading" class="task-queue-toolbar"><span>已加载 {{ zhongboReports.length }} 条众博信测试报告</span></div>
+        <div v-if="zhongboLoaded || zhongboLoading" class="finished-records-table-wrap finished-records-table-wrap--zhongbo">
+          <paged-table v-loading="zhongboLoading" :data="zhongboReports" size="small" empty-text="暂无众博信测试报告">
+            <el-table-column type="expand">
+              <template #default="scope">
+                <el-descriptions :column="3" border size="small">
+                  <el-descriptions-item label="设备标识">{{ scope.row.machineName || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="来源编号">{{ scope.row.sourceRecordNo || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="PortNumber">{{ scope.row.zhongboTestReport?.portNumber || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="生产指令">{{ scope.row.workOrderNo || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="批次">{{ scope.row.batchNo || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="测试总点数">{{ scope.row.zhongboTestReport?.totalPoints ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="开路数">{{ scope.row.zhongboTestReport?.openErrors ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="短路数">{{ scope.row.zhongboTestReport?.shortErrors ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="24 小时产量">{{ scope.row.zhongboTestReport?.counts ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="稼动率原值">{{ scope.row.zhongboTestReport?.utilizationRate ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="测板时长原值">{{ scope.row.zhongboTestReport?.utilizationDuration ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="探针打击数">{{ scope.row.zhongboTestReport?.hit ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="开路阈值">{{ scope.row.zhongboTestReport?.openThresh ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="短路阈值">{{ scope.row.zhongboTestReport?.shortThresh ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="故障码">{{ scope.row.alarmCode || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="故障说明">{{ scope.row.alarmMessage || '—' }}</el-descriptions-item>
+                  <el-descriptions-item label="QMS 接收时间">{{ formatDateTime(scope.row.receivedAt) }}</el-descriptions-item>
+                </el-descriptions>
+              </template>
+            </el-table-column>
+            <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
+            <el-table-column label="料号" width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="已测板数" width="110" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="错误板数" width="110" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.errorTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="设备状态" min-width="120"><template #default="scope">{{ scope.row.status || '—' }}</template></el-table-column>
+          </paged-table>
+        </div>
+        <div v-if="zhongboNextCursor" class="task-queue-toolbar"><span>还有更早的报告</span><el-button :loading="zhongboLoading" @click="loadMoreZhongboReports">加载更多</el-button></div>
       </template>
       <template v-else-if="recordSource === 'retryable' && canBindFlyingProbe">
         <p class="summary-footnote">按飞针文件汇总待匹配快照；原始采集记录过期后，仍可在这里绑定或重试。</p>

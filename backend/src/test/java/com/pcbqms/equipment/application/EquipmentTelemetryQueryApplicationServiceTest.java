@@ -110,6 +110,54 @@ class EquipmentTelemetryQueryApplicationServiceTest {
     }
 
     @Test
+    void convertsEveryZhongboReportFieldWithoutAssumingGoodBadBoardCounts() {
+        TenantContext.set("customer-b", "admin");
+        EquipmentTelemetryRecord record = new EquipmentTelemetryRecord();
+        record.setId("zhongbo-1");
+        record.setEquipmentId("equipment-1");
+        record.setEventType("ZHONGBO_TEST_REPORT");
+        record.setMachineName("0002");
+        record.setEquipmentStatus("PROCESSING");
+        record.setMaterialNo("19250");
+        record.setSourceRecordNo("ZB-1");
+        record.setRawPayload("""
+            {"attributes":{"PortNumber":"19250","PanelsTested":1,"ErrorTested":0,"OpenErrors":0,
+            "ShortErrors":0,"totalPoints":22000,"utilizationRate":8.64,"utilizationDuration":285,
+            "Counts":1,"openThresh":20.0,"shortThresh":30000000.0,"hit":4744}}
+            """);
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        equipment.setAssetNo("ZBX-2");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(telemetryRecordMapper.selectRecentByTenant(eq("customer-b"), anyInt())).thenReturn(List.of(record));
+        when(equipmentMapper.selectById("equipment-1")).thenReturn(equipment);
+
+        var item = new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+        ).listRecent(10).getFirst();
+
+        assertThat(item.zhongboTestReport()).satisfies(report -> {
+            assertThat(report.portNumber()).isEqualTo("19250");
+            assertThat(report.panelsTested()).isEqualTo(1L);
+            assertThat(report.errorTested()).isZero();
+            assertThat(report.openErrors()).isZero();
+            assertThat(report.shortErrors()).isZero();
+            assertThat(report.totalPoints()).isEqualTo(22000L);
+            assertThat(report.utilizationRate()).isEqualByComparingTo("8.64");
+            assertThat(report.utilizationDuration()).isEqualByComparingTo("285");
+            assertThat(report.counts()).isEqualTo(1L);
+            assertThat(report.openThresh()).isEqualByComparingTo("20.0");
+            assertThat(report.shortThresh()).isEqualByComparingTo("30000000.0");
+            assertThat(report.hit()).isEqualTo(4744L);
+        });
+        assertThat(item.goodBoardCount()).isNull();
+        assertThat(item.badBoardCount()).isNull();
+        assertThat(item.rawPayload()).contains("\"PortNumber\":\"19250\"");
+    }
+
+    @Test
     void appliesEventTypeBeforeFetchingAHistoryPage() {
         TenantContext.set("customer-b", "admin");
         Equipment equipment = new Equipment();

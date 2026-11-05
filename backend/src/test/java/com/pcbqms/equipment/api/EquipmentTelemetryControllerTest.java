@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,9 +16,51 @@ import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class EquipmentTelemetryControllerTest {
+    @Test
+    void acceptsAllDocumentedZhongboFields() throws Exception {
+        var service = mock(EquipmentTelemetryApplicationService.class);
+        when(service.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
+        var controller = new EquipmentTelemetryController(
+            mock(GatewayIntegrationAuthentication.class), service, mock(EquipmentTelemetryQueryApplicationService.class)
+        );
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+
+        mvc.perform(post("/api/v1/equipment/telemetry")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"events":[{"username":"probe-user","machineName":"0002","deviceTime":"2026-11-05T15:37:56",
+                    "eventType":"ZHONGBO_TEST_REPORT","status":"PROCESSING","recordNo":"ZB-1","machiningCount":1,
+                    "materialNo":"19250","workOrderNo":"WO-1","batchNo":"B-1","alarmCode":"E-1","alarmMessage":"detail",
+                    "attributes":{"PortNumber":"19250","PanelsTested":1,"ErrorTested":0,"OpenErrors":0,
+                    "ShortErrors":0,"totalPoints":22000,"utilizationRate":8.64,"utilizationDuration":285,
+                    "Counts":1,"openThresh":20.0,"shortThresh":30000000.0,"hit":4744,"vendorStatus":"Run"}}]}
+                    """))
+            .andExpect(status().isOk());
+
+        var captured = ArgumentCaptor.forClass(EquipmentTelemetryRequest.class);
+        verify(service).receive(captured.capture());
+        var event = captured.getValue().events().getFirst();
+        assertThat(event.machineName()).isEqualTo("0002");
+        assertThat(event.username()).isEqualTo("probe-user");
+        assertThat(event.deviceTime().toString()).isEqualTo("2026-11-05T15:37:56");
+        assertThat(event.eventType()).isEqualTo("ZHONGBO_TEST_REPORT");
+        assertThat(event.status()).isEqualTo("PROCESSING");
+        assertThat(event.recordNo()).isEqualTo("ZB-1");
+        assertThat(event.machiningCount()).isEqualTo(1);
+        assertThat(event.materialNo()).isEqualTo("19250");
+        assertThat(event.workOrderNo()).isEqualTo("WO-1");
+        assertThat(event.batchNo()).isEqualTo("B-1");
+        assertThat(event.alarmCode()).isEqualTo("E-1");
+        assertThat(event.alarmMessage()).isEqualTo("detail");
+        assertThat(event.attributes()).containsKeys("PortNumber", "PanelsTested", "ErrorTested", "OpenErrors",
+            "ShortErrors", "totalPoints", "utilizationRate", "utilizationDuration", "Counts", "openThresh",
+            "shortThresh", "hit", "vendorStatus");
+    }
+
     @Test
     void forwardsOptionalEventTypeFromHistoryRequest() throws Exception {
         var queryService = mock(EquipmentTelemetryQueryApplicationService.class);

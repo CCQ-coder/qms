@@ -9,6 +9,7 @@ import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.api.EquipmentTelemetryHistoryPageResponse;
 import com.pcbqms.equipment.api.EquipmentTelemetryHistoryQuery;
 import com.pcbqms.equipment.api.EquipmentTelemetryRecordResponse;
+import com.pcbqms.equipment.api.ZhongboTestReportFields;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
@@ -137,7 +138,26 @@ public class EquipmentTelemetryQueryApplicationService {
                 ? textAttribute(attributes, "legacyScreenText") : record.getAlarmMessage(),
             integerAttribute(attributes, "goodBoardCount"),
             integerAttribute(attributes, "badBoardCount"),
-            projection
+            projection,
+            zhongboTestReport(record, attributes)
+        );
+    }
+
+    private ZhongboTestReportFields zhongboTestReport(EquipmentTelemetryRecord record, JsonNode attributes) {
+        if (!"ZHONGBO_TEST_REPORT".equals(record.getEventType())) return null;
+        return new ZhongboTestReportFields(
+            textAttribute(attributes, "PortNumber"),
+            longAttribute(attributes, "PanelsTested"),
+            longAttribute(attributes, "ErrorTested"),
+            longAttribute(attributes, "OpenErrors"),
+            longAttribute(attributes, "ShortErrors"),
+            longAttribute(attributes, "totalPoints"),
+            decimalAttribute(attributes, "utilizationRate"),
+            decimalAttribute(attributes, "utilizationDuration"),
+            longAttribute(attributes, "Counts"),
+            decimalAttribute(attributes, "openThresh"),
+            decimalAttribute(attributes, "shortThresh"),
+            longAttribute(attributes, "hit")
         );
     }
 
@@ -167,6 +187,12 @@ public class EquipmentTelemetryQueryApplicationService {
         if (attributes == null) return null;
         JsonNode value = attributes.path(name);
         return value.isIntegralNumber() && value.canConvertToInt() ? value.intValue() : null;
+    }
+
+    private Long longAttribute(JsonNode attributes, String name) {
+        if (attributes == null) return null;
+        JsonNode value = attributes.path(name);
+        return value.isIntegralNumber() && value.canConvertToLong() ? value.longValue() : null;
     }
 
     private String encodeCursor(EquipmentTelemetryRecord record, boolean sortByDeviceTime) {

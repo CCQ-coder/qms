@@ -41,7 +41,8 @@ public record EquipmentTelemetryRecordResponse(
     String fqcProjectionStatus,
     String fqcProjectionReason,
     String fqcInspectionRecordId,
-    Integer fqcDeltaTested
+    Integer fqcDeltaTested,
+    ZhongboTestReportFields zhongboTestReport
 ) {
     public static EquipmentTelemetryRecordResponse from(
         EquipmentTelemetryRecord record,
@@ -54,7 +55,8 @@ public record EquipmentTelemetryRecordResponse(
         String screenText,
         Integer goodBoardCount,
         Integer badBoardCount,
-        EquipmentTelemetryProjectionStatus projection
+        EquipmentTelemetryProjectionStatus projection,
+        ZhongboTestReportFields zhongboTestReport
     ) {
         return new EquipmentTelemetryRecordResponse(
             record.getId(), record.getEquipmentId(), equipment.getAssetNo(), equipment.getName(), record.getSourceUsername(),
@@ -67,7 +69,8 @@ public record EquipmentTelemetryRecordResponse(
             projection == null ? null : projection.getStatus(),
             projection == null ? null : projection.getReason(),
             projection == null ? null : projection.getInspectionRecordId(),
-            projection == null ? null : projection.getDeltaTested()
+            projection == null ? null : projection.getDeltaTested(),
+            zhongboTestReport
         );
     }
 }

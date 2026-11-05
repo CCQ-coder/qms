@@ -452,6 +452,20 @@ export type EquipmentTelemetryRecord = {
   fqcProjectionReason?: string | null
   fqcInspectionRecordId?: string | null
   fqcDeltaTested?: number | null
+  zhongboTestReport?: {
+    portNumber?: string | null
+    panelsTested?: number | null
+    errorTested?: number | null
+    openErrors?: number | null
+    shortErrors?: number | null
+    totalPoints?: number | null
+    utilizationRate?: number | null
+    utilizationDuration?: number | null
+    counts?: number | null
+    openThresh?: number | null
+    shortThresh?: number | null
+    hit?: number | null
+  } | null
 }
 
 export type EquipmentTelemetryHistoryQuery = {
