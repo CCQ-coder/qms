@@ -886,7 +886,7 @@ onBeforeUnmount(() => {
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
       </template>
       <template v-else-if="recordSource === 'zhongbo'">
-        <p class="summary-footnote">展示设备原始测试指标；已测板数和错误板数按上报原值展示，暂不计入 FQC。</p>
+        <p class="summary-footnote">展示设备原始测试指标；已测板数和错误板数为当前料号累计值，按上报原值展示，暂不计入 FQC。</p>
         <el-alert v-if="zhongboError" type="error" :closable="false" :title="zhongboError" style="margin-top: 12px" />
         <div v-if="zhongboLoaded || zhongboLoading" class="task-queue-toolbar"><span>已加载 {{ zhongboReports.length }} 条众博信测试报告</span></div>
         <div v-if="zhongboLoaded || zhongboLoading" class="finished-records-table-wrap finished-records-table-wrap--zhongbo">
@@ -917,8 +917,8 @@ onBeforeUnmount(() => {
             <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
             <el-table-column label="料号" width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
-            <el-table-column label="已测板数" width="110" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested ?? '—' }}</template></el-table-column>
-            <el-table-column label="错误板数" width="110" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.errorTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="累计已测板数" width="120" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="累计错误板数" width="120" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.errorTested ?? '—' }}</template></el-table-column>
             <el-table-column label="设备状态" min-width="120"><template #default="scope">{{ scope.row.status || '—' }}</template></el-table-column>
           </paged-table>
         </div>

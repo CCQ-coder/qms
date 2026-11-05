@@ -2,7 +2,7 @@ package com.pcbqms.equipment.api;
 
 import java.math.BigDecimal;
 
-/** Vendor measurements retained as reported; board count semantics are not inferred. */
+/** Vendor measurements retained as reported; board counts accumulate for the current material. */
 public record ZhongboTestReportFields(
     String portNumber,
     Long panelsTested,
