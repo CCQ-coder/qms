@@ -59,6 +59,9 @@ const retryableLoading = ref(false)
 const retryableLoaded = ref(false)
 const retryableError = ref('')
 const retryableUpdatedAt = ref<Date>()
+const probeWorkOrderNo = ref('')
+const probeInternalProductNo = ref('')
+const appliedProbeSearch = ref<{ workOrderNo?: string; internalProductNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection>()
 const bindingKeyword = ref('')
@@ -355,7 +358,7 @@ async function loadRetryableProjections(page = retryablePage.value) {
   retryableLoading.value = true
   retryableError.value = ''
   try {
-    const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize)
+    const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize, appliedProbeSearch.value)
     retryableRecords.value = result.records
     retryableTotal.value = result.total
     retryablePage.value = result.page
@@ -455,9 +458,22 @@ function showPanel(panel: 'monitor' | 'records' | 'tasks') {
 }
 
 function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
+  if (recordPanelLoading.value) return
   recordSource.value = source
-  if (source === 'probe' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
-  if (source === 'retryable' && !retryableLoaded.value) void loadRetryableProjections(1)
+  if (source === 'probe') void refreshFlyingProbeRecords(appliedProbeSearch.value)
+  if (source === 'retryable') void loadRetryableProjections(1)
+}
+
+function searchProbeRecords() {
+  if (recordPanelLoading.value) return
+  const workOrderNo = probeWorkOrderNo.value.trim()
+  const internalProductNo = probeInternalProductNo.value.trim()
+  appliedProbeSearch.value = {
+    ...(workOrderNo ? { workOrderNo } : {}),
+    ...(internalProductNo ? { internalProductNo } : {})
+  }
+  if (recordSource.value === 'retryable') void loadRetryableProjections(1)
+  else void refreshFlyingProbeRecords(appliedProbeSearch.value)
 }
 
 async function refreshRecordPanel() {
@@ -818,22 +834,31 @@ onBeforeUnmount(() => {
         </div>
       </template>
       <div class="task-queue-actions" role="group" aria-label="记录来源">
-        <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
-        <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" @click="showRecordSource('retryable')">全部待匹配</el-button>
+        <el-button :type="recordSource !== 'fqc' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
         <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
+      </div>
+      <div v-if="recordSource !== 'fqc'" class="probe-record-filters">
+        <div class="task-queue-actions" role="group" aria-label="匹配状态">
+          <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('probe')">全部记录</el-button>
+          <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('retryable')">未匹配</el-button>
+        </div>
+        <el-input v-model="probeWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchProbeRecords" />
+        <el-input v-model="probeInternalProductNo" clearable placeholder="搜索厂内编号" aria-label="搜索厂内编号" @keyup.enter="searchProbeRecords" />
+        <el-button type="primary" :disabled="recordPanelLoading" @click="searchProbeRecords">查询</el-button>
       </div>
       <template v-if="recordSource === 'probe'">
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
           <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
-            <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
-            <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
-            <el-table-column label="料号" width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
-            <el-table-column label="已测" width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
-            <el-table-column label="好板" width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
-            <el-table-column label="坏板" width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
-            <el-table-column label="实时合格率" width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
+            <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
+            <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="厂内编号" min-width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="已测" min-width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
+            <el-table-column label="好板" min-width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="坏板" min-width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="实时合格率" min-width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
           </paged-table>
         </div>
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
@@ -845,10 +870,9 @@ onBeforeUnmount(() => {
           <el-table v-loading="retryableLoading" :data="retryableRecords" size="small" empty-text="暂无待匹配飞针文件">
             <el-table-column label="设备检测时间" width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
             <el-table-column label="检测设备" width="135" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
-            <el-table-column label="料号" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.materialNo || '—' }}</template></el-table-column>
-            <el-table-column label="来源文件" min-width="190" show-overflow-tooltip><template #default="{ row }">{{ row.sourceFile || '—' }}</template></el-table-column>
+            <el-table-column label="生产指令" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="厂内编号" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="待匹配原因" min-width="280" show-overflow-tooltip><template #default="{ row }">{{ row.reason || '—' }}</template></el-table-column>
-            <el-table-column label="已有工单" width="145"><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openBindingDialog(row)">{{ row.workOrderNo ? '重试处理' : '手动绑定' }}</el-button></template></el-table-column>
           </el-table>
         </div>
@@ -873,8 +897,6 @@ onBeforeUnmount(() => {
             <el-table-column prop="goodQuantity" label="良品" min-width="90" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodQuantity }}</span></template></el-table-column>
             <el-table-column prop="defectiveQuantity" label="不良" min-width="90" align="right"><template #default="scope"><span :class="{ 'bad-text': scope.row.defectiveQuantity > 0 }">{{ scope.row.defectiveQuantity }}</span></template></el-table-column>
             <el-table-column label="结果" min-width="90"><template #default="scope"><el-tag :type="scope.row.verdict === 'PASS' ? 'success' : 'danger'">{{ scope.row.verdict }}</el-tag></template></el-table-column>
-            <el-table-column prop="defectSummary" label="缺陷说明" min-width="180"><template #default="scope">{{ scope.row.defectSummary || '—' }}</template></el-table-column>
-            <el-table-column prop="inspectedBy" label="检验员" min-width="110"><template #default="scope">{{ scope.row.inspectedBy || '—' }}</template></el-table-column>
           </paged-table>
         </div>
         <div v-if="finishedRecordsNextCursor" class="task-queue-toolbar"><span>还有更早的 FQC 检验记录</span><el-button :loading="finishedRecordsLoading" @click="loadCompletedFinishedRecords(finishedRecordsNextCursor)">加载更多</el-button></div>

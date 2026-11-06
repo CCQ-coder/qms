@@ -16,13 +16,14 @@ export function useFlyingProbeHistory(
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
+  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = {}
 
   async function load(cursor?: string) {
     if (loading.value) return
     loading.value = true
     error.value = ''
     try {
-      const page = await fetchPage({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, ...(cursor ? { cursor } : {}) })
+      const page = await fetchPage({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, ...search, ...(cursor ? { cursor } : {}) })
       records.value = cursor ? [...records.value, ...page.items] : page.items
       nextCursor.value = page.nextCursor
       loaded.value = true
@@ -36,7 +37,10 @@ export function useFlyingProbeHistory(
 
   return {
     records, nextCursor, loading, loaded, error, updatedAt,
-    refresh: () => load(),
+    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = search) => {
+      search = filters
+      return load()
+    },
     loadMore: () => nextCursor.value ? load(nextCursor.value) : Promise.resolve()
   }
 }

@@ -89,7 +89,9 @@ public class EquipmentTelemetryQueryApplicationService {
             cursor == null ? null : cursor.time(),
             cursor == null ? null : cursor.id(),
             pageSize + 1,
-            eventType
+            eventType,
+            StringUtils.hasText(query.workOrderNo()) ? query.workOrderNo().trim() : null,
+            StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null
         );
         boolean hasMore = rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;

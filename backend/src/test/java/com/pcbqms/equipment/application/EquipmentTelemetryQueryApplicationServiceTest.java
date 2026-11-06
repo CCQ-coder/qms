@@ -123,10 +123,12 @@ class EquipmentTelemetryQueryApplicationServiceTest {
 
         new EquipmentTelemetryQueryApplicationService(
             telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
-        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "FLYING_PROBE_TEST_COUNTERS"));
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20,
+            "FLYING_PROBE_TEST_COUNTERS", " 26100985 ", " P2L018680B "));
 
         assertThat(mockingDetails(telemetryRecordMapper).getInvocations()).singleElement().satisfies(invocation ->
-            assertThat(Arrays.asList(invocation.getArguments())).contains("FLYING_PROBE_TEST_COUNTERS")
+            assertThat(Arrays.asList(invocation.getArguments()))
+                .contains("FLYING_PROBE_TEST_COUNTERS", "26100985", "P2L018680B")
         );
     }
 
@@ -152,13 +154,13 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"))).thenReturn(List.of(latest, older));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any())).thenReturn(List.of(latest, older));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-latest")))
             .thenReturn(List.of());
 
         var page = new EquipmentTelemetryQueryApplicationService(
             telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
-        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 1, "FLYING_PROBE_TEST_COUNTERS"));
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 1, "FLYING_PROBE_TEST_COUNTERS", null, null));
 
         String cursor = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
         assertThat(cursor).startsWith("2026-11-01T09:00");
@@ -177,7 +179,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         new EquipmentTelemetryQueryApplicationService(
             telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper()
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null,
-            LocalDateTime.of(2024, 1, 1, 0, 0), null, null, 20, "FLYING_PROBE_TEST_COUNTERS"));
+            LocalDateTime.of(2024, 1, 1, 0, 0), null, null, 20, "FLYING_PROBE_TEST_COUNTERS", null, null));
 
         assertThat(mockingDetails(telemetryRecordMapper).getInvocations()).singleElement().satisfies(invocation ->
             assertThat(invocation.getArguments()[3]).isEqualTo(FinishedTestDataWindow.START));
@@ -204,13 +206,13 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"))).thenReturn(List.of(record));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any())).thenReturn(List.of(record));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("telemetry-1")))
             .thenReturn(List.of(projection));
 
         var page = new EquipmentTelemetryQueryApplicationService(
             telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
-        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "FLYING_PROBE_TEST_COUNTERS"));
+        ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "FLYING_PROBE_TEST_COUNTERS", null, null));
 
         assertThat(page.items()).singleElement().satisfies(item -> {
             assertThat(item.fqcProjectionStatus()).isEqualTo("RETRYABLE");

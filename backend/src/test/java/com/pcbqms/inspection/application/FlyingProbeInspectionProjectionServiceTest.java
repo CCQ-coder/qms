@@ -144,15 +144,28 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START)).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L))
+        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START, null, null)).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L, null, null))
             .thenReturn(List.of(record));
 
-        var page = service().listRetryable(1, 50);
+        var page = service().listRetryable(1, 50, null, null);
 
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.records()).extracting(FlyingProbeRetryableRecordResponse::getId)
             .containsExactly("old-telemetry");
+    }
+
+    @Test
+    void searchesRetryableFilesAcrossAllPagesUsingBothFields() {
+        TenantContext.set("tenant-a", "supervisor");
+        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START,
+            "26100985", "P2L018680B")).thenReturn(1L);
+
+        var page = service().listRetryable(1, 50, " 26100985 ", " P2L018680B ");
+
+        assertThat(page.total()).isEqualTo(1);
+        verify(projectionMapper).selectRetryableGroups("tenant-a", FinishedTestDataWindow.START,
+            50, 0L, "26100985", "P2L018680B");
     }
 
     @Test

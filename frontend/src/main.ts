@@ -24,6 +24,7 @@ import {
   ElOption,
   ElPagination,
   ElProgress,
+  ElRadio,
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
@@ -63,7 +64,7 @@ async function bootstrap() {
   for (const component of [
     ElAlert, ElAside, ElButton, ElCard, ElCheckbox, ElContainer, ElDatePicker, ElDescriptions, ElDialog, ElDivider, ElEmpty,
     ElForm, ElFormItem, ElHeader, ElIcon, ElInput, ElInputNumber, ElMain, ElMenu, ElMenuItem, ElOption, ElProgress,
-    ElPagination, ElRadioButton, ElRadioGroup, ElSelect, ElSwitch, ElTabPane, ElTable, ElTableColumn, ElTabs, ElTag, ElUpload
+    ElPagination, ElRadio, ElRadioButton, ElRadioGroup, ElSelect, ElSwitch, ElTabPane, ElTable, ElTableColumn, ElTabs, ElTag, ElUpload
   ]) {
     app.use(component)
   }

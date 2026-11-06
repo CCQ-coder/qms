@@ -28,12 +28,16 @@ class EquipmentTelemetryControllerTest {
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 
         mvc.perform(get("/api/v1/equipment/telemetry/history")
-                .param("eventType", "FLYING_PROBE_TEST_COUNTERS"))
+                .param("eventType", "FLYING_PROBE_TEST_COUNTERS")
+                .param("workOrderNo", "26100985")
+                .param("internalProductNo", "P2L018680B"))
             .andExpect(status().isOk());
 
         var query = ArgumentCaptor.forClass(EquipmentTelemetryHistoryQuery.class);
         verify(queryService).pageHistory(query.capture());
         var json = new ObjectMapper().findAndRegisterModules().valueToTree(query.getValue());
         assertThat(json.path("eventType").asText()).isEqualTo("FLYING_PROBE_TEST_COUNTERS");
+        assertThat(json.path("workOrderNo").asText()).isEqualTo("26100985");
+        assertThat(json.path("internalProductNo").asText()).isEqualTo("P2L018680B");
     }
 }

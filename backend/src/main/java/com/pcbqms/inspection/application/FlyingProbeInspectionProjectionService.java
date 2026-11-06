@@ -80,15 +80,21 @@ public class FlyingProbeInspectionProjectionService {
         }
     }
 
-    public FlyingProbeRetryablePageResponse listRetryable(Integer requestedPage, Integer requestedPageSize) {
+    public FlyingProbeRetryablePageResponse listRetryable(
+        Integer requestedPage, Integer requestedPageSize, String requestedWorkOrderNo, String requestedInternalProductNo
+    ) {
         accessScopeService.requireSupervisorOrAdministrator();
         long page = requestedPage == null ? 1 : Math.max(1, requestedPage);
         int pageSize = requestedPageSize == null ? 50 : Math.clamp(requestedPageSize, 10, 100);
         String tenantCode = TenantContext.tenantCode();
-        long total = projectionMapper.countRetryableGroups(tenantCode, FinishedTestDataWindow.START);
+        String workOrderNo = StringUtils.hasText(requestedWorkOrderNo) ? requestedWorkOrderNo.trim() : null;
+        String internalProductNo = StringUtils.hasText(requestedInternalProductNo) ? requestedInternalProductNo.trim() : null;
+        long total = projectionMapper.countRetryableGroups(
+            tenantCode, FinishedTestDataWindow.START, workOrderNo, internalProductNo);
         long offset = (page - 1) * pageSize;
         List<FlyingProbeRetryableRecordResponse> records = offset < total
-            ? projectionMapper.selectRetryableGroups(tenantCode, FinishedTestDataWindow.START, pageSize, offset)
+            ? projectionMapper.selectRetryableGroups(
+                tenantCode, FinishedTestDataWindow.START, pageSize, offset, workOrderNo, internalProductNo)
             : List.of();
         return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
     }

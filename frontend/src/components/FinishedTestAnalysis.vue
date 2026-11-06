@@ -9,8 +9,8 @@ import { qmsApi } from '@/api/qms'
 import type { FinishedTestAnalysis, FinishedTestGroupMetric } from '@/types/qms'
 
 type Dimension = 'date' | 'workOrder' | 'material' | 'equipment'
-const props = withDefaults(defineProps<{ initialDimension?: Dimension, showTrend?: boolean }>(), {
-  initialDimension: 'date', showTrend: false
+const props = withDefaults(defineProps<{ initialDimension?: Dimension, showTrend?: boolean, hideUnknownQuantity?: boolean }>(), {
+  initialDimension: 'date', showTrend: false, hideUnknownQuantity: false
 })
 const dimension = ref<Dimension>(props.initialDimension)
 const dateRange = ref<string[]>([])
@@ -127,12 +127,12 @@ onBeforeUnmount(() => { requestVersion++; window.removeEventListener('resize', r
       </div>
     </el-card>
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
-    <div class="metric-grid finished-analysis-metrics">
+    <div class="metric-grid finished-analysis-metrics" :class="{ 'four-columns': hideUnknownQuantity }">
       <article class="metric-card"><span>已测板数</span><strong>{{ analysis.totalBoards }}</strong></article>
       <article class="metric-card success"><span>好板</span><strong>{{ analysis.goodBoards }}</strong></article>
       <article class="metric-card warning"><span>坏板</span><strong>{{ analysis.badBoards }}</strong></article>
       <article class="metric-card success"><span>板数合格率</span><strong>{{ analysis.totalBoards ? `${analysis.passRate}%` : '—' }}</strong></article>
-      <article class="metric-card"><span>无数量记录</span><strong>{{ analysis.unknownQuantityRecords }}</strong></article>
+      <article v-if="!hideUnknownQuantity" class="metric-card"><span>无数量记录</span><strong>{{ analysis.unknownQuantityRecords }}</strong></article>
     </div>
     <el-card v-if="showTrend" shadow="never" class="content-card">
       <template #header><div class="card-header"><span>质量趋势</span></div></template>
@@ -159,7 +159,7 @@ onBeforeUnmount(() => { requestVersion++; window.removeEventListener('resize', r
         <el-table-column prop="badBoards" label="坏板" min-width="100" align="right" />
         <el-table-column label="板数合格率" min-width="150"><template #default="{ row }"><el-progress v-if="row.totalBoards" :percentage="row.passRate" :stroke-width="9" /><span v-else>—</span></template></el-table-column>
         <el-table-column prop="recordCount" label="记录数" min-width="90" align="right" />
-        <el-table-column prop="unknownQuantityRecords" label="无数量记录" min-width="110" align="right" />
+        <el-table-column v-if="!hideUnknownQuantity" prop="unknownQuantityRecords" label="无数量记录" min-width="110" align="right" />
       </paged-table>
     </el-card>
   </div>
@@ -168,6 +168,7 @@ onBeforeUnmount(() => { requestVersion++; window.removeEventListener('resize', r
 <style scoped>
 .finished-analysis { display: grid; gap: 16px; }
 .finished-analysis-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.finished-analysis-metrics.four-columns { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .finished-analysis-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-@media (max-width: 900px) { .finished-analysis-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .finished-analysis-metrics, .finished-analysis-metrics.four-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

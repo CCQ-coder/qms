@@ -5,6 +5,11 @@ spring:
     url: ${SOURCE_DB_URL:jdbc:mysql://localhost:3306/customer_erp?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
     username: ${SOURCE_DB_USERNAME:readonly_qms}
     password: ${SOURCE_DB_PASSWORD:change-me}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 0
+      idle-timeout: 600000
+      leak-detection-threshold: 120000
 
 management:
   endpoints:

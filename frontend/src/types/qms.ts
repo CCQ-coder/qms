@@ -457,6 +457,8 @@ export type EquipmentTelemetryRecord = {
 export type EquipmentTelemetryHistoryQuery = {
   equipmentId?: string
   eventType?: string
+  workOrderNo?: string
+  internalProductNo?: string
   fromTime?: string
   toTime?: string
   cursor?: string

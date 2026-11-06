@@ -29,7 +29,7 @@ async function searchTrace() {
 
 <template>
   <section class="page-stack">
-    <FinishedTestAnalysis v-if="isAnalyticsPage" initial-dimension="workOrder" show-trend />
+    <FinishedTestAnalysis v-if="isAnalyticsPage" initial-dimension="workOrder" show-trend hide-unknown-quantity />
     <section v-else>
       <el-card shadow="never" class="content-card">
         <template #header><div class="card-header"><span>生产批次质量追溯</span><div class="trace-search"><el-input v-model="batchNo" placeholder="输入生产批次" @keyup.enter="searchTrace" /><el-button type="primary" :loading="traceLoading" @click="searchTrace">追溯查询</el-button></div></div></template>

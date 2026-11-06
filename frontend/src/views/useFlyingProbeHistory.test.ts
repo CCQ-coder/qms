@@ -85,3 +85,21 @@ test('reports failed page loads without replacing previously loaded records', as
   assert.deepEqual(history.records.value.map((item) => item.id), ['newest', 'older'])
   assert.equal(history.error.value, '')
 })
+
+test('keeps production order and internal number search across history pages', async () => {
+  const queries: unknown[] = []
+  const history = useFlyingProbeHistory(async (query) => {
+    queries.push(query)
+    return query.cursor
+      ? { items: [record('older')], pageSize: 100 }
+      : { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
+  })
+
+  await history.refresh({ workOrderNo: 'WO-123', internalProductNo: 'P2L018680B' })
+  await history.loadMore()
+
+  assert.deepEqual(queries, [
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, workOrderNo: 'WO-123', internalProductNo: 'P2L018680B' },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, workOrderNo: 'WO-123', internalProductNo: 'P2L018680B', cursor: 'older-page' }
+  ])
+})
