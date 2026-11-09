@@ -7,7 +7,7 @@ export function monitorStatusLabel(status: InspectionMonitorStatus | '状态不�
   return status === '未接入' ? statusText(equipmentStatus) : status
 }
 
-const STATUS_PRIORITY = { 测试中: 0, 空闲: 1, 离线: 2, 未接入: 3, 状态不可用: 4 } as const
+const STATUS_PRIORITY = { 测试中: 0, 空闲: 1, 未接入: 2, 离线: 3, 状态不可用: 4 } as const
 
 export function sortInspectionMonitorDevices<T extends { status: string }>(
   devices: readonly T[],

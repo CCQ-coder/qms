@@ -79,7 +79,7 @@ test('device priority keeps the default order within each status', () => {
   ] as const
 
   assert.deepEqual(sortInspectionMonitorDevices(devices, (device) => device.monitorStatus).map((device) => device.id),
-    ['testing-1', 'testing-2', 'online-1', 'online-2', 'offline-1', 'offline-2', 'missing'])
+    ['testing-1', 'testing-2', 'online-1', 'online-2', 'missing', 'offline-1', 'offline-2'])
   assert.equal(devices[0].id, 'offline-1')
 })
 
@@ -91,4 +91,15 @@ test('in-use equipment appears on the first page ahead of maintenance equipment 
 
   const sorted = sortInspectionMonitorDevices(devices, (device) => device.monitorStatus)
   assert.deepEqual(paginateRows(sorted, 1, 1).map((device) => device.id), ['in-use'])
+})
+
+test('in-use equipment without a heartbeat appears on the first page ahead of offline equipment', () => {
+  const devices = Array.from({ length: 10 }, (_, index) => ({
+    id: `offline-${index}`,
+    status: 'IN_USE',
+    monitorStatus: '离线'
+  })).concat([{ id: 'in-use', status: 'IN_USE', monitorStatus: '未接入' }])
+
+  const sorted = sortInspectionMonitorDevices(devices, (device) => device.monitorStatus as '离线' | '未接入')
+  assert.equal(paginateRows(sorted, 1, 10)[0].id, 'in-use')
 })
