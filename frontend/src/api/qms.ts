@@ -315,9 +315,9 @@ export const qmsApi = {
     return data.data
   },
 
-  async listRetryableFlyingProbeProjections(page = 1, pageSize = 50) {
+  async listRetryableFlyingProbeProjections(page = 1, pageSize = 50, search: { workOrderNo?: string; internalProductNo?: string } = {}) {
     const { data } = await http.get<ApiResponse<FlyingProbeRetryableProjectionPage>>(
-      '/api/v1/inspection/flying-probe-projections/retryable', { params: { page, pageSize } }
+      '/api/v1/inspection/flying-probe-projections/retryable', { params: { page, pageSize, ...search } }
     )
     return data.data
   },

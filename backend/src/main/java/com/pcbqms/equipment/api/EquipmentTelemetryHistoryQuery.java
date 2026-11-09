@@ -9,7 +9,9 @@ public record EquipmentTelemetryHistoryQuery(
     LocalDateTime toTime,
     String cursor,
     Integer limit,
-    String eventType
+    String eventType,
+    String workOrderNo,
+    String internalProductNo
 ) {
     public int resolvedLimit() {
         int requested = limit == null ? 100 : limit;

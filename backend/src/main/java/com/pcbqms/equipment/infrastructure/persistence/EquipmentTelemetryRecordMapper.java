@@ -61,6 +61,12 @@ public interface EquipmentTelemetryRecordMapper {
         <if test="eventType != null">
             AND event_type = #{eventType}
         </if>
+        <if test="workOrderNo != null">
+            AND work_order_no LIKE CONCAT('%', #{workOrderNo}, '%')
+        </if>
+        <if test="internalProductNo != null">
+            AND material_no LIKE CONCAT('%', #{internalProductNo}, '%')
+        </if>
         <if test="equipmentId != null and equipmentId != ''">
             AND equipment_id = #{equipmentId}
         </if>
@@ -108,7 +114,9 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("cursorTime") LocalDateTime cursorTime,
         @Param("cursorId") String cursorId,
         @Param("limit") int limit,
-        @Param("eventType") String eventType
+        @Param("eventType") String eventType,
+        @Param("workOrderNo") String workOrderNo,
+        @Param("internalProductNo") String internalProductNo
     );
 
     @Select("""

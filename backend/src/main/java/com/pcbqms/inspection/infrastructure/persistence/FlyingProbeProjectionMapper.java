@@ -15,6 +15,7 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface FlyingProbeProjectionMapper {
     @Select("""
+        <script>
         WITH ranked AS (
             SELECT telemetry_id, tenant_code, equipment_id, machine_name, material_no, device_time,
                    source_file, source_start_time, reason, run_key, work_order_no,
@@ -34,18 +35,43 @@ public interface FlyingProbeProjectionMapper {
             AND e.tenant_code = p.tenant_code COLLATE utf8mb4_0900_ai_ci
         LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
         WHERE p.row_no = 1
+        <if test="internalProductNo != null">
+            AND p.material_no LIKE CONCAT('%', #{internalProductNo}, '%')
+        </if>
+        <if test="workOrderNo != null">
+            AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
+        </if>
         ORDER BY p.latest_device_time DESC, p.telemetry_id DESC
         LIMIT #{pageSize} OFFSET #{offset}
+        </script>
         """)
     List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
-        @Param("tenantCode") String tenantCode, @Param("pageSize") int pageSize, @Param("offset") long offset);
+        @Param("tenantCode") String tenantCode, @Param("pageSize") int pageSize, @Param("offset") long offset,
+        @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo);
 
     @Select("""
-        SELECT COUNT(DISTINCT COALESCE(run_key, telemetry_id))
-        FROM qms_flying_probe_projection
-        WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+        <script>
+        WITH ranked AS (
+            SELECT tenant_code, telemetry_id, run_key, material_no, work_order_no,
+                   ROW_NUMBER() OVER (PARTITION BY COALESCE(run_key, telemetry_id)
+                       ORDER BY device_time, received_at, telemetry_id) AS row_no
+            FROM qms_flying_probe_projection
+            WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+        )
+        SELECT COUNT(*) FROM ranked p
+        LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
+        WHERE p.row_no = 1
+        <if test="internalProductNo != null">
+            AND p.material_no LIKE CONCAT('%', #{internalProductNo}, '%')
+        </if>
+        <if test="workOrderNo != null">
+            AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
+        </if>
+        </script>
         """)
-    long countRetryableGroups(@Param("tenantCode") String tenantCode);
+    long countRetryableGroups(@Param("tenantCode") String tenantCode,
+                              @Param("workOrderNo") String workOrderNo,
+                              @Param("internalProductNo") String internalProductNo);
 
     @Select("""
         SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.machine_name,

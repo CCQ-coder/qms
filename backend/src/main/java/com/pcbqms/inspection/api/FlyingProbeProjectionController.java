@@ -22,9 +22,11 @@ public class FlyingProbeProjectionController {
 
     @GetMapping("/retryable")
     public ApiResponse<FlyingProbeRetryablePageResponse> listRetryable(
-        @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize
+        @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
+        @RequestParam(required = false) String workOrderNo,
+        @RequestParam(required = false) String internalProductNo
     ) {
-        return ApiResponse.of(projectionService.listRetryable(page, pageSize));
+        return ApiResponse.of(projectionService.listRetryable(page, pageSize, workOrderNo, internalProductNo));
     }
 
     @PostMapping("/{telemetryId}/bind-work-order")

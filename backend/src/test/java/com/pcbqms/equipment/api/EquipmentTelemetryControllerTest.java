@@ -62,7 +62,7 @@ class EquipmentTelemetryControllerTest {
     }
 
     @Test
-    void forwardsOptionalEventTypeFromHistoryRequest() throws Exception {
+    void forwardsHistoryEventTypeAndSearchFilters() throws Exception {
         var queryService = mock(EquipmentTelemetryQueryApplicationService.class);
         when(queryService.pageHistory(any())).thenReturn(new EquipmentTelemetryHistoryPageResponse(List.of(), null, 100));
         var controller = new EquipmentTelemetryController(
@@ -71,12 +71,16 @@ class EquipmentTelemetryControllerTest {
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 
         mvc.perform(get("/api/v1/equipment/telemetry/history")
-                .param("eventType", "FLYING_PROBE_TEST_COUNTERS"))
+                .param("eventType", "FLYING_PROBE_TEST_COUNTERS")
+                .param("workOrderNo", "WO-1")
+                .param("internalProductNo", "02PT42777A01"))
             .andExpect(status().isOk());
 
         var query = ArgumentCaptor.forClass(EquipmentTelemetryHistoryQuery.class);
         verify(queryService).pageHistory(query.capture());
         var json = new ObjectMapper().findAndRegisterModules().valueToTree(query.getValue());
         assertThat(json.path("eventType").asText()).isEqualTo("FLYING_PROBE_TEST_COUNTERS");
+        assertThat(json.path("workOrderNo").asText()).isEqualTo("WO-1");
+        assertThat(json.path("internalProductNo").asText()).isEqualTo("02PT42777A01");
     }
 }

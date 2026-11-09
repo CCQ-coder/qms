@@ -23,12 +23,26 @@ class EquipmentTelemetryRecordMapperSqlTest {
         assertThat(sql).contains("received_at < ?", "received_at = ?", "ORDER BY received_at DESC, id DESC");
     }
 
+    @Test
+    void historyFiltersByProductionOrderAndInternalProductNumber() {
+        String sql = historySql("FLYING_PROBE_TEST_COUNTERS", "WO-1", "02PT42777A01");
+
+        assertThat(sql).contains("work_order_no LIKE CONCAT('%', ?, '%')",
+            "material_no LIKE CONCAT('%', ?, '%')");
+    }
+
     private String historySql(String eventType) {
+        return historySql(eventType, null, null);
+    }
+
+    private String historySql(String eventType, String workOrderNo, String internalProductNo) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("tenantCode", "customer-b");
         parameters.put("eventType", eventType);
+        parameters.put("workOrderNo", workOrderNo);
+        parameters.put("internalProductNo", internalProductNo);
         parameters.put("cursorTime", LocalDateTime.of(2026, 11, 1, 9, 0));
         parameters.put("cursorId", "probe-1");
         parameters.put("limit", 100);

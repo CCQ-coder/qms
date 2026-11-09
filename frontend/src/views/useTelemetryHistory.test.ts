@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { useTelemetryHistory } from './useTelemetryHistory.ts'
+import { flyingProbePassRate, useTelemetryHistory } from './useTelemetryHistory.ts'
 import type { EquipmentTelemetryRecord } from '../types/qms.ts'
 
 function record(id: string): EquipmentTelemetryRecord {
@@ -18,6 +18,12 @@ function record(id: string): EquipmentTelemetryRecord {
     badBoardCount: 1
   }
 }
+
+test('shows pass rate only when both tested and good counts are available', () => {
+  assert.equal(flyingProbePassRate({ ...record('a'), machiningCount: 17, goodBoardCount: 13 }), '76.47%')
+  assert.equal(flyingProbePassRate({ ...record('b'), machiningCount: 0 }), '—')
+  assert.equal(flyingProbePassRate({ ...record('c'), goodBoardCount: undefined }), '—')
+})
 
 test('loads only flying-probe history and exposes its next cursor', async () => {
   const queries: unknown[] = []
@@ -90,4 +96,22 @@ test('loads Zhongbo reports using their own event type', async () => {
   await history.refresh()
 
   assert.deepEqual(queries, [{ eventType: 'ZHONGBO_TEST_REPORT', limit: 100 }])
+})
+
+test('keeps production order and product filters across flying-probe pages', async () => {
+  const queries: unknown[] = []
+  const history = useTelemetryHistory(async (query) => {
+    queries.push(query)
+    return query.cursor
+      ? { items: [], pageSize: 100 }
+      : { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
+  }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
+
+  await history.refresh({ workOrderNo: 'WO-1', internalProductNo: '02PT42777A01' })
+  await history.loadMore()
+
+  assert.deepEqual(queries, [
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, workOrderNo: 'WO-1', internalProductNo: '02PT42777A01' },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, workOrderNo: 'WO-1', internalProductNo: '02PT42777A01', cursor: 'older-page' }
+  ])
 })

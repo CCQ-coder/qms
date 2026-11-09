@@ -146,10 +146,10 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a")).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L)).thenReturn(List.of(record));
+        when(projectionMapper.countRetryableGroups("tenant-a", null, null)).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L, null, null)).thenReturn(List.of(record));
 
-        var page = service().listRetryable(1, 50);
+        var page = service().listRetryable(1, 50, null, null);
 
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.records()).extracting(FlyingProbeRetryableRecordResponse::getId)
