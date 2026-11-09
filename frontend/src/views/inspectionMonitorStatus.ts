@@ -9,11 +9,16 @@ export function monitorStatusLabel(status: InspectionMonitorStatus | '状态不�
 
 const STATUS_PRIORITY = { 测试中: 0, 空闲: 1, 离线: 2, 未接入: 3, 状态不可用: 4 } as const
 
-export function sortInspectionMonitorDevices<T>(
+export function sortInspectionMonitorDevices<T extends { status: string }>(
   devices: readonly T[],
   statusOf: (device: T) => InspectionMonitorStatus | '状态不可用'
 ): T[] {
-  return [...devices].sort((left, right) => STATUS_PRIORITY[statusOf(left)] - STATUS_PRIORITY[statusOf(right)])
+  return [...devices].sort((left, right) => {
+    const leftInUse = left.status === 'IN_USE'
+    const rightInUse = right.status === 'IN_USE'
+    if (leftInUse !== rightInUse) return leftInUse ? -1 : 1
+    return STATUS_PRIORITY[statusOf(left)] - STATUS_PRIORITY[statusOf(right)]
+  })
 }
 
 const ACTIVE_WINDOW_MS = 7 * 60 * 1000

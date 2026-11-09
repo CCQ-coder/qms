@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { paginateRows } from '../utils/pagination.ts'
 import { deriveInspectionMonitorStatus, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus.ts'
 
 const NOW_MS = Date.parse('2026-10-29T08:00:00.000Z')
@@ -68,16 +69,26 @@ test('online computer with an invalid probe timestamp is 空闲', () => {
 
 test('device priority keeps the default order within each status', () => {
   const devices = [
-    { id: 'offline-1', status: '离线' },
-    { id: 'online-1', status: '空闲' },
-    { id: 'testing-1', status: '测试中' },
-    { id: 'online-2', status: '空闲' },
-    { id: 'testing-2', status: '测试中' },
-    { id: 'offline-2', status: '离线' },
-    { id: 'missing', status: '未接入' }
+    { id: 'offline-1', status: 'IN_USE', monitorStatus: '离线' },
+    { id: 'online-1', status: 'IN_USE', monitorStatus: '空闲' },
+    { id: 'testing-1', status: 'IN_USE', monitorStatus: '测试中' },
+    { id: 'online-2', status: 'IN_USE', monitorStatus: '空闲' },
+    { id: 'testing-2', status: 'IN_USE', monitorStatus: '测试中' },
+    { id: 'offline-2', status: 'IN_USE', monitorStatus: '离线' },
+    { id: 'missing', status: 'IN_USE', monitorStatus: '未接入' }
   ] as const
 
-  assert.deepEqual(sortInspectionMonitorDevices(devices, (device) => device.status).map((device) => device.id),
+  assert.deepEqual(sortInspectionMonitorDevices(devices, (device) => device.monitorStatus).map((device) => device.id),
     ['testing-1', 'testing-2', 'online-1', 'online-2', 'offline-1', 'offline-2', 'missing'])
   assert.equal(devices[0].id, 'offline-1')
+})
+
+test('in-use equipment appears on the first page ahead of maintenance equipment with a newer heartbeat', () => {
+  const devices = [
+    { id: 'maintenance', status: 'MAINTENANCE', monitorStatus: '离线' },
+    { id: 'in-use', status: 'IN_USE', monitorStatus: '未接入' }
+  ] as const
+
+  const sorted = sortInspectionMonitorDevices(devices, (device) => device.monitorStatus)
+  assert.deepEqual(paginateRows(sorted, 1, 1).map((device) => device.id), ['in-use'])
 })
