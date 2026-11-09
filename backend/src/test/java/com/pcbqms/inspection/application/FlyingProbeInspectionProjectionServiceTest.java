@@ -274,6 +274,39 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void choosesLatestOrderReleasedBeforeTheFileStarted() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var start = now.minusHours(1);
+        var telemetry = event("latest-order", start, now.minusMinutes(1), 0, 0, 0);
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("latest-order")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("WO-OLD", "PART-1", start.toLocalDate().minusDays(47)),
+            releasedOrder("WO-NEW", "PART-1", start.toLocalDate().minusDays(30)),
+            releasedOrder("WO-FUTURE", "PART-1", start.toLocalDate().plusDays(1))));
+        AtomicReference<FlyingProbeRun> savedRun = new AtomicReference<>();
+        when(projectionMapper.lockRun(any())).thenAnswer(call -> savedRun.get());
+        when(projectionMapper.insertRunIfAbsent(any())).thenAnswer(call -> {
+            FlyingProbeRun inserted = call.getArgument(0);
+            inserted.setStatus("ACTIVE");
+            inserted.setTestedCount(0);
+            inserted.setGoodCount(0);
+            inserted.setBadCount(0);
+            savedRun.set(inserted);
+            return 1;
+        });
+
+        service().projectNew(telemetry);
+
+        assertThat(savedRun.get()).isNotNull();
+        assertThat(savedRun.get().getWorkOrderNo()).isEqualTo("WO-NEW");
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+    }
+
+    @Test
     void matchesInternalProductNumberIgnoringCaseAndOuterSpaces() {
         TenantContext.set("tenant-a", "admin");
         var now = LocalDateTime.now();
@@ -300,11 +333,14 @@ class FlyingProbeInspectionProjectionServiceTest {
         var projection = projection(telemetry);
         when(projectionMapper.lockProjection("variant-ambiguity")).thenReturn(projection);
         validEquipment();
+        WorkOrder firstOrder = workOrder();
+        firstOrder.setReleasedAt(now.toLocalDate().minusDays(1));
         WorkOrder secondOrder = workOrder();
         secondOrder.setId("work-2");
         secondOrder.setWorkOrderNo("WO-2");
         secondOrder.setInternalProductNo(" part-1 ");
-        when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder(), secondOrder));
+        secondOrder.setReleasedAt(firstOrder.getReleasedAt());
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(firstOrder, secondOrder));
 
         service().projectNew(telemetry);
 

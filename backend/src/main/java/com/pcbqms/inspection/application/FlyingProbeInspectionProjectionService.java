@@ -26,6 +26,7 @@ import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
@@ -249,6 +250,15 @@ public class FlyingProbeInspectionProjectionService {
                     .apply("internal_product_no_match_key = {0}", materialKey)).stream()
                 .filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
                 .toList();
+            if (candidates.size() > 1 && candidates.stream().allMatch(order -> order.getReleasedAt() != null)) {
+                // The file may outlive a newer order, so compare releases with its start date.
+                LocalDate fileDate = snapshot.startTime().toLocalDate();
+                LocalDate latestRelease = candidates.stream().map(WorkOrder::getReleasedAt)
+                    .filter(date -> !date.isAfter(fileDate)).max(LocalDate::compareTo).orElse(null);
+                if (latestRelease != null) {
+                    candidates = candidates.stream().filter(order -> latestRelease.equals(order.getReleasedAt())).toList();
+                }
+            }
             if (candidates.size() != 1) {
                 retryLater(projection, "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
                 return;
