@@ -116,8 +116,9 @@ public class FinishedTestDeviceSummaryService {
     }
 
     private List<WorkOrder> workOrders() {
-        return workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
-            .eq(WorkOrder::getTenantCode, TenantContext.tenantCode()));
+        return workOrderMapper.selectList(Wrappers.query(WorkOrder.class)
+            .eq("tenant_code", TenantContext.tenantCode())
+            .select("work_order_no", "internal_product_no", "material_no", "released_at"));
     }
 
     private List<Sample> samples() {
