@@ -133,7 +133,7 @@ onMounted(async () => {
         <el-table-column prop="responsibleDepartment" label="责任部门" min-width="130"><template #default="scope">{{ scope.row.responsibleDepartment || '—' }}</template></el-table-column>
         <el-table-column prop="remark" label="备注" min-width="170" show-overflow-tooltip><template #default="scope">{{ scope.row.remark || '—' }}</template></el-table-column>
         <el-table-column label="处置方式" min-width="110"><template #default="scope">{{ dispositionText(scope.row.dispositionMethod) }}</template></el-table-column>
-        <el-table-column prop="initiatedBy" label="创建人" min-width="110" />
+        <el-table-column label="创建来源" min-width="130"><template #default="scope">{{ scope.row.sourceType === 'DEVICE' ? '系统自动生成' : (scope.row.initiatedBy || '—') }}</template></el-table-column>
         <el-table-column label="创建日期" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column>
         <el-table-column label="审核人" min-width="110"><template #default="scope">{{ scope.row.reviewedBy || '—' }}</template></el-table-column>
         <el-table-column label="审核时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.reviewedAt) }}</template></el-table-column>
