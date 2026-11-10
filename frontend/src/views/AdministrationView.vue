@@ -111,7 +111,11 @@ const isRole = computed(() => selectedType.value === 'ROLE')
 const menuItemByCode = computed(() => new Map(menuItems.value.map((item) => [item.itemCode, item])))
 const roleMenuGroups = computed(() => menuGroups().map((group) => ({
   ...group,
-  items: menuPages(group.code)
+  label: menuItemByCode.value.get(group.code)?.itemName ?? group.label,
+  items: menuPages(group.code).map((item) => ({
+    ...item,
+    label: menuItemByCode.value.get(item.code)?.itemName ?? item.label
+  }))
 })))
 
 function parseMenuCodes(attributes: Record<string, string> | undefined) {
@@ -124,7 +128,8 @@ function parseMenuCodes(attributes: Record<string, string> | undefined) {
 function visibleMenuSummary(attributes: Record<string, string>) {
   if (attributes.menuCodesConfigured !== 'true') return '全部菜单（未单独设置）'
   const labels = parseMenuCodes(attributes)
-    .map((code) => navigationMenuDefinitions.find((item) => item.code === code)?.label ?? code)
+    .map((code) => menuItemByCode.value.get(code)?.itemName
+      ?? navigationMenuDefinitions.find((item) => item.code === code)?.label ?? code)
   return labels.length ? labels.join('、') : '未分配菜单'
 }
 

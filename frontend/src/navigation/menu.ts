@@ -49,6 +49,10 @@ const definitionByCode = new Map(navigationMenuDefinitions.map((definition) => [
 export const menuAccess = ref<MenuAccess>()
 let loadingMenuAccess: Promise<MenuAccess | undefined> | undefined
 
+export function menuLabel(code: string) {
+  return menuAccess.value?.menuNames?.[code] || definitionByCode.get(code)?.label || code
+}
+
 export function menuGroups() {
   return navigationMenuDefinitions.filter((definition) => !definition.parentCode)
 }

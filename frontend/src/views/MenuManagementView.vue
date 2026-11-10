@@ -2,13 +2,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import { navigationMenuDefinitions } from '@/navigation/menu'
-import { refreshMenuAccess } from '@/navigation/menu'
+import { navigationMenuDefinitions, refreshMenuAccess } from '@/navigation/menu'
 import type { AdministrationItem } from '@/types/qms'
 
 type MenuRow = AdministrationItem & {
   menuType: 'GROUP' | 'PAGE'
-  displayLabel: string
   path?: string
   children?: MenuRow[]
 }
@@ -16,6 +14,8 @@ type MenuRow = AdministrationItem & {
 const loading = ref(false)
 const savingMenuCode = ref('')
 const menuItems = ref<AdministrationItem[]>([])
+const editingMenu = ref<MenuRow>()
+const editedName = ref('')
 
 const menuRows = computed<MenuRow[]>(() => {
   const itemByCode = new Map(menuItems.value.map((item) => [item.itemCode, item]))
@@ -28,7 +28,6 @@ const menuRows = computed<MenuRow[]>(() => {
     const row: MenuRow = {
       ...item,
       menuType: definition.parentCode ? 'PAGE' : 'GROUP',
-      displayLabel: definition.label,
       path: definition.path,
       children: definition.parentCode ? undefined : []
     }
@@ -53,24 +52,49 @@ async function load() {
   }
 }
 
-async function changeStatus(item: MenuRow, active: boolean) {
+async function saveMenu(item: MenuRow, itemName: string, status: 'ACTIVE' | 'INACTIVE') {
   savingMenuCode.value = item.itemCode
   try {
     await qmsApi.updateAdministrationItem('MENU', item.id, {
       itemCode: item.itemCode,
-      itemName: item.itemName,
+      itemName,
       parentCode: item.parentCode,
       description: item.description,
-      status: active ? 'ACTIVE' : 'INACTIVE',
+      status,
       sortOrder: item.sortOrder,
       attributes: item.attributes
     })
     await Promise.all([load(), refreshMenuAccess()])
-    ElMessage.success(active ? '菜单已显示' : '菜单已隐藏')
+    return true
   } catch {
-    ElMessage.error('菜单显示状态保存失败')
+    ElMessage.error('菜单保存失败')
+    return false
   } finally {
     savingMenuCode.value = ''
+  }
+}
+
+async function changeStatus(item: MenuRow, active: boolean) {
+  if (await saveMenu(item, item.itemName, active ? 'ACTIVE' : 'INACTIVE')) {
+    ElMessage.success(active ? '菜单已显示' : '菜单已隐藏')
+  }
+}
+
+function openEdit(item: MenuRow) {
+  editingMenu.value = item
+  editedName.value = item.itemName
+}
+
+async function saveName() {
+  const item = editingMenu.value
+  const name = editedName.value.trim()
+  if (!item || !name) {
+    ElMessage.error('菜单名称不能为空')
+    return
+  }
+  if (await saveMenu(item, name, item.status)) {
+    editingMenu.value = undefined
+    ElMessage.success('菜单名称已保存')
   }
 }
 
@@ -98,7 +122,7 @@ onMounted(() => { void load() })
         角色权限中的“可见菜单”会在此处的显示状态基础上继续筛选；两项都允许时，用户才会看到对应页面。
       </el-alert>
       <paged-table :data="menuRows" row-key="itemCode" :tree-props="{ children: 'children' }" default-expand-all empty-text="暂无菜单配置">
-        <el-table-column prop="displayLabel" label="菜单名称" min-width="210" />
+        <el-table-column prop="itemName" label="菜单名称" min-width="210" />
         <el-table-column label="类型" width="100"><template #default="scope"><el-tag :type="scope.row.menuType === 'GROUP' ? 'primary' : 'info'" size="small">{{ scope.row.menuType === 'GROUP' ? '分组' : '页面' }}</el-tag></template></el-table-column>
         <el-table-column prop="itemCode" label="菜单编码" min-width="190" />
         <el-table-column label="路由地址" min-width="210"><template #default="scope">{{ scope.row.path || '—' }}</template></el-table-column>
@@ -111,7 +135,14 @@ onMounted(() => { void load() })
             </div>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="88" fixed="right"><template #default="scope"><el-button type="primary" link @click="openEdit(scope.row)">编辑</el-button></template></el-table-column>
       </paged-table>
     </el-card>
+    <el-dialog :model-value="Boolean(editingMenu)" title="编辑菜单名称" width="min(440px, 94vw)" @close="editingMenu = undefined">
+      <el-form label-position="top" @submit.prevent="saveName">
+        <el-form-item label="菜单名称" required><el-input v-model="editedName" maxlength="160" show-word-limit autofocus /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="editingMenu = undefined">取消</el-button><el-button type="primary" :loading="Boolean(savingMenuCode)" @click="saveName">保存</el-button></template>
+    </el-dialog>
   </section>
 </template>

@@ -136,7 +136,9 @@ public class AdministrationApplicationService {
             ? parseMenuCodes(roleAttributes.get("menuCodes"), knownMenuCodes)
             : knownMenuCodes;
 
-        return new MenuAccessResponse(access.roleCode(), activeMenuCodes, new ArrayList<>(permittedMenuCodes));
+        Map<String, String> menuNames = new LinkedHashMap<>();
+        menus.forEach(item -> menuNames.put(item.getItemCode(), item.getItemName()));
+        return new MenuAccessResponse(access.roleCode(), activeMenuCodes, new ArrayList<>(permittedMenuCodes), menuNames);
     }
 
     @Transactional

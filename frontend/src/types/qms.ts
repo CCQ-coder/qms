@@ -685,4 +685,5 @@ export type MenuAccess = {
   roleCode: string
   activeMenuCodes: string[]
   permittedMenuCodes: string[]
+  menuNames: Record<string, string>
 }
