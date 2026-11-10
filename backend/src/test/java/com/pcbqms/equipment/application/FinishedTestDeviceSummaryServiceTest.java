@@ -108,6 +108,27 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void monthlyModelIncludesUnboundZhongboWithoutAssigningItsDefectsToAnInternalNumber() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        order.setInternalProductNo("IN-1");
+        LocalDateTime day = LocalDateTime.of(2026, 11, 10, 9, 0);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "PCB-1", null, day, 3, 1, true),
+            new FinishedTestDeviceSummaryService.Sample("z2", "ZBX", "PCB-1", null, day.plusMinutes(5), 5, 2, true),
+            new FinishedTestDeviceSummaryService.Sample("p1", "WTD", "PCB-2", "WO-1", day, 4, 1, false)
+        );
+
+        var result = FinishedTestDeviceSummaryService.aggregateMonthly(samples, List.of(order),
+            Map.of("ZBX", "众博信", "WTD", "旺通达"), YearMonth.of(2026, 11));
+
+        assertThat(result.byModel()).extracting(item -> item.model() + ":" + item.totalCount() + ":" + item.badCount())
+            .containsExactly("众博信:5:2", "旺通达:4:1");
+        assertThat(result.topInternalDefects()).extracting(item -> item.internalProductNo() + ":" + item.badCount())
+            .containsExactly("IN-1:1");
+    }
+
+    @Test
     void reviewedDeviceCountsCannotBeMovedToAnotherProductionOrder() {
         TenantContext.set("customer-a", "supervisor");
         JdbcTemplate jdbc = mock(JdbcTemplate.class);

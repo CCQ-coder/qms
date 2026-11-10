@@ -151,7 +151,7 @@ public class FinishedTestDeviceSummaryService {
     static List<Summary> aggregate(List<Sample> samples, List<WorkOrder> orders) {
         Map<String, long[]> totals = new HashMap<>();
         Map<String, Attributed> representatives = new HashMap<>();
-        for (Attributed item : attributed(samples, orders)) {
+        for (Attributed item : attributed(samples, orders, false)) {
             Sample sample = item.sample();
             String key = sample.deviceTime().toLocalDate() + "\u0000" + item.order().getWorkOrderNo();
             long[] sum = totals.computeIfAbsent(key, ignored -> new long[2]);
@@ -173,14 +173,14 @@ public class FinishedTestDeviceSummaryService {
                                               Map<String, String> equipmentModels, YearMonth month) {
         Map<String, long[]> byModel = new HashMap<>();
         Map<String, Long> byInternal = new HashMap<>();
-        for (Attributed item : attributed(samples, orders)) {
+        for (Attributed item : attributed(samples, orders, true)) {
             if (!YearMonth.from(item.sample().deviceTime()).equals(month)) continue;
             String model = equipmentModels.get(item.sample().equipmentId());
             if (!StringUtils.hasText(model)) model = "未填写型号";
             long[] counts = byModel.computeIfAbsent(model, ignored -> new long[2]);
             counts[0] += item.tested();
             counts[1] += item.bad();
-            if (item.bad() > 0) {
+            if (item.bad() > 0 && item.order() != null) {
                 String internal = item.order().getInternalProductNo();
                 byInternal.merge(StringUtils.hasText(internal) ? internal : "未填写厂内编号", item.bad(), Long::sum);
             }
@@ -199,7 +199,7 @@ public class FinishedTestDeviceSummaryService {
         return new MonthlyAnalytics(month.toString(), models, topInternal);
     }
 
-    private static List<Attributed> attributed(List<Sample> samples, List<WorkOrder> orders) {
+    private static List<Attributed> attributed(List<Sample> samples, List<WorkOrder> orders, boolean includeUnbound) {
         Map<String, WorkOrder> byNumber = new HashMap<>();
         orders.forEach(order -> byNumber.put(order.getWorkOrderNo(), order));
         Map<String, long[]> previous = new HashMap<>();
@@ -219,7 +219,7 @@ public class FinishedTestDeviceSummaryService {
             if (bad > tested || tested == 0) continue;
             WorkOrder order = StringUtils.hasText(sample.workOrderNo())
                 ? byNumber.get(sample.workOrderNo()) : resolveOrder(sample, orders);
-            if (order == null) continue;
+            if (order == null && !includeUnbound) continue;
             result.add(new Attributed(sample, order, tested, bad));
         }
         return result;
