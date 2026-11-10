@@ -11,6 +11,7 @@ import { formatHostCapacity, formatHostUptime } from '@/utils/host-status'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, inspectionDeviceOnline, monitorStatusLabel } from './inspectionMonitorStatus'
 import { flyingProbePassRate, useTelemetryHistory } from './useTelemetryHistory'
+import { groupFinishedTestSummary, type SummaryDimension } from './finishedTestSummary'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestDeviceSummary, InspectionTask, InspectionTemplate, WorkOrder } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
@@ -109,6 +110,7 @@ const deviceSummary = ref<FinishedTestDeviceSummary[]>([])
 const summaryDateRange = ref<string[]>([])
 const summaryWorkOrder = ref('')
 const summaryPcbMaterial = ref('')
+const summaryDimension = ref<SummaryDimension>('workOrderNo')
 const selectedDeviceId = ref('')
 const taskListDeviceAssetNo = ref('')
 const recordEquipmentAssetNo = ref('')
@@ -177,12 +179,14 @@ const filteredDeviceSummary = computed(() => deviceSummary.value.filter((row) =>
     && (!workOrder || row.workOrderNo.toLowerCase().includes(workOrder))
     && (!material || (row.pcbMaterialNo ?? '').toLowerCase().includes(material))
 }))
+const groupedDeviceSummary = computed(() => groupFinishedTestSummary(filteredDeviceSummary.value, summaryDimension.value))
+const summaryDimensionLabel = computed(() => ({ workOrderNo: '生产指令', internalProductNo: '厂内编号', inspectionDate: '检测日期' })[summaryDimension.value])
 const filteredSummaryTotals = computed(() => filteredDeviceSummary.value.reduce((totals, row) => ({
   tested: totals.tested + row.totalCount,
   good: totals.good + row.goodCount,
   bad: totals.bad + row.badCount
 }), { tested: 0, good: 0, bad: 0 }))
-const summaryFilterKey = computed(() => JSON.stringify([summaryDateRange.value, summaryWorkOrder.value, summaryPcbMaterial.value]))
+const summaryFilterKey = computed(() => JSON.stringify([summaryDimension.value, summaryDateRange.value, summaryWorkOrder.value, summaryPcbMaterial.value]))
 
 function resetSummaryFilters() {
   summaryDateRange.value = []
@@ -1095,11 +1099,16 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card summary-table-card">
       <template #header>
         <div class="card-header">
-          <div><span>成品测试汇总表</span><small>设备检测记录按检测日期和生产指令汇总；未关联生产指令的记录暂不计入。</small></div>
+          <div><span>成品测试汇总表</span><small>按生产指令、厂内编号或检测日期查看汇总；未关联生产指令的记录暂不计入。</small></div>
           <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
         </div>
       </template>
       <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
+      <el-radio-group v-model="summaryDimension" aria-label="汇总维度" class="finished-summary-dimensions">
+        <el-radio-button value="workOrderNo">生产指令</el-radio-button>
+        <el-radio-button value="internalProductNo">厂内编号</el-radio-button>
+        <el-radio-button value="inspectionDate">检测日期</el-radio-button>
+      </el-radio-group>
       <div class="report-filter finished-summary-filters">
         <span>检测日期</span>
         <el-date-picker v-model="summaryDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable />
@@ -1107,17 +1116,14 @@ onBeforeUnmount(() => {
         <el-input v-model="summaryPcbMaterial" clearable placeholder="筛选 PCB 料号" aria-label="筛选 PCB 料号" />
         <el-button @click="resetSummaryFilters">重置</el-button>
       </div>
-      <paged-table v-if="!summaryError" :key="summaryFilterKey" :data="filteredDeviceSummary" empty-text="当前筛选条件下暂无设备检测记录">
-        <el-table-column prop="inspectionDate" label="检测日期" min-width="140" />
-        <el-table-column prop="workOrderNo" label="生产指令" min-width="150" />
-        <el-table-column prop="internalProductNo" label="厂内编号" min-width="155"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
-        <el-table-column prop="pcbMaterialNo" label="PCB料号" min-width="150"><template #default="scope">{{ scope.row.pcbMaterialNo || '—' }}</template></el-table-column>
+      <paged-table v-if="!summaryError" :key="summaryFilterKey" :data="groupedDeviceSummary" empty-text="当前筛选条件下暂无设备检测记录">
+        <el-table-column prop="key" :label="summaryDimensionLabel" min-width="180" />
         <el-table-column prop="totalCount" label="检测总数" min-width="130" align="right" />
         <el-table-column prop="goodCount" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodCount }}</span></template></el-table-column>
         <el-table-column prop="badCount" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badCount }}</span></template></el-table-column>
         <el-table-column label="一次合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
       </paged-table>
-      <div v-if="!summaryError" class="summary-footnote">当前筛选结果：{{ filteredSummaryTotals.tested }} 板，合格 {{ filteredSummaryTotals.good }} 板，不合格 {{ filteredSummaryTotals.bad }} 板（共 {{ filteredDeviceSummary.length }} 组）。</div>
+      <div v-if="!summaryError" class="summary-footnote">当前筛选结果：{{ filteredSummaryTotals.tested }} 板，合格 {{ filteredSummaryTotals.good }} 板，不合格 {{ filteredSummaryTotals.bad }} 板（按{{ summaryDimensionLabel }}汇总，共 {{ groupedDeviceSummary.length }} 组）。</div>
     </el-card>
 
     <el-dialog v-model="bindingDialog" title="手动绑定生产指令" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
