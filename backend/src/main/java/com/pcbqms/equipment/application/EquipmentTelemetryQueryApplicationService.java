@@ -98,7 +98,9 @@ public class EquipmentTelemetryQueryApplicationService {
             pageSize + 1,
             eventType,
             StringUtils.hasText(query.workOrderNo()) ? query.workOrderNo().trim() : null,
-            StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null
+            StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null,
+            StringUtils.hasText(query.factoryInternalNo()) ? query.factoryInternalNo().trim() : null,
+            Boolean.TRUE.equals(query.unmatchedOnly()) && "ZHONGBO_TEST_REPORT".equals(eventType)
         );
         boolean hasMore = rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;

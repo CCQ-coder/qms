@@ -50,6 +50,7 @@ const runtimeError = ref('')
 const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
 const recordSource = ref<'probe' | 'zhongbo' | 'retryable' | 'all'>('probe')
+const zhongboUnmatchedOnly = ref(false)
 const recordDateRange = ref<string[]>([])
 const appliedRecordDateRange = ref<string[]>([])
 const canBindFlyingProbe = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? ''))
@@ -61,9 +62,10 @@ const retryableLoading = ref(false)
 const retryableLoaded = ref(false)
 const retryableError = ref('')
 const retryableUpdatedAt = ref<Date>()
-const probeWorkOrderNo = ref('')
-const probeInternalProductNo = ref('')
-const appliedProbeSearch = ref<{ workOrderNo?: string; internalProductNo?: string }>({})
+const recordWorkOrderNo = ref('')
+const recordMaterialNo = ref('')
+const recordFactoryInternalNo = ref('')
+const appliedRecordSearch = ref<{ workOrderNo?: string; internalProductNo?: string; factoryInternalNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection & { eventType?: string }>()
 const bindingKeyword = ref('')
@@ -199,7 +201,7 @@ const filteredFinishedTestRecords = computed(() => {
   const keyword = recordKeyword.value.trim().toLowerCase()
   if (!keyword) return finishedTestRecords.value
   return finishedTestRecords.value.filter((record) => [
-    record.equipmentCode, record.workOrderNo, record.materialNo,
+    record.equipmentCode, record.workOrderNo, record.materialNo, record.internalProductNo,
     record.sourceRecordNo, record.machineName
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
@@ -371,11 +373,12 @@ function recordTimeFilter() {
 }
 
 function refreshFilteredProbeRecords() {
-  return refreshFlyingProbeRecords({ ...appliedProbeSearch.value, ...recordTimeFilter() })
+  return refreshFlyingProbeRecords({ ...appliedRecordSearch.value, ...recordTimeFilter() })
 }
 
 function refreshFilteredZhongboReports() {
-  return refreshZhongboReports(recordTimeFilter())
+  return refreshZhongboReports({ ...appliedRecordSearch.value, ...recordTimeFilter(),
+    ...(zhongboUnmatchedOnly.value ? { unmatchedOnly: true } : {}) })
 }
 
 async function loadDeviceRecords(cursor?: string) {
@@ -384,7 +387,7 @@ async function loadDeviceRecords(cursor?: string) {
   finishedRecordsError.value = ''
   try {
     const page = await qmsApi.listEquipmentTelemetryHistory({ eventType: 'FINISHED_TEST', limit: 100,
-      ...recordTimeFilter(), ...(cursor ? { cursor } : {}) })
+      ...appliedRecordSearch.value, ...recordTimeFilter(), ...(cursor ? { cursor } : {}) })
     finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
     finishedRecordsNextCursor.value = page.nextCursor ?? undefined
     if (!cursor) finishedRecordsUpdatedAt.value = new Date()
@@ -410,7 +413,7 @@ async function loadRetryableProjections(page = retryablePage.value) {
   retryableError.value = ''
   try {
     const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize,
-      { ...appliedProbeSearch.value, ...recordTimeFilter() })
+      { ...appliedRecordSearch.value, ...recordTimeFilter() })
     retryableRecords.value = result.records
     retryableTotal.value = result.total
     retryablePage.value = result.page
@@ -514,22 +517,30 @@ function showPanel(panel: 'monitor' | 'records' | 'tasks') {
 
 function showRecordSource(source: 'probe' | 'zhongbo' | 'retryable' | 'all') {
   recordSource.value = source
+  if (source === 'zhongbo') zhongboUnmatchedOnly.value = false
   if (source === 'probe') void refreshFilteredProbeRecords()
   if (source === 'zhongbo') void refreshFilteredZhongboReports()
   if (source === 'retryable') void loadRetryableProjections(1)
   if (source === 'all') void loadDeviceRecords()
 }
 
-function searchProbeRecords() {
+function showUnmatchedZhongbo() {
+  zhongboUnmatchedOnly.value = true
+  void refreshFilteredZhongboReports()
+}
+
+function searchRecordFilters() {
   if (recordPanelLoading.value) return
-  const workOrderNo = probeWorkOrderNo.value.trim()
-  const internalProductNo = probeInternalProductNo.value.trim()
-  appliedProbeSearch.value = {
+  const workOrderNo = recordWorkOrderNo.value.trim()
+  const internalProductNo = recordMaterialNo.value.trim()
+  const factoryInternalNo = recordFactoryInternalNo.value.trim()
+  appliedRecordSearch.value = {
     ...(workOrderNo ? { workOrderNo } : {}),
-    ...(internalProductNo ? { internalProductNo } : {})
+    ...(internalProductNo ? { internalProductNo } : {}),
+    ...(factoryInternalNo ? { factoryInternalNo } : {})
   }
   if (recordSource.value === 'retryable') void loadRetryableProjections(1)
-  else void refreshFilteredProbeRecords()
+  else void refreshRecordPanel()
 }
 
 async function refreshRecordPanel() {
@@ -944,14 +955,19 @@ onBeforeUnmount(() => {
         <el-button type="primary" :disabled="recordPanelLoading" @click="applyRecordDateFilter">查询</el-button>
         <el-button :disabled="recordPanelLoading" @click="resetRecordDateFilter">重置</el-button>
       </div>
-      <div v-if="recordSource === 'probe' || recordSource === 'retryable'" class="probe-record-filters">
-        <div class="task-queue-actions" role="group" aria-label="旺通达记录匹配状态">
+      <div class="probe-record-filters">
+        <div v-if="recordSource === 'probe' || recordSource === 'retryable'" class="task-queue-actions" role="group" aria-label="旺通达记录匹配状态">
           <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('probe')">全部记录</el-button>
           <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('retryable')">未匹配</el-button>
         </div>
-        <el-input v-model="probeWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchProbeRecords" />
-        <el-input v-model="probeInternalProductNo" clearable placeholder="搜索设备料号" aria-label="搜索设备料号" @keyup.enter="searchProbeRecords" />
-        <el-button type="primary" :disabled="recordPanelLoading" @click="searchProbeRecords">查询</el-button>
+        <div v-if="recordSource === 'zhongbo'" class="task-queue-actions" role="group" aria-label="众博信记录匹配状态">
+          <el-button :type="zhongboUnmatchedOnly ? 'default' : 'primary'" :disabled="recordPanelLoading" @click="showRecordSource('zhongbo')">全部记录</el-button>
+          <el-button :type="zhongboUnmatchedOnly ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showUnmatchedZhongbo">未匹配</el-button>
+        </div>
+        <el-input v-model="recordWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchRecordFilters" />
+        <el-input v-model="recordMaterialNo" clearable placeholder="搜索设备料号" aria-label="搜索设备料号" @keyup.enter="searchRecordFilters" />
+        <el-input v-model="recordFactoryInternalNo" clearable placeholder="搜索厂内编号" aria-label="搜索厂内编号" @keyup.enter="searchRecordFilters" />
+        <el-button type="primary" :disabled="recordPanelLoading" @click="searchRecordFilters">查询</el-button>
       </div>
       <template v-if="recordSource === 'probe'">
         <p class="summary-footnote">按设备原始记录展示；未匹配或关联错误的飞针文件可手动绑定生产指令。</p>
@@ -1056,7 +1072,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：设备、生产指令或料号" />
+          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：设备、生产指令、料号或厂内编号" />
           <span>已加载 {{ finishedTestRecords.length }} 条{{ recordKeyword.trim() ? `，其中匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">

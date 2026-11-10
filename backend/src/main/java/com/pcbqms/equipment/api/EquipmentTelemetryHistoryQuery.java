@@ -11,7 +11,9 @@ public record EquipmentTelemetryHistoryQuery(
     Integer limit,
     String eventType,
     String workOrderNo,
-    String internalProductNo
+    String internalProductNo,
+    String factoryInternalNo,
+    Boolean unmatchedOnly
 ) {
     public int resolvedLimit() {
         int requested = limit == null ? 100 : limit;

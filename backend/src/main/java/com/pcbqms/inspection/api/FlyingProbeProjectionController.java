@@ -27,10 +27,12 @@ public class FlyingProbeProjectionController {
         @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
         @RequestParam(required = false) String workOrderNo,
         @RequestParam(required = false) String internalProductNo,
+        @RequestParam(required = false) String factoryInternalNo,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromTime,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toTime
     ) {
-        return ApiResponse.of(projectionService.listRetryable(page, pageSize, workOrderNo, internalProductNo, fromTime, toTime));
+        return ApiResponse.of(projectionService.listRetryable(page, pageSize, workOrderNo, internalProductNo,
+            factoryInternalNo, fromTime, toTime));
     }
 
     @PostMapping("/{telemetryId}/bind-work-order")

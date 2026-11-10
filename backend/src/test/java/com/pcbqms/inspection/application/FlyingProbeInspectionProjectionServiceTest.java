@@ -190,10 +190,10 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a", null, null, null, null)).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L, null, null, null, null)).thenReturn(List.of(record));
+        when(projectionMapper.countRetryableGroups("tenant-a", null, null, null, null, null)).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L, null, null, null, null, null)).thenReturn(List.of(record));
 
-        var page = service().listRetryable(1, 50, null, null, null, null);
+        var page = service().listRetryable(1, 50, null, null, null, null, null);
 
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.records()).extracting(FlyingProbeRetryableRecordResponse::getId)
@@ -201,16 +201,16 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void retryableListFiltersBothCountAndRowsByDetectionTime() {
+    void retryableListFiltersBothCountAndRowsByDetectionTimeAndFactoryNumber() {
         TenantContext.set("tenant-a", "supervisor");
         LocalDateTime from = LocalDateTime.of(2026, 11, 1, 0, 0);
         LocalDateTime to = LocalDateTime.of(2026, 11, 9, 23, 59, 59);
-        when(projectionMapper.countRetryableGroups("tenant-a", null, null, from, to)).thenReturn(1L);
+        when(projectionMapper.countRetryableGroups("tenant-a", null, null, "02PT42777", from, to)).thenReturn(1L);
 
-        service().listRetryable(1, 50, null, null, from, to);
+        service().listRetryable(1, 50, null, null, " 02PT42777 ", from, to);
 
-        verify(projectionMapper).countRetryableGroups("tenant-a", null, null, from, to);
-        verify(projectionMapper).selectRetryableGroups("tenant-a", 50, 0L, null, null, from, to);
+        verify(projectionMapper).countRetryableGroups("tenant-a", null, null, "02PT42777", from, to);
+        verify(projectionMapper).selectRetryableGroups("tenant-a", 50, 0L, null, null, "02PT42777", from, to);
     }
 
     @Test

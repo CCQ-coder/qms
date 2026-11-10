@@ -41,6 +41,12 @@ public interface FlyingProbeProjectionMapper {
         <if test="workOrderNo != null">
             AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
         </if>
+        <if test="factoryInternalNo != null">
+            AND EXISTS (SELECT 1 FROM qms_work_order work_order
+                WHERE work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = p.tenant_code COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = COALESCE(r.work_order_no, p.work_order_no) COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.internal_product_no LIKE CONCAT('%', #{factoryInternalNo}, '%'))
+        </if>
         <if test="fromTime != null">AND p.device_time &gt;= #{fromTime}</if>
         <if test="toTime != null">AND p.device_time &lt;= #{toTime}</if>
         ORDER BY p.latest_device_time DESC, p.telemetry_id DESC
@@ -50,12 +56,13 @@ public interface FlyingProbeProjectionMapper {
     List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
         @Param("tenantCode") String tenantCode, @Param("pageSize") int pageSize, @Param("offset") long offset,
         @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo,
+        @Param("factoryInternalNo") String factoryInternalNo,
         @Param("fromTime") LocalDateTime fromTime, @Param("toTime") LocalDateTime toTime);
 
     @Select("""
         <script>
         WITH ranked AS (
-            SELECT tenant_code, telemetry_id, run_key, material_no, work_order_no,
+            SELECT tenant_code, telemetry_id, run_key, material_no, work_order_no, device_time,
                    ROW_NUMBER() OVER (PARTITION BY COALESCE(run_key, telemetry_id)
                        ORDER BY device_time, received_at, telemetry_id) AS row_no
             FROM qms_flying_probe_projection
@@ -70,6 +77,12 @@ public interface FlyingProbeProjectionMapper {
         <if test="workOrderNo != null">
             AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
         </if>
+        <if test="factoryInternalNo != null">
+            AND EXISTS (SELECT 1 FROM qms_work_order work_order
+                WHERE work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = p.tenant_code COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = COALESCE(r.work_order_no, p.work_order_no) COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.internal_product_no LIKE CONCAT('%', #{factoryInternalNo}, '%'))
+        </if>
         <if test="fromTime != null">AND p.device_time &gt;= #{fromTime}</if>
         <if test="toTime != null">AND p.device_time &lt;= #{toTime}</if>
         </script>
@@ -77,6 +90,7 @@ public interface FlyingProbeProjectionMapper {
     long countRetryableGroups(@Param("tenantCode") String tenantCode,
                               @Param("workOrderNo") String workOrderNo,
                               @Param("internalProductNo") String internalProductNo,
+                              @Param("factoryInternalNo") String factoryInternalNo,
                               @Param("fromTime") LocalDateTime fromTime, @Param("toTime") LocalDateTime toTime);
 
     @Select("""
