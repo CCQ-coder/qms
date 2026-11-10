@@ -17,6 +17,7 @@ import com.pcbqms.inspection.api.CreateInspectionRecordRequest;
 import com.pcbqms.inspection.domain.InspectionRecord;
 import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.domain.Nonconformity;
+import com.pcbqms.inspection.domain.SystemParameter;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionRecordMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTaskMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTemplateMapper;
@@ -202,6 +203,29 @@ class InspectionApplicationServiceTest {
         assertThat(saved.getValue().getInspectedBy()).isEqualTo("admin");
         verify(inspectionTaskMapper).updateById(task);
         assertThat(task.getStatus()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void flyingProbeFailureWaitsForGroupedDeviceDispositionEvenWhenAutoNcrIsEnabled() {
+        TenantContext.set("customer-a", "admin");
+        InspectionTask task = new InspectionTask();
+        task.setId("task-probe");
+        task.setTenantCode("customer-a");
+        task.setProcessCode("FQC");
+        task.setTaskType("FINISHED");
+        task.setStatus("PENDING");
+        task.setCreatedBy("system.flying-probe");
+        SystemParameter parameter = new SystemParameter();
+        parameter.setParameterValue("true");
+        when(inspectionTaskMapper.selectById("task-probe")).thenReturn(task);
+        when(systemParameterMapper.selectOne(any())).thenReturn(parameter);
+
+        var result = service().submitAutomaticRecord("task-probe", new CreateInspectionRecordRequest(
+            "FAIL", 2, "坏板", null, Map.of(), List.of(), null, "FP-source-2"),
+            LocalDateTime.of(2026, 11, 9, 15, 0));
+
+        assertThat(result.ncrNo()).isNull();
+        verify(nonconformityMapper, never()).insert(any(Nonconformity.class));
     }
 
     @Test

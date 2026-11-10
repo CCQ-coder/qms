@@ -87,18 +87,22 @@ public class FlyingProbeInspectionProjectionService {
     }
 
     public FlyingProbeRetryablePageResponse listRetryable(
-        Integer requestedPage, Integer requestedPageSize, String requestedWorkOrderNo, String requestedInternalProductNo
+        Integer requestedPage, Integer requestedPageSize, String requestedWorkOrderNo, String requestedInternalProductNo,
+        LocalDateTime fromTime, LocalDateTime toTime
     ) {
         accessScopeService.requireSupervisorOrAdministrator();
+        if (fromTime != null && toTime != null && fromTime.isAfter(toTime)) {
+            throw new IllegalArgumentException("检测日期开始时间不能晚于结束时间");
+        }
         long page = requestedPage == null ? 1 : Math.max(1, requestedPage);
         int pageSize = requestedPageSize == null ? 50 : Math.clamp(requestedPageSize, 10, 100);
         String tenantCode = TenantContext.tenantCode();
         String workOrderNo = StringUtils.hasText(requestedWorkOrderNo) ? requestedWorkOrderNo.trim() : null;
         String internalProductNo = StringUtils.hasText(requestedInternalProductNo) ? requestedInternalProductNo.trim() : null;
-        long total = projectionMapper.countRetryableGroups(tenantCode, workOrderNo, internalProductNo);
+        long total = projectionMapper.countRetryableGroups(tenantCode, workOrderNo, internalProductNo, fromTime, toTime);
         long offset = (page - 1) * pageSize;
         List<FlyingProbeRetryableRecordResponse> records = offset < total
-            ? projectionMapper.selectRetryableGroups(tenantCode, pageSize, offset, workOrderNo, internalProductNo)
+            ? projectionMapper.selectRetryableGroups(tenantCode, pageSize, offset, workOrderNo, internalProductNo, fromTime, toTime)
             : List.of();
         return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
     }
@@ -114,13 +118,8 @@ public class FlyingProbeInspectionProjectionService {
         if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
-        if (!"RETRYABLE".equals(projection.getStatus())) {
-            throw new IllegalArgumentException("仅待匹配的飞针记录可手动绑定");
-        }
-        Snapshot snapshot = parse(projection);
-        String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
-        if (projection.getRunKey() != null && !runKey.equals(projection.getRunKey())) {
-            throw new IllegalArgumentException("飞针文件身份已变化，无法手动绑定");
+        if (!"RETRYABLE".equals(projection.getStatus()) && !"PROCESSED".equals(projection.getStatus())) {
+            throw new IllegalArgumentException("仅待匹配或已处理的飞针记录可手动绑定");
         }
         String workOrderNo = requestedWorkOrderNo.trim();
         WorkOrder workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
@@ -128,6 +127,14 @@ public class FlyingProbeInspectionProjectionService {
             .eq(WorkOrder::getWorkOrderNo, workOrderNo));
         if (workOrder == null) {
             throw new IllegalArgumentException("当前租户不存在所选生产指令");
+        }
+        if ("PROCESSED".equals(projection.getStatus())) {
+            return rebindProcessedRun(projection, workOrder);
+        }
+        Snapshot snapshot = parse(projection);
+        String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
+        if (projection.getRunKey() != null && !runKey.equals(projection.getRunKey())) {
+            throw new IllegalArgumentException("飞针文件身份已变化，无法手动绑定");
         }
         LocalDateTime now = LocalDateTime.now();
         FlyingProbeRun run = projectionMapper.lockRun(runKey);
@@ -173,6 +180,33 @@ public class FlyingProbeInspectionProjectionService {
         projection.setRetryAfter(now);
         projection.setProcessedAt(now);
         projectionMapper.updateProjection(projection);
+        return runKey;
+    }
+
+    private String rebindProcessedRun(FlyingProbeProjection projection, WorkOrder target) {
+        String tenant = TenantContext.tenantCode();
+        String runKey = projection.getRunKey();
+        if (!StringUtils.hasText(runKey)) throw new IllegalArgumentException("飞针文件缺少关联信息，无法更正");
+        FlyingProbeRun run = projectionMapper.lockRun(runKey);
+        if (run == null || !tenant.equals(run.getTenantCode())
+            || !projection.getEquipmentId().equals(run.getEquipmentId()) || !"ACTIVE".equals(run.getStatus())) {
+            throw new IllegalArgumentException("飞针文件状态已变化，无法更正关联");
+        }
+        if (target.getWorkOrderNo().equals(run.getWorkOrderNo())) return runKey;
+        if (projectionMapper.countRunNonconformities(tenant, runKey) > 0
+            || projectionMapper.countApprovedRunDates(tenant, runKey, run.getWorkOrderNo()) > 0) {
+            throw new IllegalArgumentException("该飞针文件已有已审核或逐条创建的处置单，不能更正关联");
+        }
+        projectionMapper.rebindRunTasks(tenant, runKey, target.getId());
+        projectionMapper.rebindRunTelemetry(tenant, runKey, target.getWorkOrderNo());
+        projectionMapper.rebindRunRuntime(tenant, runKey, target.getWorkOrderNo());
+        projectionMapper.rebindRunProjections(tenant, runKey, target.getWorkOrderNo());
+        run.setWorkOrderNo(target.getWorkOrderNo());
+        run.setBindingSource("MANUAL");
+        run.setBoundBy(TenantContext.actor());
+        run.setBoundAt(LocalDateTime.now());
+        run.setUpdatedAt(run.getBoundAt());
+        projectionMapper.updateRun(run);
         return runKey;
     }
 

@@ -15,6 +15,8 @@ import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
+import com.pcbqms.workorder.domain.WorkOrder;
+import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -39,6 +41,7 @@ public class EquipmentTelemetryQueryApplicationService {
     private final EquipmentMapper equipmentMapper;
     private final InspectionAccessScopeService inspectionAccessScopeService;
     private final ObjectMapper objectMapper;
+    private final WorkOrderMapper workOrderMapper;
     @Value("${qms.equipment-telemetry.retention.raw-days:7}")
     private int rawRetentionDays;
 
@@ -46,8 +49,11 @@ public class EquipmentTelemetryQueryApplicationService {
         int limit = requestedLimit == null ? DEFAULT_LIMIT : Math.min(Math.max(requestedLimit, 1), MAX_LIMIT);
         var access = inspectionAccessScopeService.currentAccess();
         String tenantCode = TenantContext.tenantCode();
-        return telemetryRecordMapper.selectRecentByTenant(tenantCode, limit).stream()
-            .map(record -> toResponse(record, tenantCode, access))
+        List<EquipmentTelemetryRecord> recent = telemetryRecordMapper.selectRecentByTenant(tenantCode, limit);
+        Map<String, String> internalNumbers = internalNumbers(tenantCode,
+            recent.stream().map(EquipmentTelemetryRecord::getWorkOrderNo).toList());
+        return recent.stream()
+            .map(record -> toResponse(record, tenantCode, access, internalNumbers))
             .filter(java.util.Objects::nonNull)
             .toList();
     }
@@ -68,11 +74,14 @@ public class EquipmentTelemetryQueryApplicationService {
         if (selectedEquipmentId == null && accessibleEquipment.isEmpty()) {
             return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit());
         }
-        LocalDateTime toTime = query.toTime() == null ? LocalDateTime.now() : query.toTime();
         String eventType = StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null;
-        LocalDateTime fromTime = query.fromTime() == null && !"ZHONGBO_TEST_REPORT".equals(eventType)
+        boolean finishedTestEvent = "ZHONGBO_TEST_REPORT".equals(eventType)
+            || "FLYING_PROBE_TEST_COUNTERS".equals(eventType) || "FINISHED_TEST".equals(eventType);
+        LocalDateTime toTime = query.toTime() == null && finishedTestEvent ? null
+            : query.toTime() == null ? LocalDateTime.now() : query.toTime();
+        LocalDateTime fromTime = query.fromTime() == null && !finishedTestEvent
             ? toTime.minusDays(Math.max(rawRetentionDays, 1)) : query.fromTime();
-        if (fromTime != null && fromTime.isAfter(toTime)) {
+        if (fromTime != null && toTime != null && fromTime.isAfter(toTime)) {
             throw new IllegalArgumentException("遥测历史开始时间不能晚于结束时间");
         }
         boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType);
@@ -101,9 +110,12 @@ public class EquipmentTelemetryQueryApplicationService {
             ? Map.of()
             : telemetryRecordMapper.selectProjectionStatuses(tenantCode, flyingProbeIds).stream()
                 .collect(Collectors.toMap(EquipmentTelemetryProjectionStatus::getTelemetryId, item -> item));
+        Map<String, String> internalNumbers = internalNumbers(tenantCode, pageRows.stream()
+            .map(record -> projections.containsKey(record.getId()) && projections.get(record.getId()).getWorkOrderNo() != null
+                ? projections.get(record.getId()).getWorkOrderNo() : record.getWorkOrderNo()).toList());
         List<EquipmentTelemetryRecordResponse> items = pageRows.stream()
             .map(record -> toResponse(record, accessibleEquipment.get(record.getEquipmentId()),
-                projections.get(record.getId())))
+                projections.get(record.getId()), internalNumbers))
             .filter(Objects::nonNull)
             .toList();
         String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast(), sortByDeviceTime) : null;
@@ -113,7 +125,8 @@ public class EquipmentTelemetryQueryApplicationService {
     private EquipmentTelemetryRecordResponse toResponse(
         EquipmentTelemetryRecord record,
         String tenantCode,
-        InspectionAccessScopeService.InspectionAccess access
+        InspectionAccessScopeService.InspectionAccess access,
+        Map<String, String> internalNumbers
     ) {
         Equipment equipment = equipmentMapper.selectById(record.getEquipmentId());
         if (equipment == null || !tenantCode.equals(equipment.getTenantCode())
@@ -121,14 +134,17 @@ public class EquipmentTelemetryQueryApplicationService {
                 || !access.canAccess(equipment.getProcessCode())))) {
             return null;
         }
-        return toResponse(record, equipment, null);
+        return toResponse(record, equipment, null, internalNumbers);
     }
 
     private EquipmentTelemetryRecordResponse toResponse(
-        EquipmentTelemetryRecord record, Equipment equipment, EquipmentTelemetryProjectionStatus projection
+        EquipmentTelemetryRecord record, Equipment equipment, EquipmentTelemetryProjectionStatus projection,
+        Map<String, String> internalNumbers
     ) {
         if (equipment == null) return null;
         JsonNode attributes = attributesOf(record);
+        String workOrderNo = projection != null && projection.getWorkOrderNo() != null
+            ? projection.getWorkOrderNo() : record.getWorkOrderNo();
         return EquipmentTelemetryRecordResponse.from(
             record,
             equipment,
@@ -142,8 +158,19 @@ public class EquipmentTelemetryQueryApplicationService {
             integerAttribute(attributes, "goodBoardCount"),
             integerAttribute(attributes, "badBoardCount"),
             projection,
-            zhongboTestReport(record, attributes)
+            zhongboTestReport(record, attributes),
+            workOrderNo == null ? null : internalNumbers.get(workOrderNo)
         );
+    }
+
+    private Map<String, String> internalNumbers(String tenantCode, List<String> workOrderNos) {
+        List<String> usedNumbers = workOrderNos.stream().filter(StringUtils::hasText).distinct().toList();
+        if (usedNumbers.isEmpty()) return Map.of();
+        return workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+            .eq(WorkOrder::getTenantCode, tenantCode)
+            .in(WorkOrder::getWorkOrderNo, usedNumbers)).stream()
+            .filter(order -> StringUtils.hasText(order.getInternalProductNo()))
+            .collect(Collectors.toMap(WorkOrder::getWorkOrderNo, WorkOrder::getInternalProductNo, (first, ignored) -> first));
     }
 
     private ZhongboTestReportFields zhongboTestReport(EquipmentTelemetryRecord record, JsonNode attributes) {

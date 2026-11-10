@@ -3,6 +3,7 @@ package com.pcbqms.inspection.application;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
+import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.inspection.api.CapaResponse;
 import com.pcbqms.inspection.api.CloseCapaRequest;
 import com.pcbqms.inspection.api.CreateCapaRequest;
@@ -28,8 +29,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,6 +50,111 @@ public class NonconformityApplicationService {
     private final WorkOrderMapper workOrderMapper;
     private final ProductionBatchMapper productionBatchMapper;
     private final NonconformityDetailMapper nonconformityDetailMapper;
+
+    @Transactional
+    public void syncDeviceDefects(List<FinishedTestDeviceSummaryService.Summary> summaries) {
+        String tenant = TenantContext.tenantCode();
+        Set<String> activeGroups = new HashSet<>();
+        for (var summary : summaries) {
+            if (summary.badCount() <= 0) continue;
+            WorkOrder order = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
+                .eq(WorkOrder::getTenantCode, tenant).eq(WorkOrder::getWorkOrderNo, summary.workOrderNo()));
+            if (order == null) continue;
+            List<Nonconformity> existing = nonconformityMapper.selectList(Wrappers.lambdaQuery(Nonconformity.class)
+                .eq(Nonconformity::getTenantCode, tenant)
+                .eq(Nonconformity::getSourceType, "DEVICE")
+                .eq(Nonconformity::getWorkOrderId, order.getId())
+                .eq(Nonconformity::getDetectionDate, summary.inspectionDate()));
+            long reviewed = 0;
+            Nonconformity pending = null;
+            for (Nonconformity ncr : existing) {
+                if ("PENDING_REVIEW".equals(ncr.getStatus())) pending = ncr;
+                if (!"APPROVED".equals(ncr.getStatus())) continue;
+                var details = nonconformityDetailMapper.selectList(Wrappers.lambdaQuery(NonconformityDetail.class)
+                    .eq(NonconformityDetail::getTenantCode, tenant)
+                    .eq(NonconformityDetail::getNonconformityId, ncr.getId()));
+                reviewed += details.stream().mapToLong(NonconformityDetail::getScrapQuantity).sum();
+            }
+            long unreviewed = summary.badCount() - reviewed;
+            if (unreviewed > Integer.MAX_VALUE) throw new IllegalStateException("设备不良品数量超过处置单可记录范围");
+            if (unreviewed <= 0) continue;
+            activeGroups.add(summary.inspectionDate() + ":" + order.getId());
+            if (pending != null) {
+                var details = nonconformityDetailMapper.selectList(Wrappers.lambdaQuery(NonconformityDetail.class)
+                    .eq(NonconformityDetail::getTenantCode, tenant)
+                    .eq(NonconformityDetail::getNonconformityId, pending.getId()));
+                if (details.isEmpty()) throw new IllegalStateException("待审核设备处置单缺少明细：" + pending.getNcrNo());
+                if (details.getFirst().getScrapQuantity() != (int) unreviewed) {
+                    var detail = details.getFirst();
+                    detail.setScrapQuantity((int) unreviewed);
+                    detail.setScrapArea(detail.getSinglePcsArea() == null ? null
+                        : detail.getSinglePcsArea().multiply(BigDecimal.valueOf(unreviewed)));
+                    nonconformityDetailMapper.updateById(detail);
+                }
+                continue;
+            }
+            Nonconformity ncr = new Nonconformity();
+            ncr.setId(UUID.randomUUID().toString());
+            ncr.setTenantCode(tenant);
+            ncr.setNcrNo(nextNcrNo());
+            ncr.setWorkOrderId(order.getId());
+            ncr.setDetectionDate(summary.inspectionDate());
+            ncr.setProcessCode("FQC");
+            ncr.setProcessName("成品测试");
+            ncr.setSourceType("DEVICE");
+            ncr.setSourceGroupKey(summary.inspectionDate() + ":" + order.getId());
+            ncr.setStatus("PENDING_REVIEW");
+            ncr.setDispositionMethod("SCRAP");
+            ncr.setInitiatedBy("system.device-test");
+            ncr.setCreatedAt(LocalDateTime.now());
+            nonconformityMapper.insert(ncr);
+            NonconformityDetail detail = newDetail(ncr, 1, order, "PCS", (int) unreviewed,
+                "设备检测不良品自动汇总", null);
+            detail.setStatus("PENDING_REVIEW");
+            nonconformityDetailMapper.insert(detail);
+        }
+        for (Nonconformity pending : nonconformityMapper.selectList(Wrappers.lambdaQuery(Nonconformity.class)
+            .eq(Nonconformity::getTenantCode, tenant)
+            .eq(Nonconformity::getSourceType, "DEVICE")
+            .eq(Nonconformity::getStatus, "PENDING_REVIEW"))) {
+            if (activeGroups.contains(pending.getSourceGroupKey())) continue;
+            pending.setStatus("CANCELLED");
+            pending.setSourceGroupKey(null);
+            nonconformityMapper.updateById(pending);
+            clearSourceGroupKey(pending);
+            updateDetailStatus(pending, "CANCELLED");
+        }
+    }
+
+    @Transactional
+    public NonconformityResponse approveDeviceDisposition(String id, int expectedBadCount) {
+        inspectionAccessScopeService.requireSupervisorOrAdministrator();
+        Nonconformity ncr = requireNcr(id);
+        if (!"DEVICE".equals(ncr.getSourceType()) || !"PENDING_REVIEW".equals(ncr.getStatus())) {
+            throw new IllegalArgumentException("仅待审核的设备不良品处置单可以审核");
+        }
+        int currentBadCount = nonconformityDetailMapper.selectList(Wrappers.lambdaQuery(NonconformityDetail.class)
+            .eq(NonconformityDetail::getTenantCode, TenantContext.tenantCode())
+            .eq(NonconformityDetail::getNonconformityId, id)).stream()
+            .mapToInt(NonconformityDetail::getScrapQuantity).sum();
+        if (currentBadCount <= 0 || currentBadCount != expectedBadCount) {
+            throw new IllegalArgumentException("处置单不良品数量已变化，请刷新后重新审核");
+        }
+        ncr.setStatus("APPROVED");
+        ncr.setSourceGroupKey(null);
+        ncr.setReviewedBy(TenantContext.actor());
+        ncr.setReviewedAt(LocalDateTime.now());
+        nonconformityMapper.updateById(ncr);
+        clearSourceGroupKey(ncr);
+        updateDetailStatus(ncr, "APPROVED");
+        return toNonconformityResponse(ncr);
+    }
+
+    private void clearSourceGroupKey(Nonconformity ncr) {
+        nonconformityMapper.update(null, Wrappers.<Nonconformity>update()
+            .eq("id", ncr.getId()).eq("tenant_code", ncr.getTenantCode())
+            .set("source_group_key", null));
+    }
 
     public List<NonconformityResponse> listNonconformities(String status) {
         String tenantCode = TenantContext.tenantCode();

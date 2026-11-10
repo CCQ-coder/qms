@@ -11,7 +11,7 @@ import { formatHostCapacity, formatHostUptime } from '@/utils/host-status'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus'
 import { flyingProbePassRate, useTelemetryHistory } from './useTelemetryHistory'
-import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
+import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestDeviceSummary, InspectionTask, InspectionTemplate, WorkOrder } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
 const backendReachable = ref(true)
@@ -38,7 +38,7 @@ const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
 const hostStatusError = ref('')
 const offlineAfterSeconds = ref(300)
-const finishedTestRecords = ref<FinishedTestInspectionRecord[]>([])
+const finishedTestRecords = ref<EquipmentTelemetryRecord[]>([])
 const finishedRecordsNextCursor = ref<string>()
 const finishedRecordsLoading = ref(false)
 const finishedRecordsUpdatedAt = ref<Date>()
@@ -49,7 +49,9 @@ const equipmentError = ref('')
 const runtimeError = ref('')
 const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
-const recordSource = ref<'probe' | 'zhongbo' | 'retryable' | 'fqc'>('probe')
+const recordSource = ref<'probe' | 'zhongbo' | 'retryable' | 'all'>('probe')
+const recordDateRange = ref<string[]>([])
+const appliedRecordDateRange = ref<string[]>([])
 const canBindFlyingProbe = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? ''))
 const retryableRecords = ref<FlyingProbeRetryableProjection[]>([])
 const retryableTotal = ref(0)
@@ -63,7 +65,7 @@ const probeWorkOrderNo = ref('')
 const probeInternalProductNo = ref('')
 const appliedProbeSearch = ref<{ workOrderNo?: string; internalProductNo?: string }>({})
 const bindingDialog = ref(false)
-const bindingRecord = ref<FlyingProbeRetryableProjection>()
+const bindingRecord = ref<FlyingProbeRetryableProjection & { eventType?: string }>()
 const bindingKeyword = ref('')
 const bindingWorkOrders = ref<WorkOrder[]>([])
 const bindingWorkOrderNo = ref('')
@@ -99,9 +101,12 @@ const recordPanelLoading = computed(() => recordSource.value === 'probe' ? flyin
   : recordSource.value === 'retryable' ? retryableLoading.value : finishedRecordsLoading.value)
 watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
   activePanel.value = summaryRoute ? 'summary' : panel === 'records' ? 'records' : 'monitor'
-  if (activePanel.value === 'records' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
+  void refreshWorkbench()
 })
-const qualitySummary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
+const deviceSummary = ref<FinishedTestDeviceSummary[]>([])
+const summaryDateRange = ref<string[]>([])
+const summaryWorkOrder = ref('')
+const summaryPcbMaterial = ref('')
 const selectedDeviceId = ref('')
 const taskListDeviceAssetNo = ref('')
 const recordEquipmentAssetNo = ref('')
@@ -158,10 +163,32 @@ const selectedAssociation = computed(() => {
     ? `${probe.workOrderNo || '未关联'} / ${probe.batchNo || '未关联'}`
     : '未关联 / 未关联'
 })
-const fqcTotal = computed(() => qualitySummary.value.totalRecords)
-const fqcPass = computed(() => qualitySummary.value.passRecords)
-const fqcFail = computed(() => qualitySummary.value.failRecords)
-const fqcPassRate = computed(() => qualitySummary.value.firstPassRate)
+const fqcTotal = computed(() => deviceSummary.value.reduce((sum, row) => sum + row.totalCount, 0))
+const fqcPass = computed(() => deviceSummary.value.reduce((sum, row) => sum + row.goodCount, 0))
+const fqcFail = computed(() => deviceSummary.value.reduce((sum, row) => sum + row.badCount, 0))
+const fqcPassRate = computed(() => fqcTotal.value ? (fqcPass.value / fqcTotal.value * 100).toFixed(2) : '0.00')
+const filteredDeviceSummary = computed(() => deviceSummary.value.filter((row) => {
+  const [from, to] = summaryDateRange.value ?? []
+  const workOrder = summaryWorkOrder.value.trim().toLowerCase()
+  const material = summaryPcbMaterial.value.trim().toLowerCase()
+  return (!from || row.inspectionDate >= from) && (!to || row.inspectionDate <= to)
+    && (!workOrder || row.workOrderNo.toLowerCase().includes(workOrder))
+    && (!material || (row.pcbMaterialNo ?? '').toLowerCase().includes(material))
+}))
+const filteredSummaryTotals = computed(() => filteredDeviceSummary.value.reduce((totals, row) => ({
+  tested: totals.tested + row.totalCount,
+  good: totals.good + row.goodCount,
+  bad: totals.bad + row.badCount
+}), { tested: 0, good: 0, bad: 0 }))
+const summaryFilterKey = computed(() => JSON.stringify([summaryDateRange.value, summaryWorkOrder.value, summaryPcbMaterial.value]))
+
+function resetSummaryFilters() {
+  summaryDateRange.value = []
+  summaryWorkOrder.value = ''
+  summaryPcbMaterial.value = ''
+}
+const internalNo = (record: EquipmentTelemetryRecord) => record.internalProductNo
+  || deviceSummary.value.find((row) => row.workOrderNo === record.workOrderNo)?.internalProductNo || '—'
 const filteredTasks = computed(() => {
   const keyword = taskKeyword.value.trim().toLowerCase()
   if (!keyword) return fqcTasks.value
@@ -172,8 +199,8 @@ const filteredFinishedTestRecords = computed(() => {
   const keyword = recordKeyword.value.trim().toLowerCase()
   if (!keyword) return finishedTestRecords.value
   return finishedTestRecords.value.filter((record) => [
-    record.equipmentAssetNo, record.workOrderNo, record.internalProductNo,
-    record.productCode, record.taskNo, record.inspectedBy, record.defectSummary
+    record.equipmentCode, record.workOrderNo, record.materialNo,
+    record.sourceRecordNo, record.machineName
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
 const updatedAtLabel = computed(() => updatedAt.value ? formatDateTime(updatedAt.value) : '尚未成功读取')
@@ -338,20 +365,34 @@ async function loadProbeSnapshots(devices: Equipment[]) {
   return failedIds.size === 0
 }
 
-async function loadCompletedFinishedRecords(cursor?: string) {
+function recordTimeFilter() {
+  const [from, to] = appliedRecordDateRange.value ?? []
+  return from && to ? { fromTime: `${from}T00:00:00`, toTime: `${to}T23:59:59` } : {}
+}
+
+function refreshFilteredProbeRecords() {
+  return refreshFlyingProbeRecords({ ...appliedProbeSearch.value, ...recordTimeFilter() })
+}
+
+function refreshFilteredZhongboReports() {
+  return refreshZhongboReports(recordTimeFilter())
+}
+
+async function loadDeviceRecords(cursor?: string) {
   if (finishedRecordsLoading.value) return false
   finishedRecordsLoading.value = true
   finishedRecordsError.value = ''
   try {
-    const page = await qmsApi.listCompletedFinishedTestRecords(100, cursor)
+    const page = await qmsApi.listEquipmentTelemetryHistory({ eventType: 'FINISHED_TEST', limit: 100,
+      ...recordTimeFilter(), ...(cursor ? { cursor } : {}) })
     finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
     finishedRecordsNextCursor.value = page.nextCursor ?? undefined
     if (!cursor) finishedRecordsUpdatedAt.value = new Date()
     return true
   } catch {
     finishedRecordsError.value = cursor
-      ? '更早的 FQC 检验记录加载失败，请重试。'
-      : '已提交 FQC 检验记录读取失败，请重试。'
+      ? '更早的设备检测记录加载失败，请重试。'
+      : '设备检测记录读取失败，请重试。'
     if (!cursor) {
       finishedTestRecords.value = []
       finishedRecordsNextCursor.value = undefined
@@ -368,7 +409,8 @@ async function loadRetryableProjections(page = retryablePage.value) {
   retryableLoading.value = true
   retryableError.value = ''
   try {
-    const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize, appliedProbeSearch.value)
+    const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize,
+      { ...appliedProbeSearch.value, ...recordTimeFilter() })
     retryableRecords.value = result.records
     retryableTotal.value = result.total
     retryablePage.value = result.page
@@ -387,7 +429,7 @@ let runtimePollTimer: number | undefined
 let componentMounted = false
 
 async function pollRuntimeStatuses() {
-  if (monitoringLoading.value || runtimePollInFlight) return
+  if (activePanel.value !== 'monitor' || monitoringLoading.value || runtimePollInFlight) return
   runtimePollInFlight = true
   const version = monitoringVersion
   try {
@@ -408,15 +450,14 @@ async function loadMonitoringData() {
   monitoringLoading.value = true
   monitoringVersion++
   try {
-    const [summaryResult, equipmentResult, runtimeResult, recordsResult, hostResult, thresholdResult] = await Promise.allSettled([
-      qmsApi.getQualitySummary(undefined, undefined, undefined, true),
+    const [summaryResult, equipmentResult, runtimeResult, hostResult, thresholdResult] = await Promise.allSettled([
+      qmsApi.listFinishedTestDeviceSummary(),
       qmsApi.listEquipment(),
       qmsApi.listEquipmentRuntimeStatuses(),
-      loadCompletedFinishedRecords(),
       qmsApi.listGatewayHostStatuses(),
       qmsApi.getTenantParameter('equipment.monitor.offline-after-seconds')
     ])
-    summaryError.value = summaryResult.status === 'rejected' ? 'FQC 质量汇总读取失败，请重试。' : ''
+    summaryError.value = summaryResult.status === 'rejected' ? '设备检测汇总读取失败，请重试。' : ''
     equipmentError.value = equipmentResult.status === 'rejected' ? '成品测试设备台账读取失败，请重试。' : ''
     runtimeError.value = runtimeResult.status === 'rejected' ? '设备实时状态读取失败，请重试。' : ''
     hostStatuses.value = hostResult.status === 'fulfilled' ? hostResult.value : []
@@ -425,14 +466,11 @@ async function loadMonitoringData() {
       const seconds = Number.parseInt(thresholdResult.value.value, 10)
       offlineAfterSeconds.value = Number.isFinite(seconds) ? Math.min(86_400, Math.max(30, seconds)) : 300
     }
-    if (summaryResult.status === 'fulfilled') qualitySummary.value = summaryResult.value
+    if (summaryResult.status === 'fulfilled') deviceSummary.value = summaryResult.value
     if (equipmentResult.status === 'fulfilled') equipment.value = equipmentResult.value
     else equipment.value = []
     if (runtimeResult.status === 'fulfilled') runtimeStatuses.value = runtimeResult.value
     else runtimeStatuses.value = []
-    if (recordsResult.status === 'rejected') {
-      finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
-    }
     const probesLoaded = equipmentResult.status === 'fulfilled'
       ? await loadProbeSnapshots(equipmentResult.value.filter((item) => item.equipmentType === finishedTestEquipmentType))
       : false
@@ -441,8 +479,7 @@ async function loadMonitoringData() {
       probeFailedEquipmentIds.value = new Set()
       probeSnapshotsError.value = ''
     }
-    if (probesLoaded && recordsResult.status === 'fulfilled' && recordsResult.value
-      && [summaryResult, equipmentResult, runtimeResult, hostResult].every((result) => result.status === 'fulfilled')) {
+    if (probesLoaded && [summaryResult, equipmentResult, runtimeResult, hostResult].every((result) => result.status === 'fulfilled')) {
       updatedAt.value = new Date()
     }
   } finally {
@@ -451,8 +488,18 @@ async function loadMonitoringData() {
 }
 
 async function refreshWorkbench() {
+  if (activePanel.value === 'records') { await Promise.all([refreshRecordPanel(), loadOfflineDrafts()]); return }
+  if (activePanel.value === 'summary') {
+    try {
+      deviceSummary.value = await qmsApi.listFinishedTestDeviceSummary()
+      summaryError.value = ''
+      updatedAt.value = new Date()
+    } catch { summaryError.value = '设备检测汇总读取失败，请重试。' }
+    return
+  }
+  if (activePanel.value === 'tasks') { await Promise.all([loadTasks(), loadOfflineDrafts()]); return }
   if (monitoringLoading.value) return
-  await Promise.all([loadTasks(), loadMonitoringData(), loadOfflineDrafts()])
+  await Promise.all([loadMonitoringData(), loadOfflineDrafts()])
   if (!monitorDevices.value.some((device) => device.assetNo === selectedDeviceId.value)) {
     selectedDeviceId.value = monitorDevices.value[0]?.assetNo ?? ''
   }
@@ -461,17 +508,16 @@ async function refreshWorkbench() {
 function showPanel(panel: 'monitor' | 'records' | 'tasks') {
   activePanel.value = panel
   taskListDeviceAssetNo.value = ''
-  if (panel === 'records') {
-    recordSource.value = 'probe'
-    if (!flyingProbeLoaded.value) void refreshFlyingProbeRecords()
-  }
+  if (panel === 'records') recordSource.value = 'probe'
+  void refreshWorkbench()
 }
 
-function showRecordSource(source: 'probe' | 'zhongbo' | 'retryable' | 'fqc') {
+function showRecordSource(source: 'probe' | 'zhongbo' | 'retryable' | 'all') {
   recordSource.value = source
-  if (source === 'probe') void refreshFlyingProbeRecords(appliedProbeSearch.value)
-  if (source === 'zhongbo') void refreshZhongboReports()
+  if (source === 'probe') void refreshFilteredProbeRecords()
+  if (source === 'zhongbo') void refreshFilteredZhongboReports()
   if (source === 'retryable') void loadRetryableProjections(1)
+  if (source === 'all') void loadDeviceRecords()
 }
 
 function searchProbeRecords() {
@@ -483,14 +529,25 @@ function searchProbeRecords() {
     ...(internalProductNo ? { internalProductNo } : {})
   }
   if (recordSource.value === 'retryable') void loadRetryableProjections(1)
-  else void refreshFlyingProbeRecords(appliedProbeSearch.value)
+  else void refreshFilteredProbeRecords()
 }
 
 async function refreshRecordPanel() {
-  if (recordSource.value === 'probe') await refreshFlyingProbeRecords()
-  else if (recordSource.value === 'zhongbo') await refreshZhongboReports()
+  if (recordSource.value === 'probe') await refreshFilteredProbeRecords()
+  else if (recordSource.value === 'zhongbo') await refreshFilteredZhongboReports()
   else if (recordSource.value === 'retryable') await loadRetryableProjections()
-  else await loadCompletedFinishedRecords()
+  else await loadDeviceRecords()
+}
+
+function applyRecordDateFilter() {
+  appliedRecordDateRange.value = [...(recordDateRange.value ?? [])]
+  void refreshRecordPanel()
+}
+
+function resetRecordDateFilter() {
+  recordDateRange.value = []
+  appliedRecordDateRange.value = []
+  void refreshRecordPanel()
 }
 
 function deviceOnline(device: MonitorDevice) {
@@ -511,7 +568,7 @@ function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' 
 
 function fqcProjectionLabel(record: EquipmentTelemetryRecord) {
   if (record.fqcProjectionStatus === 'PROCESSED') {
-    if (record.fqcInspectionRecordId) return '已生成 FQC'
+    if (record.fqcInspectionRecordId) return '已生成检验记录'
     if (record.fqcProjectionReason?.includes('基线')) return '已作基线'
     return record.fqcDeltaTested === 0 ? '无新增板' : '已处理'
   }
@@ -554,9 +611,14 @@ async function searchBindingWorkOrders() {
   }
 }
 
-function openBindingDialog(record: FlyingProbeRetryableProjection) {
+function openBindingDialog(record: FlyingProbeRetryableProjection | EquipmentTelemetryRecord) {
   bindingSearchVersion++
-  bindingRecord.value = record
+  bindingRecord.value = {
+    id: record.id, equipmentCode: record.equipmentCode, machineName: record.machineName,
+    materialNo: record.materialNo, deviceTime: record.deviceTime, workOrderNo: record.workOrderNo,
+    sourceFile: 'sourceFile' in record ? record.sourceFile : undefined,
+    eventType: 'eventType' in record ? record.eventType : undefined
+  }
   bindingKeyword.value = record.workOrderNo || record.materialNo || ''
   bindingWorkOrders.value = []
   bindingWorkOrderNo.value = ''
@@ -570,13 +632,9 @@ async function submitBinding() {
   const record = bindingRecord.value
   const selected = bindingWorkOrders.value.find((order) => order.workOrderNo === bindingWorkOrderNo.value)
   if (!record || !selected || bindingSaving.value) return
-  if (record.workOrderNo && record.workOrderNo !== selected.workOrderNo) {
-    ElMessage.warning(`该文件已绑定生产指令 ${record.workOrderNo}，不能改绑。`)
-    return
-  }
   try {
     await ElMessageBox.confirm(
-      `${record.workOrderNo ? '按已绑定工单重新处理' : '将这条飞针记录绑定到'}生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。同一飞针文件将固定使用该工单，之后不能改绑其他工单；待匹配快照会尝试生成 FQC。确定继续吗？`,
+      `将这条设备记录关联到生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。${record.eventType === 'ZHONGBO_TEST_REPORT' ? '已审核的处置单不允许更正关联。' : '已处理的飞针文件将整体改绑；已审核或逐条创建处置单时不能更正。'}确定继续吗？`,
       '确认手动绑定',
       { confirmButtonText: '确认绑定', cancelButtonText: '取消', type: 'warning' }
     )
@@ -585,12 +643,18 @@ async function submitBinding() {
   }
   bindingSaving.value = true
   try {
-    await qmsApi.bindFlyingProbeWorkOrder(record.id, selected.workOrderNo)
+    if (record.eventType === 'ZHONGBO_TEST_REPORT') {
+      await qmsApi.bindZhongboWorkOrder(record.id, selected.workOrderNo)
+    } else {
+      await qmsApi.bindFlyingProbeWorkOrder(record.id, selected.workOrderNo)
+    }
     bindingDialog.value = false
-    ElMessage.success('已提交绑定，FQC 正在处理')
+    ElMessage.success('生产指令已绑定')
     await Promise.all([
-      refreshFlyingProbeRecords(),
-      loadCompletedFinishedRecords(),
+      refreshFilteredProbeRecords(),
+      refreshFilteredZhongboReports(),
+      loadDeviceRecords(),
+      loadMonitoringData(),
       ...(retryableLoaded.value ? [loadRetryableProjections()] : [])
     ])
   } catch (error) {
@@ -603,6 +667,7 @@ async function submitBinding() {
 function openSelectedDeviceTask() {
   taskListDeviceAssetNo.value = selectedDevice.value?.assetNo ?? ''
   activePanel.value = 'tasks'
+  void refreshWorkbench()
 }
 
 function selectDevice(assetNo: string) {
@@ -722,7 +787,6 @@ onMounted(async () => {
   window.addEventListener('offline', handleOffline)
   window.addEventListener('keydown', handleKeyboardShortcut)
   runtimePollTimer = window.setInterval(() => { void pollRuntimeStatuses() }, 30_000)
-  if (activePanel.value === 'records') void refreshFlyingProbeRecords()
   await refreshWorkbench()
   if (!componentMounted) return
   if (navigator.onLine && offlineDrafts.value.length) void syncOfflineDrafts()
@@ -746,7 +810,7 @@ onBeforeUnmount(() => {
 
     <section v-if="!isSummaryRoute" class="finished-test-hero">
       <div>
-        <p class="eyebrow">FQC 成品检测</p>
+        <p class="eyebrow">成品检测</p>
         <h2>成品测试实时监控工作台</h2>
         <p>集中查看成品测试工位、待检队列和质量结果；检测记录可通过扫码或任务列表直接处理。</p>
       </div>
@@ -770,14 +834,13 @@ onBeforeUnmount(() => {
         <el-alert v-if="runtimeError" type="error" :closable="false" :title="runtimeError" style="margin-bottom: 12px" />
         <el-alert v-if="hostStatusError" type="error" :closable="false" :title="hostStatusError" style="margin-bottom: 12px" />
         <el-alert v-if="probeSnapshotsError" type="error" :closable="false" :title="probeSnapshotsError" style="margin-bottom: 12px" />
-        <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-bottom: 12px" />
         <div class="section-heading">
           <div>
             <h3>成品测试多设备实时监控</h3>
-            <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；设备上报与已提交 FQC 检验分别统计。</p>
+            <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；检测数量按已关联生产指令的设备记录统计。</p>
           </div>
           <div v-if="!summaryError" class="shift-summary">
-            <span>FQC 已提交 <strong>{{ fqcTotal }}</strong></span>
+            <span>检测总数 <strong>{{ fqcTotal }}</strong></span>
             <span>合格 <strong class="good-text">{{ fqcPass }}</strong></span>
             <span>不合格 <strong class="bad-text">{{ fqcFail }}</strong></span>
             <span>一次合格率 <strong class="good-text">{{ fqcPassRate }}%</strong></span>
@@ -809,7 +872,7 @@ onBeforeUnmount(() => {
               <em>系统盘剩余 / 总量：{{ formatHostCapacity(device.host.systemDiskFreeBytes, device.host.systemDiskTotalBytes) }}</em>
               <em>开机时长：{{ formatHostUptime(device.host.uptimeSeconds) }}</em>
             </span>
-            <span class="device-card-footer"><span>飞针已测 {{ device.probeError ? '—' : (device.probe?.machiningCount ?? '—') }}</span><span>FQC 检验见记录列表</span></span>
+            <span class="device-card-footer"><span>飞针已测 {{ device.probeError ? '—' : (device.probe?.machiningCount ?? '—') }}</span><span>检测明细见记录列表</span></span>
           </button>
         </div>
         <div v-if="!equipmentError && monitorDevices.length" class="monitor-pagination">
@@ -826,7 +889,7 @@ onBeforeUnmount(() => {
             <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
             <div><span>关联生产指令 / 批次</span><strong>{{ selectedAssociation }}</strong></div>
           </template>
-          <div><span>FQC 待检任务</span><strong>未关联待检任务，请从列表选择</strong></div>
+          <div><span>待检任务</span><strong>未关联待检任务，请从列表选择</strong></div>
           <el-button type="primary" @click="openSelectedDeviceTask">查看待检任务</el-button>
         </div>
       </section>
@@ -859,14 +922,20 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>
         <div class="card-header">
-          <div><span>设备检测记录</span><small>按设备厂商查看测试数据与已提交的 FQC 检验。</small></div>
+          <div><span>设备检测记录</span><small>按设备厂商或全部设备查看原始测试数据。</small></div>
           <div class="task-queue-actions"><span class="live-status"><i></i>{{ recordPanelUpdatedAt ? `更新于 ${formatDateTime(recordPanelUpdatedAt)}` : '尚未读取' }}</span><el-button link type="primary" :disabled="recordPanelLoading" @click="refreshRecordPanel">刷新</el-button></div>
         </div>
       </template>
       <div class="task-queue-actions" role="group" aria-label="记录来源">
         <el-button :type="recordSource === 'probe' || recordSource === 'retryable' ? 'primary' : 'default'" @click="showRecordSource('probe')">旺通达飞针机</el-button>
         <el-button :type="recordSource === 'zhongbo' ? 'primary' : 'default'" @click="showRecordSource('zhongbo')">众博信飞针机</el-button>
-        <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
+        <el-button :type="recordSource === 'all' ? 'primary' : 'default'" @click="showRecordSource('all')">全部设备记录</el-button>
+      </div>
+      <div class="report-filter finished-record-date-filter">
+        <span>检测日期</span>
+        <el-date-picker v-model="recordDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable />
+        <el-button type="primary" :disabled="recordPanelLoading" @click="applyRecordDateFilter">查询</el-button>
+        <el-button :disabled="recordPanelLoading" @click="resetRecordDateFilter">重置</el-button>
       </div>
       <div v-if="recordSource === 'probe' || recordSource === 'retryable'" class="probe-record-filters">
         <div class="task-queue-actions" role="group" aria-label="旺通达记录匹配状态">
@@ -878,7 +947,7 @@ onBeforeUnmount(() => {
         <el-button type="primary" :disabled="recordPanelLoading" @click="searchProbeRecords">查询</el-button>
       </div>
       <template v-if="recordSource === 'probe'">
-        <p class="summary-footnote">采集快照与生成的 FQC 检验分开展示；自动匹配失败的记录可手动绑定生产指令。</p>
+        <p class="summary-footnote">按设备原始记录展示；未匹配或关联错误的飞针文件可手动绑定生产指令。</p>
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
@@ -887,11 +956,12 @@ onBeforeUnmount(() => {
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="设备料号" min-width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
-            <el-table-column label="已测" min-width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
+            <el-table-column label="厂内编号" min-width="150" show-overflow-tooltip><template #default="scope">{{ internalNo(scope.row) }}</template></el-table-column>
+            <el-table-column label="检测总数" min-width="105" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
             <el-table-column label="好板" min-width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="坏板" min-width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="实时合格率" min-width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
-            <el-table-column label="FQC 处理" width="200">
+            <el-table-column label="处理状态" width="200">
               <template #default="scope">
                 <el-tooltip :content="scope.row.fqcProjectionReason || ''" :disabled="!scope.row.fqcProjectionReason" placement="top">
                   <div class="fqc-projection-state">
@@ -903,7 +973,7 @@ onBeforeUnmount(() => {
             </el-table-column>
             <el-table-column label="操作" min-width="120" fixed="right">
               <template #default="scope">
-                <el-button v-if="canBindFlyingProbe && scope.row.fqcProjectionStatus === 'RETRYABLE'" link type="primary" @click="openBindingDialog(scope.row)">手动绑定</el-button>
+                <el-button v-if="canBindFlyingProbe && ['RETRYABLE', 'PROCESSED'].includes(scope.row.fqcProjectionStatus)" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button>
               </template>
             </el-table-column>
           </paged-table>
@@ -911,7 +981,7 @@ onBeforeUnmount(() => {
         <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
       </template>
       <template v-else-if="recordSource === 'zhongbo'">
-        <p class="summary-footnote">展示设备原始测试指标；已测板数和错误板数为当前料号累计值，按上报原值展示，暂不计入 FQC。</p>
+        <p class="summary-footnote">累计板数为设备上报原值；汇总和处置单使用相邻快照的新增数量。</p>
         <el-alert v-if="zhongboError" type="error" :closable="false" :title="zhongboError" style="margin-top: 12px" />
         <div v-if="zhongboLoaded || zhongboLoading" class="task-queue-toolbar"><span>已加载 {{ zhongboReports.length }} 条众博信测试报告</span></div>
         <div v-if="zhongboLoaded || zhongboLoading" class="finished-records-table-wrap finished-records-table-wrap--zhongbo">
@@ -942,10 +1012,17 @@ onBeforeUnmount(() => {
             <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
-            <el-table-column label="设备料号" width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="PCB料号" width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="厂内编号" width="160" show-overflow-tooltip><template #default="scope">{{ internalNo(scope.row) }}</template></el-table-column>
             <el-table-column label="累计已测板数" width="120" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="累计好板数" width="120" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested != null && scope.row.zhongboTestReport?.errorTested != null ? Math.max(0, scope.row.zhongboTestReport.panelsTested - scope.row.zhongboTestReport.errorTested) : '—' }}</template></el-table-column>
             <el-table-column label="累计错误板数" width="120" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.errorTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="合格率(%)" width="115" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested > 0 && scope.row.zhongboTestReport?.errorTested != null ? `${((scope.row.zhongboTestReport.panelsTested - scope.row.zhongboTestReport.errorTested) / scope.row.zhongboTestReport.panelsTested * 100).toFixed(2)}%` : '—' }}</template></el-table-column>
+            <el-table-column label="测试总点数" width="115" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.totalPoints ?? '—' }}</template></el-table-column>
+            <el-table-column label="开路数" width="95" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.openErrors ?? '—' }}</template></el-table-column>
+            <el-table-column label="短路数" width="95" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.shortErrors ?? '—' }}</template></el-table-column>
             <el-table-column label="设备状态" min-width="120"><template #default="scope">{{ scope.row.status || '—' }}</template></el-table-column>
+            <el-table-column label="操作" width="110" fixed="right"><template #default="scope"><el-button v-if="canBindFlyingProbe" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button></template></el-table-column>
           </paged-table>
         </div>
         <div v-if="zhongboNextCursor" class="task-queue-toolbar"><span>还有更早的报告</span><el-button :loading="zhongboLoading" @click="loadMoreZhongboReports">加载更多</el-button></div>
@@ -972,57 +1049,65 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：设备、工单、料号、任务号或检验员" />
+          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：设备、生产指令或料号" />
           <span>已加载 {{ finishedTestRecords.length }} 条{{ recordKeyword.trim() ? `，其中匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
-          <paged-table :key="recordKeyword" :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的 FQC 检验记录；飞针数据请查看“飞针机采集记录”">
-            <el-table-column label="检验时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
-            <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
-            <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
-            <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
-            <el-table-column prop="productCode" label="料号" min-width="140"><template #default="scope">{{ scope.row.productCode || '—' }}</template></el-table-column>
-            <el-table-column prop="inspectionQuantity" label="检验数量" min-width="105" align="right" />
-            <el-table-column prop="goodQuantity" label="良品" min-width="90" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodQuantity }}</span></template></el-table-column>
-            <el-table-column prop="defectiveQuantity" label="不良" min-width="90" align="right"><template #default="scope"><span :class="{ 'bad-text': scope.row.defectiveQuantity > 0 }">{{ scope.row.defectiveQuantity }}</span></template></el-table-column>
-            <el-table-column label="结果" min-width="90"><template #default="scope"><el-tag :type="scope.row.verdict === 'PASS' ? 'success' : 'danger'">{{ scope.row.verdict }}</el-tag></template></el-table-column>
-            <el-table-column prop="defectSummary" label="缺陷说明" min-width="180"><template #default="scope">{{ scope.row.defectSummary || '—' }}</template></el-table-column>
-            <el-table-column prop="inspectedBy" label="检验员" min-width="110"><template #default="scope">{{ scope.row.inspectedBy || '—' }}</template></el-table-column>
+          <paged-table :key="recordKeyword" :data="filteredFinishedTestRecords" size="small" empty-text="暂无设备检测记录">
+            <el-table-column label="检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column prop="equipmentCode" label="检测设备" min-width="130" />
+            <el-table-column label="生产指令" min-width="145"><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="厂内编号" min-width="150"><template #default="scope">{{ internalNo(scope.row) }}</template></el-table-column>
+            <el-table-column label="PCB料号" min-width="140"><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="检测总数" min-width="105" align="right"><template #default="scope">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.panelsTested ?? '—') : (scope.row.machiningCount ?? '—') }}</template></el-table-column>
+            <el-table-column label="好板" min-width="90" align="right"><template #default="scope"><span class="good-text">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.panelsTested != null && scope.row.zhongboTestReport?.errorTested != null ? Math.max(0, scope.row.zhongboTestReport.panelsTested - scope.row.zhongboTestReport.errorTested) : '—') : (scope.row.goodBoardCount ?? '—') }}</span></template></el-table-column>
+            <el-table-column label="坏板" min-width="90" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.errorTested ?? '—') : (scope.row.badBoardCount ?? '—') }}</span></template></el-table-column>
+            <el-table-column label="操作" width="115" fixed="right"><template #default="scope"><el-button v-if="canBindFlyingProbe && (scope.row.eventType === 'ZHONGBO_TEST_REPORT' || ['RETRYABLE', 'PROCESSED'].includes(scope.row.fqcProjectionStatus))" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button></template></el-table-column>
           </paged-table>
         </div>
-        <div v-if="finishedRecordsNextCursor" class="task-queue-toolbar"><span>还有更早的 FQC 检验记录</span><el-button :loading="finishedRecordsLoading" @click="loadCompletedFinishedRecords(finishedRecordsNextCursor)">加载更多</el-button></div>
+        <div v-if="finishedRecordsNextCursor" class="task-queue-toolbar"><span>还有更早的设备记录</span><el-button :loading="finishedRecordsLoading" @click="loadDeviceRecords(finishedRecordsNextCursor)">加载更多</el-button></div>
       </template>
     </el-card>
 
     <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card summary-table-card">
       <template #header>
         <div class="card-header">
-          <div><span>成品测试汇总表</span><small>已提交的成品检验记录按日期汇总；若当前权限内没有成品测试记录，将显示为空。</small></div>
+          <div><span>成品测试汇总表</span><small>设备检测记录按检测日期和生产指令汇总；未关联生产指令的记录暂不计入。</small></div>
           <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
         </div>
       </template>
       <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
-      <paged-table v-else :data="qualitySummary.dailyTrend" empty-text="暂无已提交的质量记录">
+      <div class="report-filter finished-summary-filters">
+        <span>检测日期</span>
+        <el-date-picker v-model="summaryDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable />
+        <el-input v-model="summaryWorkOrder" clearable placeholder="筛选生产指令" aria-label="筛选生产指令" />
+        <el-input v-model="summaryPcbMaterial" clearable placeholder="筛选 PCB 料号" aria-label="筛选 PCB 料号" />
+        <el-button @click="resetSummaryFilters">重置</el-button>
+      </div>
+      <paged-table v-if="!summaryError" :key="summaryFilterKey" :data="filteredDeviceSummary" empty-text="当前筛选条件下暂无设备检测记录">
         <el-table-column prop="inspectionDate" label="检测日期" min-width="140" />
-        <el-table-column prop="totalRecords" label="检测总数" min-width="130" align="right" />
-        <el-table-column prop="passRecords" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.passRecords }}</span></template></el-table-column>
-        <el-table-column prop="failRecords" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.failRecords }}</span></template></el-table-column>
+        <el-table-column prop="workOrderNo" label="生产指令" min-width="150" />
+        <el-table-column prop="internalProductNo" label="厂内编号" min-width="155"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
+        <el-table-column prop="pcbMaterialNo" label="PCB料号" min-width="150"><template #default="scope">{{ scope.row.pcbMaterialNo || '—' }}</template></el-table-column>
+        <el-table-column prop="totalCount" label="检测总数" min-width="130" align="right" />
+        <el-table-column prop="goodCount" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodCount }}</span></template></el-table-column>
+        <el-table-column prop="badCount" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badCount }}</span></template></el-table-column>
         <el-table-column label="一次合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
       </paged-table>
-      <div v-if="!summaryError" class="summary-footnote">当前成品检验累计：{{ fqcTotal }} 条，合格 {{ fqcPass }} 条，不合格 {{ fqcFail }} 条。</div>
+      <div v-if="!summaryError" class="summary-footnote">当前筛选结果：{{ filteredSummaryTotals.tested }} 板，合格 {{ filteredSummaryTotals.good }} 板，不合格 {{ filteredSummaryTotals.bad }} 板（共 {{ filteredDeviceSummary.length }} 组）。</div>
     </el-card>
 
-    <el-dialog v-model="bindingDialog" title="手动绑定飞针工单" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
+    <el-dialog v-model="bindingDialog" title="手动绑定生产指令" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
       <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
-      <el-alert type="warning" :closable="false" title="同一飞针文件绑定后不能改绑其他工单；再次选择原工单可重试处理。已生成的 FQC 记录不会改动。" />
-      <el-alert v-if="bindingRecord?.workOrderNo" type="info" :closable="false" :title="`该文件已绑定工单 ${bindingRecord.workOrderNo}，只能按此工单重试处理。`" style="margin-top: 10px" />
+      <el-alert type="warning" :closable="false" :title="bindingRecord?.eventType === 'ZHONGBO_TEST_REPORT' ? '可更正未审核设备记录的生产指令；已审核处置单的来源关联不可更改。' : '同一飞针文件已生成检验记录后不能改绑其他生产指令。'" />
+      <el-alert v-if="bindingRecord?.workOrderNo && bindingRecord.eventType !== 'ZHONGBO_TEST_REPORT'" type="info" :closable="false" :title="`该文件已绑定工单 ${bindingRecord.workOrderNo}，只能按此工单重试处理。`" style="margin-top: 10px" />
       <div class="binding-order-search">
         <el-input v-model="bindingKeyword" clearable placeholder="输入生产指令号或厂内编号" @keyup.enter="searchBindingWorkOrders" />
         <el-button :loading="bindingSearchLoading" @click="searchBindingWorkOrders">查询工单</el-button>
       </div>
       <el-alert v-if="bindingError" type="error" :closable="false" :title="bindingError" />
       <el-table v-loading="bindingSearchLoading" :data="bindingWorkOrders" size="small" max-height="300" empty-text="未找到工单，请输入准确的生产指令号或厂内编号">
-        <el-table-column label="选择" width="70"><template #default="{ row }"><el-radio v-model="bindingWorkOrderNo" :value="row.workOrderNo" :disabled="Boolean(bindingRecord?.workOrderNo && bindingRecord.workOrderNo !== row.workOrderNo)" :aria-label="`选择工单 ${row.workOrderNo}`" /></template></el-table-column>
+        <el-table-column label="选择" width="70"><template #default="{ row }"><el-radio v-model="bindingWorkOrderNo" :value="row.workOrderNo" :disabled="Boolean(bindingRecord?.eventType !== 'ZHONGBO_TEST_REPORT' && bindingRecord?.workOrderNo && bindingRecord.workOrderNo !== row.workOrderNo)" :aria-label="`选择工单 ${row.workOrderNo}`" /></template></el-table-column>
         <el-table-column prop="workOrderNo" label="生产指令号" min-width="145" />
         <el-table-column label="厂内编号" min-width="180"><template #default="{ row }">{{ row.internalProductNo || '—' }}</template></el-table-column>
         <el-table-column label="下达日期" min-width="130"><template #default="{ row }">{{ formatDate(row.releasedAt) }}</template></el-table-column>

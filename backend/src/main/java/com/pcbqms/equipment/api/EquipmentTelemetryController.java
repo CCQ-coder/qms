@@ -3,6 +3,8 @@ package com.pcbqms.equipment.api;
 import com.pcbqms.common.api.ApiResponse;
 import com.pcbqms.equipment.application.EquipmentTelemetryApplicationService;
 import com.pcbqms.equipment.application.EquipmentTelemetryQueryApplicationService;
+import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
+import com.pcbqms.inspection.api.BindFlyingProbeWorkOrderRequest;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -24,6 +27,24 @@ public class EquipmentTelemetryController {
     private final GatewayIntegrationAuthentication gatewayIntegrationAuthentication;
     private final EquipmentTelemetryApplicationService telemetryApplicationService;
     private final EquipmentTelemetryQueryApplicationService telemetryQueryApplicationService;
+    private final FinishedTestDeviceSummaryService finishedTestDeviceSummaryService;
+
+    @GetMapping("/finished-test-summary")
+    public ApiResponse<List<FinishedTestDeviceSummaryService.Summary>> finishedTestSummary() {
+        return ApiResponse.of(finishedTestDeviceSummaryService.listSummary());
+    }
+
+    @GetMapping("/finished-test-monthly-analytics")
+    public ApiResponse<FinishedTestDeviceSummaryService.MonthlyAnalytics> finishedTestMonthlyAnalytics() {
+        return ApiResponse.of(finishedTestDeviceSummaryService.monthlyAnalytics());
+    }
+
+    @PostMapping("/{telemetryId}/bind-work-order")
+    public ApiResponse<String> bindZhongboWorkOrder(
+        @PathVariable String telemetryId, @Valid @RequestBody BindFlyingProbeWorkOrderRequest request
+    ) {
+        return ApiResponse.of(finishedTestDeviceSummaryService.bindZhongboWorkOrder(telemetryId, request.workOrderNo()));
+    }
 
     @GetMapping
     public ApiResponse<List<EquipmentTelemetryRecordResponse>> listRecent(@RequestParam(required = false) Integer limit) {

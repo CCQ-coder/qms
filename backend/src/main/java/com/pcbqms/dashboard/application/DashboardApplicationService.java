@@ -29,6 +29,23 @@ public class DashboardApplicationService {
     public DashboardSummaryResponse summary() {
         String tenantCode = TenantContext.tenantCode();
         var access = inspectionAccessScopeService.currentAccess();
+        if (access.fullDataAccess()) {
+            long activeWorkOrders = workOrderMapper.selectCount(Wrappers.lambdaQuery(WorkOrder.class)
+                .eq(WorkOrder::getTenantCode, tenantCode).eq(WorkOrder::getStatus, "ACTIVE")
+                .ne(WorkOrder::getWarehouseStatus, "CLOSED"));
+            long pendingTasks = inspectionTaskMapper.selectCount(Wrappers.lambdaQuery(InspectionTask.class)
+                .eq(InspectionTask::getTenantCode, tenantCode).eq(InspectionTask::getStatus, "PENDING"));
+            long completedTasks = inspectionTaskMapper.selectCount(Wrappers.lambdaQuery(InspectionTask.class)
+                .eq(InspectionTask::getTenantCode, tenantCode).eq(InspectionTask::getStatus, "COMPLETED"));
+            long totalRecords = inspectionRecordMapper.selectCount(Wrappers.lambdaQuery(InspectionRecord.class)
+                .eq(InspectionRecord::getTenantCode, tenantCode));
+            long passRecords = inspectionRecordMapper.selectCount(Wrappers.lambdaQuery(InspectionRecord.class)
+                .eq(InspectionRecord::getTenantCode, tenantCode).eq(InspectionRecord::getVerdict, "PASS"));
+            long openNcrs = nonconformityMapper.selectCount(Wrappers.lambdaQuery(Nonconformity.class)
+                .eq(Nonconformity::getTenantCode, tenantCode).eq(Nonconformity::getStatus, "OPEN"));
+            return new DashboardSummaryResponse(activeWorkOrders, pendingTasks, completedTasks, openNcrs,
+                totalRecords == 0 ? 0D : Math.round(passRecords * 10000D / totalRecords) / 100D);
+        }
         List<InspectionTask> tasks = inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)
                 .eq(InspectionTask::getTenantCode, tenantCode))
             .stream().filter(task -> access.fullDataAccess() || access.canAccess(task.getProcessCode())).toList();

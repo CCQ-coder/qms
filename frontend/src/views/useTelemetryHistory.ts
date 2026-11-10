@@ -18,7 +18,7 @@ export function useTelemetryHistory(
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
-  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = {}
+  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo' | 'fromTime' | 'toTime'> = {}
 
   async function load(cursor?: string) {
     if (loading.value) return
@@ -39,7 +39,7 @@ export function useTelemetryHistory(
 
   return {
     records, nextCursor, loading, loaded, error, updatedAt,
-    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = search) => {
+    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo' | 'fromTime' | 'toTime'> = search) => {
       search = filters
       return load()
     },

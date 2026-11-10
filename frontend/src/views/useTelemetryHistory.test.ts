@@ -41,6 +41,22 @@ test('loads only flying-probe history and exposes its next cursor', async () => 
   assert.equal(history.error.value, '')
 })
 
+test('keeps detection date filters while loading the next page', async () => {
+  const queries: unknown[] = []
+  const history = useTelemetryHistory(async (query) => {
+    queries.push(query)
+    return { items: [], nextCursor: query.cursor ? undefined : 'older-page', pageSize: 100 }
+  }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
+
+  await history.refresh({ fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59' })
+  await history.loadMore()
+
+  assert.deepEqual(queries, [
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59' },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59', cursor: 'older-page' }
+  ])
+})
+
 test('appends the next page once and stops when there is no cursor', async () => {
   const queries: unknown[] = []
   const history = useTelemetryHistory(async (query) => {

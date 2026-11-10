@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.equipment.application.EquipmentTelemetryApplicationService;
 import com.pcbqms.equipment.application.EquipmentTelemetryQueryApplicationService;
+import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,8 @@ class EquipmentTelemetryControllerTest {
         var service = mock(EquipmentTelemetryApplicationService.class);
         when(service.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
         var controller = new EquipmentTelemetryController(
-            mock(GatewayIntegrationAuthentication.class), service, mock(EquipmentTelemetryQueryApplicationService.class)
+            mock(GatewayIntegrationAuthentication.class), service, mock(EquipmentTelemetryQueryApplicationService.class),
+            mock(FinishedTestDeviceSummaryService.class)
         );
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 
@@ -66,7 +68,8 @@ class EquipmentTelemetryControllerTest {
         var queryService = mock(EquipmentTelemetryQueryApplicationService.class);
         when(queryService.pageHistory(any())).thenReturn(new EquipmentTelemetryHistoryPageResponse(List.of(), null, 100));
         var controller = new EquipmentTelemetryController(
-            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class), queryService
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class), queryService,
+            mock(FinishedTestDeviceSummaryService.class)
         );
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 

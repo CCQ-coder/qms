@@ -3,8 +3,8 @@ import { requireHttpsDeviceToken } from '@/utils/device-upload-token'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
-  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
-  , MenuAccess, GatewayHostStatus
+  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage, FinishedTestDeviceSummary
+  , MenuAccess, GatewayHostStatus, FinishedTestMonthlyAnalytics
 } from '@/types/qms'
 
 export const qmsApi = {
@@ -208,6 +208,11 @@ export const qmsApi = {
     return data.data
   },
 
+  async approveDeviceDisposition(ncrId: string, expectedBadCount: number) {
+    const { data } = await http.post<ApiResponse<Nonconformity>>(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}/approve`, null, { params: { expectedBadCount } })
+    return data.data
+  },
+
   async listCapas(status?: string) {
     const { data } = await http.get<ApiResponse<Capa[]>>('/api/v1/capas', { params: { status } })
     return data.data
@@ -307,6 +312,23 @@ export const qmsApi = {
     return data.data
   },
 
+  async listFinishedTestDeviceSummary() {
+    const { data } = await http.get<ApiResponse<FinishedTestDeviceSummary[]>>('/api/v1/equipment/telemetry/finished-test-summary')
+    return data.data
+  },
+
+  async getFinishedTestMonthlyAnalytics() {
+    const { data } = await http.get<ApiResponse<FinishedTestMonthlyAnalytics>>('/api/v1/equipment/telemetry/finished-test-monthly-analytics')
+    return data.data
+  },
+
+  async bindZhongboWorkOrder(telemetryId: string, workOrderNo: string) {
+    const { data } = await http.post<ApiResponse<string>>(
+      `/api/v1/equipment/telemetry/${encodeURIComponent(telemetryId)}/bind-work-order`, { workOrderNo }
+    )
+    return data.data
+  },
+
   async bindFlyingProbeWorkOrder(telemetryId: string, workOrderNo: string) {
     const { data } = await http.post<ApiResponse<string>>(
       `/api/v1/inspection/flying-probe-projections/${encodeURIComponent(telemetryId)}/bind-work-order`,
@@ -315,7 +337,7 @@ export const qmsApi = {
     return data.data
   },
 
-  async listRetryableFlyingProbeProjections(page = 1, pageSize = 50, search: { workOrderNo?: string; internalProductNo?: string } = {}) {
+  async listRetryableFlyingProbeProjections(page = 1, pageSize = 50, search: { workOrderNo?: string; internalProductNo?: string; fromTime?: string; toTime?: string } = {}) {
     const { data } = await http.get<ApiResponse<FlyingProbeRetryableProjectionPage>>(
       '/api/v1/inspection/flying-probe-projections/retryable', { params: { page, pageSize, ...search } }
     )

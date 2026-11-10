@@ -269,6 +269,9 @@ export type Nonconformity = {
   workOrderNo: string
   batchNo?: string
   status: string
+  sourceType?: string
+  reviewedBy?: string
+  reviewedAt?: string
   initiatedBy: string
   createdAt: string
   detectionDate?: string
@@ -431,6 +434,7 @@ export type EquipmentTelemetryRecord = {
   programNo?: string
   materialNo?: string
   workOrderNo?: string
+  internalProductNo?: string
   batchNo?: string
   operatorName?: string
   progressPercent?: number
@@ -466,6 +470,23 @@ export type EquipmentTelemetryRecord = {
     shortThresh?: number | null
     hit?: number | null
   } | null
+}
+
+export type FinishedTestDeviceSummary = {
+  inspectionDate: string
+  workOrderNo: string
+  internalProductNo?: string
+  pcbMaterialNo?: string
+  totalCount: number
+  goodCount: number
+  badCount: number
+  passRate: number
+}
+
+export type FinishedTestMonthlyAnalytics = {
+  month: string
+  byModel: Array<{ model: string; totalCount: number; goodCount: number; badCount: number; passRate: number }>
+  topInternalDefects: Array<{ internalProductNo: string; badCount: number }>
 }
 
 export type EquipmentTelemetryHistoryQuery = {

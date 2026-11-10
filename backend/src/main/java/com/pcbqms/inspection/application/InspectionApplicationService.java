@@ -213,7 +213,7 @@ public class InspectionApplicationService {
         return submitRecordAt(taskId, request, null);
     }
 
-    /** Shares manual validation, idempotency, and NCR behavior with the flying-probe projection. */
+    /** Shares manual validation and idempotency with the flying-probe projection. */
     @Transactional
     public InspectionRecordResponse submitAutomaticRecord(
         String taskId, CreateInspectionRecordRequest request, LocalDateTime deviceInspectionTime
@@ -272,7 +272,8 @@ public class InspectionApplicationService {
         inspectionTaskMapper.updateById(task);
 
         String ncrNo = null;
-        if ("FAIL".equals(verdict) && isAutoCreateNcrEnabled(tenantCode)) {
+        if ("FAIL".equals(verdict) && isAutoCreateNcrEnabled(tenantCode)
+            && !"system.flying-probe".equals(task.getCreatedBy())) {
             ncrNo = createNonconformity(task, record, now);
         }
         return InspectionRecordResponse.from(record, ncrNo);

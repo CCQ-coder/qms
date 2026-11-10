@@ -69,11 +69,16 @@ public class ReportingApplicationService {
         String normalizedProcessCode = StringUtils.hasText(processCode) ? processCode.trim() : null;
         String tenantCode = TenantContext.tenantCode();
         var access = inspectionAccessScopeService.currentAccess();
-        List<InspectionRecord> records = inspectionRecordMapper.selectList(Wrappers.lambdaQuery(InspectionRecord.class)
-            .eq(InspectionRecord::getTenantCode, tenantCode));
+        var recordQuery = Wrappers.query(InspectionRecord.class)
+            .select("task_id", "verdict", "defect_summary", "defective_quantity", "inspected_at")
+            .eq("tenant_code", tenantCode);
+        if (from != null) recordQuery.ge("inspected_at", from.atStartOfDay());
+        if (to != null) recordQuery.lt("inspected_at", to.plusDays(1).atStartOfDay());
+        List<InspectionRecord> records = inspectionRecordMapper.selectList(recordQuery);
         Map<String, InspectionTask> taskById = new LinkedHashMap<>();
-        for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)
-            .eq(InspectionTask::getTenantCode, tenantCode))) {
+        for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.query(InspectionTask.class)
+            .select("id", "process_code", "process_name", "task_type")
+            .eq("tenant_code", tenantCode))) {
             if (access.fullDataAccess() || access.canAccess(task.getProcessCode())) {
                 taskById.put(task.getId(), task);
             }

@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.pcbqms.access.application.InspectionAccessScopeService;
+import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.inspection.api.CloseCapaRequest;
 import com.pcbqms.inspection.api.CreateCapaRequest;
@@ -53,6 +55,89 @@ class NonconformityApplicationServiceTest {
     @AfterEach
     void clearTenantContext() {
         TenantContext.clear();
+    }
+
+    @Test
+    void createsDeviceDispositionForUnreviewedBadBoards() {
+        TenantContext.set("customer-a", "admin");
+        WorkOrder order = new WorkOrder();
+        order.setId("order-1");
+        order.setTenantCode("customer-a");
+        order.setWorkOrderNo("WO-1");
+        when(workOrderMapper.selectOne(any())).thenReturn(order);
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of());
+        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
+        var summary = new FinishedTestDeviceSummaryService.Summary(LocalDate.of(2026, 11, 3),
+            "WO-1", "42379", "42379", 10, 7, 3, 70);
+
+        service().syncDeviceDefects(List.of(summary));
+
+        ArgumentCaptor<Nonconformity> ncr = ArgumentCaptor.forClass(Nonconformity.class);
+        ArgumentCaptor<NonconformityDetail> detail = ArgumentCaptor.forClass(NonconformityDetail.class);
+        verify(nonconformityMapper).insert(ncr.capture());
+        verify(nonconformityDetailMapper).insert(detail.capture());
+        assertThat(ncr.getValue().getStatus()).isEqualTo("PENDING_REVIEW");
+        assertThat(ncr.getValue().getSourceType()).isEqualTo("DEVICE");
+        assertThat(detail.getValue().getScrapQuantity()).isEqualTo(3);
+        assertThat(detail.getValue().getStatus()).isEqualTo("PENDING_REVIEW");
+    }
+
+    @Test
+    void approvalRequiresSupervisorAndPreservesReviewedCount() {
+        TenantContext.set("customer-a", "reviewer");
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId("ncr-1");
+        ncr.setTenantCode("customer-a");
+        ncr.setSourceType("DEVICE");
+        ncr.setStatus("PENDING_REVIEW");
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setScrapQuantity(3);
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
+
+        service().approveDeviceDisposition("ncr-1", 3);
+
+        assertThat(ncr.getStatus()).isEqualTo("APPROVED");
+        assertThat(ncr.getReviewedBy()).isEqualTo("reviewer");
+        assertThat(ncr.getReviewedAt()).isNotNull();
+        verify(inspectionAccessScopeService).requireSupervisorOrAdministrator();
+        verify(nonconformityMapper).updateById(ncr);
+    }
+
+    @Test
+    void approvalRejectsAStaleQuantityAfterDeviceCountsChange() {
+        TenantContext.set("customer-a", "reviewer");
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId("ncr-1");
+        ncr.setTenantCode("customer-a");
+        ncr.setSourceType("DEVICE");
+        ncr.setStatus("PENDING_REVIEW");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setScrapQuantity(4);
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
+
+        assertThatThrownBy(() -> service().approveDeviceDisposition("ncr-1", 3))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("数量已变化");
+        verify(nonconformityMapper, never()).updateById(any(Nonconformity.class));
+    }
+
+    @Test
+    void cancelsUnreviewedDeviceDispositionWhenItsSourceCountsMoveAway() {
+        TenantContext.set("customer-a", "admin");
+        Nonconformity pending = new Nonconformity();
+        pending.setId("ncr-1");
+        pending.setTenantCode("customer-a");
+        pending.setStatus("PENDING_REVIEW");
+        pending.setSourceGroupKey("2026-11-03:order-1");
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of(pending));
+
+        service().syncDeviceDefects(List.of());
+
+        assertThat(pending.getStatus()).isEqualTo("CANCELLED");
+        assertThat(pending.getSourceGroupKey()).isNull();
+        verify(nonconformityMapper).updateById(pending);
     }
 
     @Test

@@ -58,11 +58,20 @@ public interface EquipmentTelemetryRecordMapper {
                source_record_no, deduplication_key, raw_payload, created_at
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
-        <if test="eventType != null">
+        <if test="eventType == 'FINISHED_TEST'">
+            AND event_type IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')
+        </if>
+        <if test="eventType != null and eventType != 'FINISHED_TEST'">
             AND event_type = #{eventType}
         </if>
         <if test="workOrderNo != null">
-            AND work_order_no LIKE CONCAT('%', #{workOrderNo}, '%')
+            AND (work_order_no LIKE CONCAT('%', #{workOrderNo}, '%')
+                 OR EXISTS (
+                     SELECT 1 FROM qms_flying_probe_projection projection
+                     WHERE projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci
+                       AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                       AND projection.work_order_no LIKE CONCAT('%', #{workOrderNo}, '%')
+                 ))
         </if>
         <if test="internalProductNo != null">
             AND material_no LIKE CONCAT('%', #{internalProductNo}, '%')
@@ -77,10 +86,24 @@ public interface EquipmentTelemetryRecordMapper {
             </foreach>
         </if>
         <if test="fromTime != null">
-            AND received_at &gt;= #{fromTime}
+            <choose>
+                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'ZHONGBO_TEST_REPORT' or eventType == 'FINISHED_TEST'">
+                    AND device_time &gt;= #{fromTime}
+                </when>
+                <otherwise>
+                    AND received_at &gt;= #{fromTime}
+                </otherwise>
+            </choose>
         </if>
         <if test="toTime != null">
-            AND received_at &lt;= #{toTime}
+            <choose>
+                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'ZHONGBO_TEST_REPORT' or eventType == 'FINISHED_TEST'">
+                    AND device_time &lt;= #{toTime}
+                </when>
+                <otherwise>
+                    AND received_at &lt;= #{toTime}
+                </otherwise>
+            </choose>
         </if>
         <if test="cursorTime != null">
             <choose>
@@ -121,7 +144,7 @@ public interface EquipmentTelemetryRecordMapper {
 
     @Select("""
         <script>
-        SELECT telemetry_id, status, reason, inspection_record_id, delta_tested
+        SELECT telemetry_id, status, reason, inspection_record_id, delta_tested, work_order_no
         FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode}
           AND telemetry_id IN

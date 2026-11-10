@@ -10,4 +10,5 @@ public class EquipmentTelemetryProjectionStatus {
     private String reason;
     private String inspectionRecordId;
     private Integer deltaTested;
+    private String workOrderNo;
 }

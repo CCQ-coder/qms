@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.format.annotation.DateTimeFormat;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/v1/inspection/flying-probe-projections")
@@ -24,9 +26,11 @@ public class FlyingProbeProjectionController {
     public ApiResponse<FlyingProbeRetryablePageResponse> listRetryable(
         @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
         @RequestParam(required = false) String workOrderNo,
-        @RequestParam(required = false) String internalProductNo
+        @RequestParam(required = false) String internalProductNo,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromTime,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toTime
     ) {
-        return ApiResponse.of(projectionService.listRetryable(page, pageSize, workOrderNo, internalProductNo));
+        return ApiResponse.of(projectionService.listRetryable(page, pageSize, workOrderNo, internalProductNo, fromTime, toTime));
     }
 
     @PostMapping("/{telemetryId}/bind-work-order")

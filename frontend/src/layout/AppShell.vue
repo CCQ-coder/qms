@@ -103,14 +103,13 @@ onMounted(() => {
         <el-sub-menu v-if="isMenuGroupVisible('QUALITY')" index="quality">
           <template #title><el-icon><DocumentChecked /></el-icon><span>质量检测</span></template>
           <el-menu-item v-if="isMenuVisible('WORK_ORDERS')" index="/work-orders"><span>生产指令查询</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('PROCESS_INSPECTION')" index="/process-inspection"><span>工序检验</span></el-menu-item>
           <el-menu-item v-if="isMenuVisible('INSPECTION_WORKBENCH')" index="/inspection"><span>成品测试</span></el-menu-item>
           <el-menu-item v-if="isMenuVisible('NONCONFORMITIES')" index="/nonconformities"><span>不良品处理</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('TRACE')" index="trace">
           <template #title><el-icon><Operation /></el-icon><span>报表</span></template>
-          <el-menu-item v-if="isMenuVisible('ANALYTICS')" index="/analytics"><span>报表分析</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('ANALYTICS')" index="/analytics"><span>可视化报表分析</span></el-menu-item>
           <el-menu-item v-if="isMenuVisible('EQUIPMENT_FINISHED_TEST_SUMMARY')" index="/equipment/finished-test-summary"><span>成品测试汇总表</span></el-menu-item>
         </el-sub-menu>
 

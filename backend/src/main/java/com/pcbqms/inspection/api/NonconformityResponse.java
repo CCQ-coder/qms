@@ -11,6 +11,9 @@ public record NonconformityResponse(
     String workOrderNo,
     String batchNo,
     String status,
+    String sourceType,
+    String reviewedBy,
+    LocalDateTime reviewedAt,
     String initiatedBy,
     LocalDateTime createdAt,
     LocalDate detectionDate,
@@ -25,7 +28,8 @@ public record NonconformityResponse(
     public static NonconformityResponse from(Nonconformity entity, String workOrderNo, String batchNo,
                                              List<NonconformityDetailResponse> details) {
         return new NonconformityResponse(entity.getId(), entity.getNcrNo(), workOrderNo, batchNo,
-            entity.getStatus(), entity.getInitiatedBy(), entity.getCreatedAt(), entity.getDetectionDate(),
+            entity.getStatus(), entity.getSourceType(), entity.getReviewedBy(), entity.getReviewedAt(),
+            entity.getInitiatedBy(), entity.getCreatedAt(), entity.getDetectionDate(),
             entity.getShiftName(), entity.getProcessCode(), entity.getProcessName(), entity.getResponsibleDepartment(),
             entity.getRemark(), entity.getDispositionMethod(), details);
     }

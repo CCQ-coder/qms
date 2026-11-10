@@ -41,13 +41,16 @@ public interface FlyingProbeProjectionMapper {
         <if test="workOrderNo != null">
             AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
         </if>
+        <if test="fromTime != null">AND p.device_time &gt;= #{fromTime}</if>
+        <if test="toTime != null">AND p.device_time &lt;= #{toTime}</if>
         ORDER BY p.latest_device_time DESC, p.telemetry_id DESC
         LIMIT #{pageSize} OFFSET #{offset}
         </script>
         """)
     List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
         @Param("tenantCode") String tenantCode, @Param("pageSize") int pageSize, @Param("offset") long offset,
-        @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo);
+        @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo,
+        @Param("fromTime") LocalDateTime fromTime, @Param("toTime") LocalDateTime toTime);
 
     @Select("""
         <script>
@@ -67,11 +70,14 @@ public interface FlyingProbeProjectionMapper {
         <if test="workOrderNo != null">
             AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
         </if>
+        <if test="fromTime != null">AND p.device_time &gt;= #{fromTime}</if>
+        <if test="toTime != null">AND p.device_time &lt;= #{toTime}</if>
         </script>
         """)
     long countRetryableGroups(@Param("tenantCode") String tenantCode,
                               @Param("workOrderNo") String workOrderNo,
-                              @Param("internalProductNo") String internalProductNo);
+                              @Param("internalProductNo") String internalProductNo,
+                              @Param("fromTime") LocalDateTime fromTime, @Param("toTime") LocalDateTime toTime);
 
     @Select("""
         SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.machine_name,
@@ -193,8 +199,75 @@ public interface FlyingProbeProjectionMapper {
     @Select("SELECT * FROM qms_flying_probe_run WHERE run_key = #{runKey} FOR UPDATE")
     FlyingProbeRun lockRun(@Param("runKey") String runKey);
 
+    @Select("""
+        SELECT COUNT(*) FROM qms_nonconformity ncr
+        JOIN qms_flying_probe_projection projection
+          ON projection.inspection_record_id COLLATE utf8mb4_0900_ai_ci = ncr.inspection_record_id COLLATE utf8mb4_0900_ai_ci
+         AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = ncr.tenant_code COLLATE utf8mb4_0900_ai_ci
+        WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+        """)
+    long countRunNonconformities(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
+
+    @Select("""
+        SELECT COUNT(*) FROM qms_nonconformity ncr
+        JOIN qms_work_order work_order
+          ON work_order.id COLLATE utf8mb4_0900_ai_ci = ncr.work_order_id COLLATE utf8mb4_0900_ai_ci
+        WHERE ncr.tenant_code = #{tenantCode} AND work_order.tenant_code = #{tenantCode}
+          AND work_order.work_order_no = #{workOrderNo}
+          AND ncr.source_type = 'DEVICE' AND ncr.status = 'APPROVED'
+          AND ncr.detection_date IN (
+              SELECT DATE(device_time) FROM qms_flying_probe_projection
+              WHERE tenant_code = #{tenantCode} AND run_key = #{runKey} AND delta_tested > 0
+          )
+        """)
+    long countApprovedRunDates(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                               @Param("workOrderNo") String workOrderNo);
+
     @Update("""
-        UPDATE qms_flying_probe_run SET last_device_time = #{lastDeviceTime},
+        UPDATE qms_inspection_task task
+        JOIN qms_flying_probe_projection projection
+          ON projection.inspection_task_id COLLATE utf8mb4_0900_ai_ci = task.id COLLATE utf8mb4_0900_ai_ci
+        SET task.work_order_id = #{workOrderId}, task.batch_id = NULL
+        WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND task.tenant_code = #{tenantCode}
+        """)
+    int rebindRunTasks(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                       @Param("workOrderId") String workOrderId);
+
+    @Update("""
+        UPDATE qms_equipment_telemetry telemetry
+        JOIN qms_flying_probe_projection projection
+          ON projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = telemetry.id COLLATE utf8mb4_0900_ai_ci
+        SET telemetry.work_order_no = #{workOrderNo}, telemetry.batch_no = NULL
+        WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND telemetry.tenant_code = #{tenantCode}
+        """)
+    int rebindRunTelemetry(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                           @Param("workOrderNo") String workOrderNo);
+
+    @Update("""
+        UPDATE qms_equipment_runtime_status runtime
+        JOIN qms_flying_probe_projection projection
+          ON projection.equipment_id COLLATE utf8mb4_0900_ai_ci = runtime.equipment_id COLLATE utf8mb4_0900_ai_ci
+         AND projection.source_record_no COLLATE utf8mb4_0900_ai_ci = runtime.last_source_record_no COLLATE utf8mb4_0900_ai_ci
+         AND projection.device_time = runtime.last_device_time
+        SET runtime.work_order_no = #{workOrderNo}, runtime.batch_no = NULL,
+            runtime.updated_at = CURRENT_TIMESTAMP
+        WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND runtime.tenant_code = #{tenantCode}
+        """)
+    int rebindRunRuntime(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                         @Param("workOrderNo") String workOrderNo);
+
+    @Update("""
+        UPDATE qms_flying_probe_projection SET work_order_no = #{workOrderNo}, batch_no = NULL
+        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey}
+        """)
+    int rebindRunProjections(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                             @Param("workOrderNo") String workOrderNo);
+
+    @Update("""
+        UPDATE qms_flying_probe_run SET work_order_no = #{workOrderNo}, last_device_time = #{lastDeviceTime},
             tested_count = #{testedCount}, good_count = #{goodCount}, bad_count = #{badCount},
             status = #{status}, reason = #{reason}, binding_source = #{bindingSource},
             bound_by = #{boundBy}, bound_at = #{boundAt}, updated_at = #{updatedAt}

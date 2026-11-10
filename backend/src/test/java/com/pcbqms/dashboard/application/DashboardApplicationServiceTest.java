@@ -3,6 +3,8 @@ package com.pcbqms.dashboard.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
@@ -61,6 +63,27 @@ class DashboardApplicationServiceTest {
         assertThat(summary.completedInspectionTasks()).isZero();
         assertThat(summary.openNonconformities()).isZero();
         assertThat(summary.firstPassRate()).isEqualTo(100D);
+    }
+
+    @Test
+    void administratorSummaryCountsInDatabaseWithoutLoadingEveryRecord() {
+        TenantContext.set("customer-a", "admin");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+        when(workOrderMapper.selectCount(any())).thenReturn(12L);
+        when(inspectionTaskMapper.selectCount(any())).thenReturn(3L, 9L);
+        when(inspectionRecordMapper.selectCount(any())).thenReturn(40L, 37L);
+        when(nonconformityMapper.selectCount(any())).thenReturn(2L);
+
+        var summary = new DashboardApplicationService(workOrderMapper, inspectionTaskMapper,
+            inspectionRecordMapper, nonconformityMapper, inspectionAccessScopeService).summary();
+
+        assertThat(summary.activeWorkOrders()).isEqualTo(12);
+        assertThat(summary.pendingInspectionTasks()).isEqualTo(3);
+        assertThat(summary.completedInspectionTasks()).isEqualTo(9);
+        assertThat(summary.firstPassRate()).isEqualTo(92.5);
+        verify(inspectionRecordMapper, never()).selectList(any());
+        verify(inspectionTaskMapper, never()).selectList(any());
     }
 
     private InspectionTask task(String id, String workOrderId, String processCode, String status) {

@@ -19,6 +19,10 @@ public class Nonconformity {
     private String workOrderId;
     private String batchId;
     private String status;
+    private String sourceType;
+    private String sourceGroupKey;
+    private String reviewedBy;
+    private LocalDateTime reviewedAt;
     private LocalDate detectionDate;
     private String shiftName;
     private String processCode;

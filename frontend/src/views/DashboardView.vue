@@ -11,6 +11,7 @@ import type { DashboardSummary, EquipmentTelemetryRecord, QualitySummary } from 
 use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const loading = ref(true)
+const qualityLoading = ref(false)
 const summary = ref<DashboardSummary>()
 const quality = ref<QualitySummary>()
 const summaryError = ref('')
@@ -19,9 +20,10 @@ const probeRecords = ref<EquipmentTelemetryRecord[]>([])
 const probeError = ref('')
 const latestProbeRecord = computed(() => probeRecords.value[0])
 const businessUpdatedAt = ref<Date>()
-const updatedAtLabel = computed(() => businessUpdatedAt.value ? formatDateTime(businessUpdatedAt.value) : loading.value ? '读取中' : '尚未完整读取')
+const updatedAtLabel = computed(() => businessUpdatedAt.value ? formatDateTime(businessUpdatedAt.value) : loading.value || qualityLoading.value ? '读取中' : '尚未完整读取')
 const defectChartRef = ref<HTMLElement>()
 let defectChart: ECharts | undefined
+let loadVersion = 0
 
 function renderCharts() {
   defectChart?.dispose()
@@ -45,17 +47,21 @@ function renderCharts() {
 function resizeCharts() { defectChart?.resize() }
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  qualityLoading.value = true
+  quality.value = undefined
+  qualityError.value = ''
+  businessUpdatedAt.value = undefined
+  renderCharts()
   try {
-    const [dashboardResult, qualityResult, probeResult] = await Promise.allSettled([
+    const [dashboardResult, probeResult] = await Promise.allSettled([
       qmsApi.getDashboardSummary(),
-      qmsApi.getQualitySummary(),
       qmsApi.listEquipmentTelemetryHistory({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1 })
     ])
+    if (version !== loadVersion) return
     summaryError.value = dashboardResult.status === 'rejected' ? '质量流程状态读取失败，请刷新重试。' : ''
-    qualityError.value = qualityResult.status === 'rejected' ? '检验记录与缺陷汇总读取失败，请刷新重试。' : ''
     summary.value = dashboardResult.status === 'fulfilled' ? dashboardResult.value : undefined
-    quality.value = qualityResult.status === 'fulfilled' ? qualityResult.value : undefined
     if (probeResult.status === 'fulfilled') {
       probeRecords.value = probeResult.value.items
       probeError.value = ''
@@ -63,23 +69,27 @@ async function load() {
       probeRecords.value = []
       probeError.value = '飞针机采集状态读取失败，请刷新重试。'
     }
-    if (dashboardResult.status === 'fulfilled' && qualityResult.status === 'fulfilled') {
-      businessUpdatedAt.value = new Date()
-    }
+  } catch {
+    summary.value = undefined
+    probeRecords.value = []
+    summaryError.value = '质量业务数据处理失败，请刷新重试。'
+    probeError.value = '飞针机采集状态处理失败，请刷新重试。'
+  } finally { if (version === loadVersion) loading.value = false }
+  try {
+    const qualityResult = await qmsApi.getQualitySummary()
+    if (version !== loadVersion) return
+    quality.value = qualityResult
+    qualityError.value = ''
+    if (!summaryError.value) businessUpdatedAt.value = new Date()
     await nextTick()
     renderCharts()
   } catch {
-    summary.value = undefined
-    quality.value = undefined
-    probeRecords.value = []
-    summaryError.value = '质量业务数据处理失败，请刷新重试。'
-    qualityError.value = summaryError.value
-    probeError.value = '飞针机采集状态处理失败，请刷新重试。'
-  } finally { loading.value = false }
+    if (version === loadVersion) qualityError.value = '检验记录与缺陷汇总读取失败，请刷新重试。'
+  } finally { if (version === loadVersion) qualityLoading.value = false }
 }
 
 onMounted(() => { window.addEventListener('resize', resizeCharts); void load() })
-onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defectChart?.dispose() })
+onBeforeUnmount(() => { loadVersion++; window.removeEventListener('resize', resizeCharts); defectChart?.dispose() })
 </script>
 
 <template>
@@ -116,7 +126,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resizeCharts); defe
       <div class="dashboard-flow-grid"><article><span>待检任务</span><strong>{{ summary?.pendingInspectionTasks ?? '—' }}</strong></article><article class="attention"><span>进行中工单</span><strong>{{ summary?.activeWorkOrders ?? '—' }}</strong></article><article class="good"><span>已完成检验</span><strong>{{ summary?.completedInspectionTasks ?? '—' }}</strong></article><article class="good"><span>一次合格率</span><strong>{{ summary ? `${summary.firstPassRate.toFixed(2)}%` : '—' }}</strong></article></div>
     </el-card>
 
-    <el-card shadow="never" class="content-card dashboard-chart-card dashboard-defect-card">
+    <el-card shadow="never" class="content-card dashboard-chart-card dashboard-defect-card" v-loading="qualityLoading">
       <template #header><div class="dashboard-card-heading"><div><h3>不良缺陷分布</h3><p>按当前权限范围内的不合格检验记录汇总。</p></div><el-button @click="load">刷新看板</el-button></div></template>
       <div v-if="quality?.defectRanking.length" ref="defectChartRef" class="dashboard-defect-chart" /><el-empty v-else :description="qualityError ? '缺陷数据暂不可用' : '当前暂无不良缺陷数据'" />
     </el-card>

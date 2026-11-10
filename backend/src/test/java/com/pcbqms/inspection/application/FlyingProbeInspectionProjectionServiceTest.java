@@ -120,6 +120,50 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void processedFileCorrectionMovesTheWholeRunAndItsInspectionTasks() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("processed", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-1");
+        projection.setWorkOrderNo("WO-1");
+        FlyingProbeRun run = run();
+        run.setRunKey("run-1");
+        when(projectionMapper.lockProjection("processed")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-2", "PART-1", LocalDate.now()));
+
+        assertThat(service().bindManually("processed", "WO-2")).isEqualTo("run-1");
+
+        verify(projectionMapper).rebindRunTasks("tenant-a", "run-1", "WO-2");
+        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-1", "WO-2");
+        verify(projectionMapper).rebindRunRuntime("tenant-a", "run-1", "WO-2");
+        verify(projectionMapper).rebindRunProjections("tenant-a", "run-1", "WO-2");
+        assertThat(run.getWorkOrderNo()).isEqualTo("WO-2");
+        assertThat(run.getBoundBy()).isEqualTo("supervisor");
+        verify(projectionMapper).updateRun(run);
+    }
+
+    @Test
+    void processedFileCorrectionCannotMoveReviewedDefects() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("reviewed", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-1");
+        FlyingProbeRun run = run();
+        run.setRunKey("run-1");
+        when(projectionMapper.lockProjection("reviewed")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-2", "PART-1", LocalDate.now()));
+        when(projectionMapper.countApprovedRunDates("tenant-a", "run-1", "WO-1")).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().bindManually("reviewed", "WO-2"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("处置单");
+        verify(projectionMapper, never()).rebindRunTasks(any(), any(), any());
+    }
+
+    @Test
     void repeatingTheSameManualBindingKeepsTheOriginalAudit() {
         TenantContext.set("tenant-a", "second-supervisor");
         var now = LocalDateTime.now();
@@ -146,14 +190,27 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a", null, null)).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L, null, null)).thenReturn(List.of(record));
+        when(projectionMapper.countRetryableGroups("tenant-a", null, null, null, null)).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", 50, 0L, null, null, null, null)).thenReturn(List.of(record));
 
-        var page = service().listRetryable(1, 50, null, null);
+        var page = service().listRetryable(1, 50, null, null, null, null);
 
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.records()).extracting(FlyingProbeRetryableRecordResponse::getId)
             .containsExactly("old-telemetry");
+    }
+
+    @Test
+    void retryableListFiltersBothCountAndRowsByDetectionTime() {
+        TenantContext.set("tenant-a", "supervisor");
+        LocalDateTime from = LocalDateTime.of(2026, 11, 1, 0, 0);
+        LocalDateTime to = LocalDateTime.of(2026, 11, 9, 23, 59, 59);
+        when(projectionMapper.countRetryableGroups("tenant-a", null, null, from, to)).thenReturn(1L);
+
+        service().listRetryable(1, 50, null, null, from, to);
+
+        verify(projectionMapper).countRetryableGroups("tenant-a", null, null, from, to);
+        verify(projectionMapper).selectRetryableGroups("tenant-a", 50, 0L, null, null, from, to);
     }
 
     @Test

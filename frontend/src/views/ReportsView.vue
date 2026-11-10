@@ -8,7 +8,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
-import type { QualitySummary, Traceability } from '@/types/qms'
+import type { FinishedTestMonthlyAnalytics, QualitySummary, Traceability } from '@/types/qms'
 
 const loading = ref(false)
 const route = useRoute()
@@ -16,6 +16,14 @@ const summary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecor
 const reportDateRange = ref<string[]>([])
 const trendChartRef = ref<HTMLElement>()
 let trendChart: ECharts | undefined
+const monthly = ref<FinishedTestMonthlyAnalytics>()
+const monthlyLoading = ref(false)
+const monthlyError = ref('')
+const modelChartRef = ref<HTMLElement>()
+const internalChartRef = ref<HTMLElement>()
+let modelChart: ECharts | undefined
+let internalChart: ECharts | undefined
+const modelChartHeight = computed(() => `${Math.max(320, (monthly.value?.byModel.length ?? 0) * 44 + 80)}px`)
 
 use([BarChart, LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 const batchNo = ref('')
@@ -47,6 +55,51 @@ async function loadSummary() {
   }
 }
 
+async function loadMonthly() {
+  if (!isAnalyticsPage.value) return
+  monthlyLoading.value = true
+  try {
+    monthly.value = await qmsApi.getFinishedTestMonthlyAnalytics()
+    monthlyError.value = ''
+    await nextTick()
+    renderMonthlyCharts()
+  } catch {
+    monthlyError.value = '设备检测月度分析读取失败，请重试。'
+  } finally { monthlyLoading.value = false }
+}
+
+function renderMonthlyCharts() {
+  modelChart?.dispose()
+  internalChart?.dispose()
+  const models = monthly.value?.byModel ?? []
+  if (modelChartRef.value && models.length) {
+    modelChart = init(modelChartRef.value)
+    const rows = [...models].reverse()
+    modelChart.setOption({
+      grid: { top: 40, right: 34, bottom: 34, left: 130, containLabel: true },
+      tooltip: { trigger: 'axis' }, legend: { data: ['检测总数', '合格', '不合格'] },
+      xAxis: { type: 'value', minInterval: 1 },
+      yAxis: { type: 'category', data: rows.map((row) => row.model) },
+      series: [
+        { name: '检测总数', type: 'bar', data: rows.map((row) => row.totalCount), itemStyle: { color: '#4899ef' } },
+        { name: '合格', type: 'bar', data: rows.map((row) => row.goodCount), itemStyle: { color: '#12b76a' } },
+        { name: '不合格', type: 'bar', data: rows.map((row) => row.badCount), itemStyle: { color: '#f79009' } }
+      ]
+    })
+  }
+  const defects = [...(monthly.value?.topInternalDefects ?? [])].reverse()
+  if (internalChartRef.value && defects.length) {
+    internalChart = init(internalChartRef.value)
+    internalChart.setOption({
+      grid: { top: 20, right: 45, bottom: 28, left: 130, containLabel: true },
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'value', minInterval: 1 },
+      yAxis: { type: 'category', data: defects.map((row) => row.internalProductNo) },
+      series: [{ type: 'bar', data: defects.map((row) => row.badCount), label: { show: true, position: 'right' }, itemStyle: { color: '#f79009' } }]
+    })
+  }
+}
+
 function renderTrendChart() {
   if (!trendChartRef.value || !summary.value.dailyTrend.length) return
   trendChart?.dispose()
@@ -69,6 +122,8 @@ function renderTrendChart() {
 
 function resizeTrendChart() {
   trendChart?.resize()
+  modelChart?.resize()
+  internalChart?.resize()
 }
 
 async function searchTrace() {
@@ -118,15 +173,17 @@ async function exportQualityExcel() {
 
 watch(() => summary.value.dailyTrend, () => nextTick(renderTrendChart), { deep: true })
 watch(() => route.fullPath, () => {
-  if (isAnalyticsPage.value) void loadSummary()
+  if (isAnalyticsPage.value) { void loadSummary(); void loadMonthly() }
 })
 onMounted(() => {
   window.addEventListener('resize', resizeTrendChart)
-  if (isAnalyticsPage.value) void loadSummary()
+  if (isAnalyticsPage.value) { void loadSummary(); void loadMonthly() }
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeTrendChart)
   trendChart?.dispose()
+  modelChart?.dispose()
+  internalChart?.dispose()
 })
 </script>
 
@@ -140,6 +197,27 @@ onBeforeUnmount(() => {
       <template #header><div class="card-header"><span>质量趋势</span><small>一次合格率与不合格记录按检验日期汇总</small></div></template>
       <div v-if="summary.dailyTrend.length" ref="trendChartRef" class="quality-trend-chart" />
       <el-empty v-else description="当前日期范围暂无可见检验趋势数据" />
+    </el-card>
+
+    <el-card shadow="never" class="content-card" v-loading="monthlyLoading">
+      <template #header><div class="card-header"><span>设备型号当月检测分析</span><small>{{ monthly?.month ?? '当月' }} · 按设备检测增量统计</small></div></template>
+      <el-alert v-if="monthlyError" type="error" :closable="false" :title="monthlyError" />
+      <div v-if="monthly?.byModel.length" ref="modelChartRef" class="quality-trend-chart" :style="{ height: modelChartHeight }" />
+      <el-empty v-else-if="!monthlyError" description="当月暂无已关联生产指令的设备检测数据" />
+      <paged-table v-if="monthly?.byModel.length" :data="monthly.byModel" empty-text="暂无设备型号数据">
+        <el-table-column prop="model" label="设备型号" min-width="170" />
+        <el-table-column prop="totalCount" label="检测总数" min-width="110" />
+        <el-table-column prop="goodCount" label="合格" min-width="90" />
+        <el-table-column prop="badCount" label="不合格" min-width="90" />
+        <el-table-column label="一次合格率" min-width="120"><template #default="scope">{{ scope.row.passRate.toFixed(2) }}%</template></el-table-column>
+      </paged-table>
+    </el-card>
+
+    <el-card shadow="never" class="content-card" v-loading="monthlyLoading">
+      <template #header><div class="card-header"><span>厂内编号不良数前 10</span><small>{{ monthly?.month ?? '当月' }} · 成品测试汇总表口径</small></div></template>
+      <el-alert v-if="monthlyError" type="error" :closable="false" :title="monthlyError" />
+      <div v-if="monthly?.topInternalDefects.length" ref="internalChartRef" class="quality-trend-chart" />
+      <el-empty v-else-if="!monthlyError" description="当月暂无设备检测不良数据" />
     </el-card>
 
     <el-card shadow="never" class="content-card">

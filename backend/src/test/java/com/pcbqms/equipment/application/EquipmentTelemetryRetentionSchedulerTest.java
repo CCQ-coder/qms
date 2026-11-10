@@ -29,7 +29,7 @@ class EquipmentTelemetryRetentionSchedulerTest {
     }
 
     @Test
-    void rawCleanupKeepsFlyingProbeEventsUntilTheirProjectionIsDurableAcrossDatabaseCollations() {
+    void rawCleanupRetainsBothFinishedTestDeviceFeedsForFullRecordHistory() {
         JdbcTemplate jdbcTemplate = org.mockito.Mockito.mock(JdbcTemplate.class);
         EquipmentTelemetryRetentionScheduler scheduler = new EquipmentTelemetryRetentionScheduler(jdbcTemplate);
         ReflectionTestUtils.setField(scheduler, "rawRetentionDays", 7);
@@ -43,12 +43,6 @@ class EquipmentTelemetryRetentionSchedulerTest {
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbcTemplate, org.mockito.Mockito.times(2)).update(sql.capture(), any(LocalDateTime.class));
         assertThat(sql.getAllValues().getFirst())
-            .contains("event_type <> 'ZHONGBO_TEST_REPORT'")
-            .contains("event_type <> 'FLYING_PROBE_TEST_COUNTERS'")
-            .contains("EXISTS (SELECT 1 FROM qms_flying_probe_projection")
-            .contains("projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = "
-                + "qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci")
-            .contains("projection.tenant_code COLLATE utf8mb4_0900_ai_ci = "
-                + "qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci");
+            .contains("event_type NOT IN ('ZHONGBO_TEST_REPORT', 'FLYING_PROBE_TEST_COUNTERS')");
     }
 }

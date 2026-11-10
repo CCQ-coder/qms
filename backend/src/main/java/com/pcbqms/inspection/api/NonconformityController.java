@@ -38,6 +38,13 @@ public class NonconformityController {
         return ApiResponse.of(service.createManualNonconformity(request));
     }
 
+    @PostMapping("/nonconformities/{ncrId}/approve")
+    public ApiResponse<NonconformityResponse> approveDeviceDisposition(
+        @PathVariable String ncrId, @RequestParam int expectedBadCount
+    ) {
+        return ApiResponse.of(service.approveDeviceDisposition(ncrId, expectedBadCount));
+    }
+
     @PostMapping("/nonconformities/{ncrId}/capas")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CapaResponse> createCapa(@PathVariable String ncrId, @Valid @RequestBody CreateCapaRequest request) {
