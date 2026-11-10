@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
-import { formatDate, formatDateTime, taskTypeText } from '@/utils/display-text'
+import { formatDate, formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { formatHostCapacity, formatHostUptime } from '@/utils/host-status'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
@@ -566,6 +566,12 @@ function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' 
   return status === '空闲' ? 'warning' : 'info'
 }
 
+const zhongboStatusLabels: Record<string, string> = { PROCESSING: '运行中', IDLE: '待机', ALARM: '故障报警' }
+
+function zhongboStatusText(status?: string) {
+  return zhongboStatusLabels[status ?? ''] ?? statusText(status)
+}
+
 function fqcProjectionLabel(record: EquipmentTelemetryRecord) {
   if (record.fqcProjectionStatus === 'PROCESSED') {
     if (record.fqcInspectionRecordId) return '已生成检验记录'
@@ -1021,7 +1027,7 @@ onBeforeUnmount(() => {
             <el-table-column label="测试总点数" width="115" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.totalPoints ?? '—' }}</template></el-table-column>
             <el-table-column label="开路数" width="95" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.openErrors ?? '—' }}</template></el-table-column>
             <el-table-column label="短路数" width="95" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.shortErrors ?? '—' }}</template></el-table-column>
-            <el-table-column label="设备状态" min-width="120"><template #default="scope">{{ scope.row.status || '—' }}</template></el-table-column>
+            <el-table-column label="设备状态" min-width="120"><template #default="scope">{{ zhongboStatusText(scope.row.status) }}</template></el-table-column>
             <el-table-column label="操作" width="110" fixed="right"><template #default="scope"><el-button v-if="canBindFlyingProbe" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button></template></el-table-column>
           </paged-table>
         </div>
