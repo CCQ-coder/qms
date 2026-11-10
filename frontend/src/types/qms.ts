@@ -211,6 +211,7 @@ export type ProcessMaster = {
   id: string
   processCode: string
   processName: string
+  responsibleDepartment?: string
   sequenceNo: number
   status: 'ACTIVE' | 'INACTIVE'
 }

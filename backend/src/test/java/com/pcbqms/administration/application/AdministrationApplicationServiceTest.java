@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -85,5 +86,46 @@ class AdministrationApplicationServiceTest {
             .orElseThrow();
         assertThat(summaryMenu.getParentCode()).isEqualTo("TRACE");
         assertThat(summaryMenu.getSortOrder()).isEqualTo(34);
+        AdministrationItem detailMenu = itemCaptor.getAllValues().stream()
+            .filter(item -> "NONCONFORMITY_DETAILS".equals(item.getItemCode()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(detailMenu.getParentCode()).isEqualTo("TRACE");
+    }
+
+    @Test
+    void activeDepartmentOptionsAreAvailableWithoutAdministrationPermission() {
+        TenantContext.set("customer-b", "inspector.b");
+        AdministrationItem active = new AdministrationItem();
+        active.setItemName("测试");
+        active.setStatus("ACTIVE");
+        AdministrationItem inactive = new AdministrationItem();
+        inactive.setItemName("旧部门");
+        inactive.setStatus("INACTIVE");
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of(active, inactive));
+
+        var names = new AdministrationApplicationService(administrationItemMapper,
+            administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper())
+            .activeDepartmentNames();
+
+        assertThat(names).containsExactly("测试");
+        verifyNoInteractions(inspectionAccessScopeService);
+    }
+
+    @Test
+    void activeScrapReasonsAreAvailableWithoutAdministrationPermission() {
+        TenantContext.set("customer-b", "inspector.b");
+        AdministrationItem active = new AdministrationItem();
+        active.setItemName("设备检测不良");
+        active.setStatus("ACTIVE");
+        AdministrationItem inactive = new AdministrationItem();
+        inactive.setItemName("旧原因");
+        inactive.setStatus("INACTIVE");
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of(active, inactive));
+        AdministrationApplicationService service = new AdministrationApplicationService(
+            administrationItemMapper, administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper());
+
+        assertThat(service.activeScrapReasonNames()).containsExactly("设备检测不良");
+        verifyNoInteractions(inspectionAccessScopeService);
     }
 }

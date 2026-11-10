@@ -89,6 +89,10 @@ export function statusText(value?: string): string {
   return statusLabels[value] ?? value
 }
 
+export function equipmentStatusTagType(status: string): 'success' | 'warning' | 'info' | 'danger' {
+  return ({ ALARM: 'danger', MAINTENANCE: 'warning', DISABLED: 'info' } as Record<string, 'danger' | 'warning' | 'info'>)[status] ?? 'success'
+}
+
 export function taskTypeText(value?: string): string {
   if (!value) return '—'
   return taskTypeLabels[value] ?? value

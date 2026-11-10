@@ -19,6 +19,7 @@ export const navigationMenuDefinitions: NavigationMenuDefinition[] = [
   { code: 'TRACE', label: '报表' },
   { code: 'ANALYTICS', label: '可视化报表分析', parentCode: 'TRACE', path: '/analytics' },
   { code: 'EQUIPMENT_FINISHED_TEST_SUMMARY', label: '成品测试汇总表', parentCode: 'TRACE', path: '/equipment/finished-test-summary' },
+  { code: 'NONCONFORMITY_DETAILS', label: '不良品明细表', parentCode: 'TRACE', path: '/nonconformities/details' },
   { code: 'EQUIPMENT', label: '设备管理' },
   { code: 'EQUIPMENT_LEDGER', label: '设备台账', parentCode: 'EQUIPMENT', path: '/equipment' },
   { code: 'EQUIPMENT_INSPECTION', label: '点检管理', parentCode: 'EQUIPMENT', path: '/equipment/inspection' },
@@ -63,6 +64,7 @@ export function isMenuVisible(menuCode: string, access = menuAccess.value) {
   const activeMenuCodes = new Set(access.activeMenuCodes)
   const permitted = access.permittedMenuCodes.includes(menuCode)
     || (menuCode === 'EQUIPMENT_FINISHED_TEST_SUMMARY' && access.permittedMenuCodes.includes('INSPECTION_WORKBENCH'))
+    || (menuCode === 'NONCONFORMITY_DETAILS' && access.permittedMenuCodes.includes('NONCONFORMITIES'))
   return activeMenuCodes.has(menuCode)
     && activeMenuCodes.has(definition.parentCode)
     && permitted

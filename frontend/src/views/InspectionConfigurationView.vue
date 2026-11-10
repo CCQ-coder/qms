@@ -27,6 +27,7 @@ const templates = ref<InspectionTemplate[]>([])
 const rules = ref<InspectionRule[]>([])
 const products = ref<ProductMaster[]>([])
 const processes = ref<ProcessMaster[]>([])
+const departments = ref<string[]>([])
 const users = ref<UserAccess[]>([])
 const templateDialogVisible = ref(false)
 const ruleDialogVisible = ref(false)
@@ -53,7 +54,7 @@ const ruleForm = reactive({
   name: '', productCode: '', processCode: '', processName: '', taskType: 'PROCESS', templateId: '', enabled: true, priority: 100
 })
 const productForm = reactive({ productCode: '', productName: '', specification: '' })
-const processForm = reactive({ processCode: '', processName: '', sequenceNo: 100 })
+const processForm = reactive({ processCode: '', processName: '', sequenceNo: 100, responsibleDepartment: '' })
 const userForm = reactive({ id: '', userName: '', displayName: '', roleCode: 'INSPECTOR', status: 'ACTIVE', password: '', processCodes: [] as string[] })
 
 async function load() {
@@ -196,7 +197,7 @@ async function saveProduct() {
 }
 
 function openProcessDialog() {
-  Object.assign(processForm, { processCode: '', processName: '', sequenceNo: 100 })
+  Object.assign(processForm, { processCode: '', processName: '', sequenceNo: 100, responsibleDepartment: '' })
   processDialogVisible.value = true
 }
 
@@ -233,6 +234,18 @@ async function changeProcessStatus(row: ProcessMaster, active: boolean) {
     row.status = active ? 'ACTIVE' : 'INACTIVE'
   } catch {
     ElMessage.error('工序状态更新失败')
+  }
+}
+
+async function changeProcessDepartment(row: ProcessMaster, department: string) {
+  const previous = row.responsibleDepartment
+  row.responsibleDepartment = department
+  try {
+    const updated = await qmsApi.updateProcessDepartment(row.id, department)
+    row.responsibleDepartment = updated.responsibleDepartment
+  } catch {
+    row.responsibleDepartment = previous
+    ElMessage.error('工序责任部门更新失败')
   }
 }
 
@@ -305,6 +318,8 @@ async function saveUser() {
 watch(() => route.fullPath, () => { void syncTabFromRoute() })
 onMounted(async () => {
   await load()
+  try { departments.value = await qmsApi.listDepartmentOptions() }
+  catch { ElMessage.warning('部门选项读取失败') }
   await syncTabFromRoute()
 })
 </script>
@@ -362,6 +377,7 @@ onMounted(async () => {
                 <el-table-column prop="sequenceNo" label="顺序" width="75" />
                 <el-table-column prop="processCode" label="工序编码" min-width="120" />
                 <el-table-column prop="processName" label="工序名称" min-width="150" />
+                <el-table-column label="责任部门" min-width="150"><template #default="scope"><el-select :model-value="scope.row.responsibleDepartment ?? ''" filterable clearable placeholder="选择部门" @change="changeProcessDepartment(scope.row, String($event ?? ''))"><el-option v-for="department in departments" :key="department" :label="department" :value="department" /></el-select></template></el-table-column>
                 <el-table-column label="状态" width="124" fixed="right"><template #default="scope"><div class="table-status-control"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ statusText(scope.row.status) }}</el-tag><el-switch :model-value="scope.row.status === 'ACTIVE'" @change="onProcessStatusChange($event, scope.row)" /></div></template></el-table-column>
               </paged-table>
             </div>
@@ -434,7 +450,7 @@ onMounted(async () => {
     </el-dialog>
 
     <el-dialog v-model="processDialogVisible" title="新增工序资料" width="min(520px, 94vw)" destroy-on-close>
-      <el-form :model="processForm" label-position="top"><el-form-item label="工序编码"><el-input v-model="processForm.processCode" placeholder="例如 DRILL" /></el-form-item><el-form-item label="工序名称"><el-input v-model="processForm.processName" /></el-form-item><el-form-item label="工序顺序"><el-input-number v-model="processForm.sequenceNo" :min="0" class="full-width" /></el-form-item></el-form>
+      <el-form :model="processForm" label-position="top"><el-form-item label="工序编码"><el-input v-model="processForm.processCode" placeholder="例如 DRILL" /></el-form-item><el-form-item label="工序名称"><el-input v-model="processForm.processName" /></el-form-item><el-form-item label="责任部门"><el-select v-model="processForm.responsibleDepartment" filterable clearable placeholder="选择部门" class="full-width"><el-option v-for="department in departments" :key="department" :label="department" :value="department" /></el-select></el-form-item><el-form-item label="工序顺序"><el-input-number v-model="processForm.sequenceNo" :min="0" class="full-width" /></el-form-item></el-form>
       <template #footer><el-button @click="processDialogVisible = false">取消</el-button><el-button type="primary" :loading="savingProcess" @click="saveProcess">保存</el-button></template>
     </el-dialog>
 

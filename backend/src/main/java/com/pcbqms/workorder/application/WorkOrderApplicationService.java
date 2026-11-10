@@ -120,7 +120,17 @@ public class WorkOrderApplicationService {
         }
         if (StringUtils.hasText(status)) query.eq(WorkOrder::getStatus, status.trim());
         if (StringUtils.hasText(qualityStatus)) query.eq(WorkOrder::getQualityStatus, qualityStatus.trim());
-        if (StringUtils.hasText(warehouseStatus)) query.eq(WorkOrder::getWarehouseStatus, warehouseStatus.trim());
+        if (StringUtils.hasText(warehouseStatus)) {
+            String value = warehouseStatus.trim();
+            List<String> statuses = switch (value) {
+                case "PENDING" -> List.of("PENDING", "未入库", "待入库");
+                case "PARTIAL" -> List.of("PARTIAL", "部分入库");
+                case "RECEIVED" -> List.of("RECEIVED", "已入库");
+                case "CLOSED" -> List.of("CLOSED", "已结批");
+                default -> List.of(value);
+            };
+            query.in(WorkOrder::getWarehouseStatus, statuses);
+        }
         if (StringUtils.hasText(priority)) query.eq(WorkOrder::getPriority, priority.trim());
         if (inputDateFrom != null) query.ge(WorkOrder::getInputDate, inputDateFrom);
         if (inputDateTo != null) query.le(WorkOrder::getInputDate, inputDateTo);

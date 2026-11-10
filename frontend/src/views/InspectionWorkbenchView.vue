@@ -5,11 +5,11 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
-import { formatDate, formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
+import { equipmentStatusTagType, formatDate, formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { formatHostCapacity, formatHostUptime } from '@/utils/host-status'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
-import { deriveInspectionMonitorStatus, inspectionDeviceOnline } from './inspectionMonitorStatus'
+import { deriveInspectionMonitorStatus, inspectionDeviceOnline, monitorStatusLabel } from './inspectionMonitorStatus'
 import { flyingProbePassRate, useTelemetryHistory } from './useTelemetryHistory'
 import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestDeviceSummary, InspectionTask, InspectionTemplate, WorkOrder } from '@/types/qms'
 
@@ -556,12 +556,13 @@ function deviceOnline(device: MonitorDevice) {
 
 function deviceStatusLabel(device: MonitorDevice) {
   if (runtimeError.value && !device.host) return '状态不可用'
-  return deriveInspectionMonitorStatus(deviceOnline(device), device.probe?.receivedAt)
+  return monitorStatusLabel(deriveInspectionMonitorStatus(deviceOnline(device), device.probe?.receivedAt), device.status)
 }
 
-function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' {
+function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' | 'danger' {
   if (runtimeError.value && !device.host) return 'info'
   const status = deriveInspectionMonitorStatus(deviceOnline(device), device.probe?.receivedAt)
+  if (status === '未接入') return equipmentStatusTagType(device.status)
   if (status === '测试中') return 'success'
   return status === '空闲' ? 'warning' : 'info'
 }
@@ -868,7 +869,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="device-card-type">{{ device.assetNo }} · {{ device.equipmentType }}</span>
             <span class="device-task">
-              <small>设备状态</small>
+              <small>采集状态</small>
               <b>{{ runtimeError && !device.host ? '读取失败' : deviceOnline(device) ? '在线' : deviceOnline(device) === false ? '离线' : '尚未上报' }}</b>
             </span>
             <span v-if="device.host" class="device-task">

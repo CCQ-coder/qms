@@ -18,6 +18,7 @@ const router = createRouter({
     { path: '/inspection-templates', component: () => import('@/views/InspectionConfigurationView.vue'), meta: { title: '检验标准配置', configTab: 'templates' } },
     { path: '/inspection-rules', component: () => import('@/views/InspectionConfigurationView.vue'), meta: { title: '自动派单规则', configTab: 'rules' } },
     { path: '/nonconformities', component: () => import('@/views/NonconformityView.vue'), meta: { title: '不良品处理' } },
+    { path: '/nonconformities/details', component: () => import('@/views/NonconformityDetailsView.vue'), meta: { title: '不良品明细表' } },
     { path: '/equipment', component: () => import('@/views/EquipmentView.vue'), meta: { title: '设备台账', equipmentSection: 'ledger' } },
     { path: '/equipment/inspection', component: () => import('@/views/EquipmentView.vue'), meta: { title: '点检管理', equipmentSection: 'maintenance', maintenanceType: 'INSPECTION' } },
     { path: '/equipment/maintenance', component: () => import('@/views/EquipmentView.vue'), meta: { title: '保养管理', equipmentSection: 'maintenance', maintenanceType: 'MAINTENANCE' } },

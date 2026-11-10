@@ -58,4 +58,12 @@ public class MasterDataController {
     ) {
         return ApiResponse.of(masterDataApplicationService.updateProcessStatus(id, request.status()));
     }
+
+    @PatchMapping("/processes/{id}/responsible-department")
+    public ApiResponse<ProcessResponse> updateProcessDepartment(
+        @PathVariable String id,
+        @Valid @RequestBody UpdateProcessDepartmentRequest request
+    ) {
+        return ApiResponse.of(masterDataApplicationService.updateProcessDepartment(id, request.responsibleDepartment()));
+    }
 }

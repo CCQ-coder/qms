@@ -25,4 +25,5 @@ public class NonconformityDetail {
     private String scrapReason;
     private String remark;
     private String status;
+    private Boolean manuallyAdjusted;
 }

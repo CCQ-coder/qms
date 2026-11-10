@@ -27,6 +27,16 @@ public class AdministrationController {
         return ApiResponse.of(administrationApplicationService.listItems(catalogType));
     }
 
+    @GetMapping("/department-options")
+    public ApiResponse<List<String>> departmentOptions() {
+        return ApiResponse.of(administrationApplicationService.activeDepartmentNames());
+    }
+
+    @GetMapping("/scrap-reason-options")
+    public ApiResponse<List<String>> scrapReasonOptions() {
+        return ApiResponse.of(administrationApplicationService.activeScrapReasonNames());
+    }
+
     @GetMapping("/menu-access")
     public ApiResponse<MenuAccessResponse> menuAccess() {
         return ApiResponse.of(administrationApplicationService.menuAccess());

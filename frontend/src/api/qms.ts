@@ -141,6 +141,11 @@ export const qmsApi = {
     return data.data
   },
 
+  async updateProcessDepartment(id: string, responsibleDepartment: string) {
+    const { data } = await http.patch<ApiResponse<ProcessMaster>>(`/api/v1/master-data/processes/${id}/responsible-department`, { responsibleDepartment })
+    return data.data
+  },
+
   async listUserAccesses() {
     const { data } = await http.get<ApiResponse<UserAccess[]>>('/api/v1/access/users')
     return data.data
@@ -158,6 +163,16 @@ export const qmsApi = {
 
   async listAdministrationItems(catalogType: AdministrationCatalogType) {
     const { data } = await http.get<ApiResponse<AdministrationItem[]>>(`/api/v1/administration/items/${catalogType}`)
+    return data.data
+  },
+
+  async listDepartmentOptions() {
+    const { data } = await http.get<ApiResponse<string[]>>('/api/v1/administration/department-options')
+    return data.data
+  },
+
+  async listScrapReasonOptions() {
+    const { data } = await http.get<ApiResponse<string[]>>('/api/v1/administration/scrap-reason-options')
     return data.data
   },
 
@@ -211,6 +226,10 @@ export const qmsApi = {
   async approveDeviceDisposition(ncrId: string, expectedBadCount: number) {
     const { data } = await http.post<ApiResponse<Nonconformity>>(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}/approve`, null, { params: { expectedBadCount } })
     return data.data
+  },
+
+  async updateNonconformityDetail(ncrId: string, detailId: string, payload: { scrapQuantity: number; scrapReason?: string }) {
+    await http.put(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}/details/${encodeURIComponent(detailId)}`, payload)
   },
 
   async listCapas(status?: string) {

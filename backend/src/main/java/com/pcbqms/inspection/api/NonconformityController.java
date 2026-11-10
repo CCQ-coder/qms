@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,6 +44,13 @@ public class NonconformityController {
         @PathVariable String ncrId, @RequestParam int expectedBadCount
     ) {
         return ApiResponse.of(service.approveDeviceDisposition(ncrId, expectedBadCount));
+    }
+
+    @PutMapping("/nonconformities/{ncrId}/details/{detailId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void updateDetail(@PathVariable String ncrId, @PathVariable String detailId,
+                             @Valid @RequestBody UpdateNonconformityDetailRequest request) {
+        service.updateDetail(ncrId, detailId, request);
     }
 
     @PostMapping("/nonconformities/{ncrId}/capas")

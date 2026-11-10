@@ -13,6 +13,7 @@ import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTaskMapper;
 import com.pcbqms.workorder.api.CreateWorkOrderRequest;
 import com.pcbqms.workorder.domain.WorkOrder;
+import com.pcbqms.workorder.api.WorkOrderQueryRequest;
 import com.pcbqms.workorder.infrastructure.persistence.ProductionBatchMapper;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.util.List;
@@ -52,6 +53,24 @@ class WorkOrderApplicationServiceTest {
         var result = service.list(null);
 
         assertThat(result).extracting(item -> item.workOrderNo()).containsExactly("WO-FQC");
+    }
+
+    @Test
+    void erpWarehouseStatusFilterMatchesCodeAndSourceText() {
+        TenantContext.set("customer-a", "supervisor");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+            new org.apache.ibatis.builder.MapperBuilderAssistant(new org.apache.ibatis.session.Configuration(), ""), WorkOrder.class);
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor", "SUPERVISOR", true, Set.of()));
+        when(workOrderMapper.selectCount(any())).thenAnswer(invocation -> {
+            var query = (com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?>) invocation.getArgument(0);
+            assertThat(query.getSqlSegment()).contains("warehouseStatus");
+            assertThat(query.getParamNameValuePairs().values()).contains("CLOSED", "已结批");
+            return 0L;
+        });
+
+        service().page(new WorkOrderQueryRequest(null, null, null, null, null, null, "CLOSED",
+            null, null, null, null, null, 1L, 20L));
     }
 
     @Test

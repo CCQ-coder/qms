@@ -15,6 +15,7 @@ public class ProcessMaster {
     private String tenantCode;
     private String processCode;
     private String processName;
+    private String responsibleDepartment;
     private Integer sequenceNo;
     private String status;
     private String createdBy;

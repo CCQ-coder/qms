@@ -11,6 +11,7 @@ import com.pcbqms.inspection.api.CreateNonconformityRequest;
 import com.pcbqms.inspection.api.CreateManualNonconformityRequest;
 import com.pcbqms.inspection.api.NonconformityDetailResponse;
 import com.pcbqms.inspection.api.NonconformityResponse;
+import com.pcbqms.inspection.api.UpdateNonconformityDetailRequest;
 import com.pcbqms.inspection.domain.Capa;
 import com.pcbqms.inspection.domain.InspectionRecord;
 import com.pcbqms.inspection.domain.InspectionTask;
@@ -84,7 +85,8 @@ public class NonconformityApplicationService {
                     .eq(NonconformityDetail::getTenantCode, tenant)
                     .eq(NonconformityDetail::getNonconformityId, pending.getId()));
                 if (details.isEmpty()) throw new IllegalStateException("待审核设备处置单缺少明细：" + pending.getNcrNo());
-                if (details.getFirst().getScrapQuantity() != (int) unreviewed) {
+                if (!Boolean.TRUE.equals(details.getFirst().getManuallyAdjusted())
+                    && details.getFirst().getScrapQuantity() != (int) unreviewed) {
                     var detail = details.getFirst();
                     detail.setScrapQuantity((int) unreviewed);
                     detail.setScrapArea(detail.getSinglePcsArea() == null ? null
@@ -101,6 +103,7 @@ public class NonconformityApplicationService {
             ncr.setDetectionDate(summary.inspectionDate());
             ncr.setProcessCode("FQC");
             ncr.setProcessName("成品测试");
+            ncr.setResponsibleDepartment("测试");
             ncr.setSourceType("DEVICE");
             ncr.setSourceGroupKey(summary.inspectionDate() + ":" + order.getId());
             ncr.setStatus("PENDING_REVIEW");
@@ -148,6 +151,32 @@ public class NonconformityApplicationService {
         clearSourceGroupKey(ncr);
         updateDetailStatus(ncr, "APPROVED");
         return toNonconformityResponse(ncr);
+    }
+
+    @Transactional
+    public void updateDetail(String ncrId, String detailId, UpdateNonconformityDetailRequest request) {
+        Nonconformity ncr = requireNcr(ncrId);
+        requireNonconformityProcessAccess(ncr);
+        if (!"OPEN".equals(ncr.getStatus()) && !"PENDING_REVIEW".equals(ncr.getStatus())) {
+            throw new IllegalArgumentException("处置单已审核或关闭，不能修改明细");
+        }
+        NonconformityDetail detail = nonconformityDetailMapper.selectById(detailId);
+        if (detail == null || !TenantContext.tenantCode().equals(detail.getTenantCode())
+            || !ncrId.equals(detail.getNonconformityId())) {
+            throw new IllegalArgumentException("不良品明细不存在或无权操作");
+        }
+        if (!"OPEN".equals(detail.getStatus()) && !"PENDING_REVIEW".equals(detail.getStatus())) {
+            throw new IllegalArgumentException("明细已审核或关闭，不能修改");
+        }
+        if (request.scrapQuantity() == null || request.scrapQuantity() < 1) {
+            throw new IllegalArgumentException("报废数量必须大于 0");
+        }
+        detail.setScrapQuantity(request.scrapQuantity());
+        detail.setScrapReason(request.scrapReason());
+        detail.setScrapArea(detail.getSinglePcsArea() == null ? null
+            : detail.getSinglePcsArea().multiply(BigDecimal.valueOf(request.scrapQuantity())));
+        detail.setManuallyAdjusted(true);
+        nonconformityDetailMapper.updateById(detail);
     }
 
     private void clearSourceGroupKey(Nonconformity ncr) {

@@ -17,6 +17,7 @@ import com.pcbqms.inspection.api.CreateCapaRequest;
 import com.pcbqms.inspection.api.CreateNonconformityRequest;
 import com.pcbqms.inspection.api.CreateManualNonconformityRequest;
 import com.pcbqms.inspection.api.CreateNonconformityDetailRequest;
+import com.pcbqms.inspection.api.UpdateNonconformityDetailRequest;
 import com.pcbqms.inspection.domain.InspectionRecord;
 import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.domain.Nonconformity;
@@ -78,6 +79,7 @@ class NonconformityApplicationServiceTest {
         verify(nonconformityDetailMapper).insert(detail.capture());
         assertThat(ncr.getValue().getStatus()).isEqualTo("PENDING_REVIEW");
         assertThat(ncr.getValue().getSourceType()).isEqualTo("DEVICE");
+        assertThat(ncr.getValue().getResponsibleDepartment()).isEqualTo("测试");
         assertThat(detail.getValue().getScrapQuantity()).isEqualTo(3);
         assertThat(detail.getValue().getStatus()).isEqualTo("PENDING_REVIEW");
     }
@@ -124,6 +126,44 @@ class NonconformityApplicationServiceTest {
     }
 
     @Test
+    void updatesPendingDetailAndRecalculatesArea() {
+        TenantContext.set("customer-a", "tester.a");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setStatus("PENDING_REVIEW");
+        ncr.setProcessCode("FQC");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setId("detail-1");
+        detail.setTenantCode("customer-a");
+        detail.setNonconformityId("ncr-1");
+        detail.setStatus("PENDING_REVIEW");
+        detail.setSinglePcsArea(new BigDecimal("0.25"));
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(nonconformityDetailMapper.selectById("detail-1")).thenReturn(detail);
+
+        service().updateDetail("ncr-1", "detail-1", new UpdateNonconformityDetailRequest(4, "板边破损"));
+
+        assertThat(detail.getScrapQuantity()).isEqualTo(4);
+        assertThat(detail.getScrapArea()).isEqualByComparingTo("1.00");
+        assertThat(detail.getScrapReason()).isEqualTo("板边破损");
+        assertThat(detail.getManuallyAdjusted()).isTrue();
+        verify(nonconformityDetailMapper).updateById(detail);
+    }
+
+    @Test
+    void reviewedDetailCannotBeChanged() {
+        TenantContext.set("customer-a", "tester.a");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setStatus("APPROVED");
+        ncr.setProcessCode("FQC");
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+
+        assertThatThrownBy(() -> service().updateDetail("ncr-1", "detail-1",
+            new UpdateNonconformityDetailRequest(4, "板边破损")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("审核");
+        verifyNoInteractions(nonconformityDetailMapper);
+    }
+
+    @Test
     void cancelsUnreviewedDeviceDispositionWhenItsSourceCountsMoveAway() {
         TenantContext.set("customer-a", "admin");
         Nonconformity pending = new Nonconformity();
@@ -138,6 +178,33 @@ class NonconformityApplicationServiceTest {
         assertThat(pending.getStatus()).isEqualTo("CANCELLED");
         assertThat(pending.getSourceGroupKey()).isNull();
         verify(nonconformityMapper).updateById(pending);
+    }
+
+    @Test
+    void deviceSyncPreservesManuallyAdjustedPendingQuantity() {
+        TenantContext.set("customer-a", "admin");
+        WorkOrder order = new WorkOrder();
+        order.setId("order-1");
+        order.setTenantCode("customer-a");
+        order.setWorkOrderNo("WO-1");
+        Nonconformity pending = nonconformity("ncr-1", null);
+        pending.setSourceType("DEVICE");
+        pending.setStatus("PENDING_REVIEW");
+        pending.setWorkOrderId("order-1");
+        pending.setSourceGroupKey("2026-11-03:order-1");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setScrapQuantity(2);
+        detail.setManuallyAdjusted(true);
+        when(workOrderMapper.selectOne(any())).thenReturn(order);
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of(pending));
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
+        var summary = new FinishedTestDeviceSummaryService.Summary(LocalDate.of(2026, 11, 3),
+            "WO-1", "42379", "42379", 10, 7, 3, 70);
+
+        service().syncDeviceDefects(List.of(summary));
+
+        assertThat(detail.getScrapQuantity()).isEqualTo(2);
+        verify(nonconformityDetailMapper, never()).updateById(detail);
     }
 
     @Test

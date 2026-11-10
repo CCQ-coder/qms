@@ -49,6 +49,7 @@ public class AdministrationApplicationService {
         new MenuDefinition("TRACEABILITY", "质量追溯", "TRACE", 32),
         new MenuDefinition("ANALYTICS", "可视化报表分析", "TRACE", 33),
         new MenuDefinition("EQUIPMENT_FINISHED_TEST_SUMMARY", "成品测试汇总表", "TRACE", 34),
+        new MenuDefinition("NONCONFORMITY_DETAILS", "不良品明细表", "TRACE", 35),
         new MenuDefinition("EQUIPMENT", "设备管理", null, 40),
         new MenuDefinition("EQUIPMENT_LEDGER", "设备台账", "EQUIPMENT", 41),
         new MenuDefinition("EQUIPMENT_INSPECTION", "点检管理", "EQUIPMENT", 42),
@@ -92,6 +93,22 @@ public class AdministrationApplicationService {
         }
         return listItemsForTenant(catalogType)
             .stream().map(this::toResponse).toList();
+    }
+
+    public List<String> activeDepartmentNames() {
+        return activeItemNames("DEPARTMENT");
+    }
+
+    public List<String> activeScrapReasonNames() {
+        return activeItemNames("SCRAP_REASON");
+    }
+
+    private List<String> activeItemNames(String catalogType) {
+        return listItemsForTenant(catalogType).stream()
+            .filter(item -> "ACTIVE".equals(item.getStatus()))
+            .map(AdministrationItem::getItemName)
+            .distinct()
+            .toList();
     }
 
     /**

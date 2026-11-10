@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.masterdata.api.CreateProductRequest;
+import com.pcbqms.masterdata.api.CreateProcessRequest;
+import com.pcbqms.masterdata.domain.ProcessMaster;
 import com.pcbqms.masterdata.domain.ProductMaster;
 import com.pcbqms.masterdata.infrastructure.persistence.ProcessMasterMapper;
 import com.pcbqms.masterdata.infrastructure.persistence.ProductMasterMapper;
@@ -29,6 +31,7 @@ class MasterDataApplicationServiceTest {
     @Mock private SystemParameterMapper systemParameterMapper;
     @Mock private InspectionAccessScopeService inspectionAccessScopeService;
     @Captor private ArgumentCaptor<ProductMaster> productCaptor;
+    @Captor private ArgumentCaptor<ProcessMaster> processCaptor;
 
     @AfterEach
     void clearTenantContext() {
@@ -65,6 +68,32 @@ class MasterDataApplicationServiceTest {
         assertThatThrownBy(() -> service.createProduct(new CreateProductRequest("INVALID", "高频板", null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("料号规则");
+    }
+
+    @Test
+    void storesResponsibleDepartmentForProcessAndAllowsChangingIt() {
+        TenantContext.set("customer-b", "admin.b");
+        when(processMasterMapper.selectCount(any())).thenReturn(0L);
+        MasterDataApplicationService service = new MasterDataApplicationService(productMasterMapper, processMasterMapper,
+            systemParameterMapper, inspectionAccessScopeService);
+
+        var created = service.createProcess(new CreateProcessRequest("FQC", "成品测试", 100, "测试"));
+
+        verify(processMasterMapper).insert(processCaptor.capture());
+        assertThat(processCaptor.getValue().getResponsibleDepartment()).isEqualTo("测试");
+        assertThat(created.responsibleDepartment()).isEqualTo("测试");
+
+        ProcessMaster existing = new ProcessMaster();
+        existing.setId("process-1");
+        existing.setTenantCode("customer-b");
+        existing.setResponsibleDepartment("测试");
+        when(processMasterMapper.selectOne(any())).thenReturn(existing);
+
+        var updated = service.updateProcessDepartment("process-1", "品质");
+
+        verify(processMasterMapper).update(org.mockito.ArgumentMatchers.isNull(), any());
+        assertThat(updated.responsibleDepartment()).isEqualTo("品质");
+        verify(inspectionAccessScopeService, org.mockito.Mockito.times(2)).requireTenantAdministrator();
     }
 
     private SystemParameter parameter(String key, String value) {

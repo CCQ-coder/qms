@@ -89,6 +89,7 @@ public class MasterDataApplicationService {
         process.setTenantCode(tenantCode);
         process.setProcessCode(processCode);
         process.setProcessName(request.processName().trim());
+        process.setResponsibleDepartment(normalizeNullable(request.responsibleDepartment()));
         process.setSequenceNo(request.sequenceNo());
         process.setStatus("ACTIVE");
         process.setCreatedBy(TenantContext.actor());
@@ -115,6 +116,20 @@ public class MasterDataApplicationService {
         process.setStatus(normalizeStatus(status));
         process.setUpdatedAt(LocalDateTime.now());
         processMasterMapper.updateById(process);
+        return ProcessResponse.from(process);
+    }
+
+    @Transactional
+    public ProcessResponse updateProcessDepartment(String id, String responsibleDepartment) {
+        inspectionAccessScopeService.requireTenantAdministrator();
+        ProcessMaster process = requireProcess(id);
+        String department = normalizeNullable(responsibleDepartment);
+        process.setResponsibleDepartment(department);
+        processMasterMapper.update(null, Wrappers.<ProcessMaster>update()
+            .eq("id", process.getId())
+            .eq("tenant_code", TenantContext.tenantCode())
+            .set("responsible_department", department)
+            .set("updated_at", LocalDateTime.now()));
         return ProcessResponse.from(process);
     }
 

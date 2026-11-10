@@ -1,6 +1,11 @@
 import { isHostOnline } from '../utils/host-status.ts'
+import { statusText } from '../utils/display-text.ts'
 
 export type InspectionMonitorStatus = '未接入' | '离线' | '测试中' | '空闲'
+
+export function monitorStatusLabel(status: InspectionMonitorStatus | '状态不可用', equipmentStatus: string): string {
+  return status === '未接入' ? statusText(equipmentStatus) : status
+}
 
 const ACTIVE_WINDOW_MS = 7 * 60 * 1000
 

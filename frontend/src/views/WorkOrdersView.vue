@@ -7,7 +7,6 @@ import type { WorkOrder, WorkOrderQuery } from '../types/qms'
 
 const loading = ref(false)
 const keyword = ref('')
-const batchNo = ref('')
 const customerCode = ref('')
 const currentProcess = ref('')
 const warehouseStatus = ref('')
@@ -48,7 +47,7 @@ function qualityStatusText(value?: string) {
 }
 
 function warehouseStatusText(value?: string) {
-  return ({ PENDING: '待入库', RECEIVED: '已入库', CLOSED: '已结批' } as Record<string, string>)[value ?? ''] ?? value ?? '—'
+  return ({ PENDING: '未入库', PARTIAL: '部分入库', RECEIVED: '已入库', CLOSED: '已结批' } as Record<string, string>)[value ?? ''] ?? value ?? '—'
 }
 
 function priorityText(value?: string) {
@@ -64,13 +63,12 @@ function qualityTagType(value?: string) {
 }
 
 function warehouseTagType(value?: string) {
-  return ({ PENDING: 'warning', RECEIVED: 'success', CLOSED: 'info' } as Record<string, 'warning' | 'success' | 'info'>)[value ?? ''] ?? 'info'
+  return ({ PENDING: 'warning', PARTIAL: 'warning', RECEIVED: 'success', CLOSED: 'info', 未入库: 'warning', 待入库: 'warning', 部分入库: 'warning', 已入库: 'success' } as Record<string, 'warning' | 'success' | 'info'>)[value ?? ''] ?? 'info'
 }
 
 function buildQuery(page = currentPage.value): WorkOrderQuery {
   return {
     keyword: keyword.value.trim() || undefined,
-    batchNo: batchNo.value.trim() || undefined,
     customerCode: customerCode.value.trim() || undefined,
     currentProcess: currentProcess.value.trim() || undefined,
     warehouseStatus: warehouseStatus.value || undefined,
@@ -99,7 +97,6 @@ async function load(page = 1) {
 
 function resetFilters() {
   keyword.value = ''
-  batchNo.value = ''
   customerCode.value = ''
   currentProcess.value = ''
   warehouseStatus.value = ''
@@ -141,10 +138,9 @@ onMounted(() => { void load() })
       <el-collapse-transition>
         <div v-show="!filtersCollapsed" id="work-order-filters" class="work-order-filters">
           <label class="work-order-filter-field work-order-keyword-field"><span>快速查询</span><el-input v-model="keyword" clearable placeholder="指令号、厂内编号、客户料号、订单号" @keyup.enter="load(1)" /></label>
-          <label class="work-order-filter-field"><span>生产批次</span><el-input v-model="batchNo" clearable placeholder="输入批次号" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>客户</span><el-input v-model="customerCode" clearable placeholder="输入客户" @keyup.enter="load(1)" /></label>
           <label class="work-order-filter-field"><span>工序信息</span><el-input v-model="currentProcess" clearable placeholder="工序或表面处理名称" @keyup.enter="load(1)" /></label>
-          <label class="work-order-filter-field"><span>入库状态</span><el-select v-model="warehouseStatus" placeholder="全部" clearable><el-option label="待入库" value="PENDING" /><el-option label="已入库" value="RECEIVED" /><el-option label="已结批" value="CLOSED" /></el-select></label>
+          <label class="work-order-filter-field"><span>工单状态</span><el-select v-model="warehouseStatus" placeholder="全部" clearable><el-option label="未入库" value="PENDING" /><el-option label="部分入库" value="PARTIAL" /><el-option label="已入库" value="RECEIVED" /><el-option label="已结批" value="CLOSED" /></el-select></label>
           <label class="work-order-filter-field"><span>优先级</span><el-select v-model="priority" placeholder="全部" clearable><el-option label="低" value="LOW" /><el-option label="普通" value="NORMAL" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="URGENT" /></el-select></label>
           <label class="work-order-filter-field work-order-date-field"><span>输入日期</span><el-date-picker v-model="inputDateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" /></label>
           <label class="work-order-filter-field work-order-date-field"><span>要求交期</span><el-date-picker v-model="deliveryDateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" /></label>
@@ -169,8 +165,7 @@ onMounted(() => { void load() })
           <el-table-column label="订单 / 投料 / 入库" min-width="160"><template #default="{ row }">{{ value(row.customerOrderQuantity) }} / {{ value(row.plannedQuantity) }} / {{ value(row.cumulativeWarehouseQuantity) }}</template></el-table-column>
           <el-table-column label="投料面积" min-width="145"><template #default="{ row }"><div>{{ value(row.materialArea) }} m²</div><small>预投率 {{ value(row.estimatedYieldRate) }}% · 计划领料 {{ value(row.plannedMaterialIssueQuantity) }}</small></template></el-table-column>
           <el-table-column label="总 / A / B PNL" min-width="130"><template #default="{ row }"><div>{{ value(row.totalPanelQuantity) }} / {{ value(row.aBoardPanelQuantity) }} / {{ value(row.bBoardPanelQuantity) }}</div><small>{{ value(row.panelizationNo) }}</small></template></el-table-column>
-          <el-table-column label="工单状态" min-width="105"><template #default="{ row }"><el-tag :type="workOrderTagType(row.status)" effect="light">{{ workOrderStatusText(row.status) }}</el-tag></template></el-table-column>
-          <el-table-column label="入库状态" min-width="105"><template #default="{ row }"><el-tag :type="warehouseTagType(row.warehouseStatus)" effect="plain">{{ warehouseStatusText(row.warehouseStatus) }}</el-tag></template></el-table-column>
+          <el-table-column label="工单状态" min-width="105"><template #default="{ row }"><el-tag :type="warehouseTagType(row.warehouseStatus)" effect="plain">{{ warehouseStatusText(row.warehouseStatus) }}</el-tag></template></el-table-column>
           <el-table-column label="优先级" min-width="80"><template #default="{ row }">{{ priorityText(row.priority) }}</template></el-table-column>
           <el-table-column label="投料日期" min-width="110"><template #default="{ row }">{{ formatDate(row.materialInputDate ?? row.releasedAt) }}</template></el-table-column>
         </el-table>
@@ -191,9 +186,9 @@ onMounted(() => { void load() })
             <span>生产批次：{{ batchText(selected) }}</span>
           </div>
           <div class="work-order-detail-statuses">
-            <el-tag :type="workOrderTagType(selected.status)" effect="light">{{ workOrderStatusText(selected.status) }}</el-tag>
-            <el-tag :type="qualityTagType(selected.qualityStatus)" effect="light">{{ qualityStatusText(selected.qualityStatus) }}</el-tag>
             <el-tag :type="warehouseTagType(selected.warehouseStatus)" effect="plain">{{ warehouseStatusText(selected.warehouseStatus) }}</el-tag>
+            <el-tag :type="qualityTagType(selected.qualityStatus)" effect="light">{{ qualityStatusText(selected.qualityStatus) }}</el-tag>
+            <el-tag :type="workOrderTagType(selected.status)" effect="light" title="QMS 状态">{{ workOrderStatusText(selected.status) }}</el-tag>
           </div>
         </div>
       </template>
@@ -213,7 +208,7 @@ onMounted(() => { void load() })
               <div class="work-order-detail-section-heading"><h3>生产执行</h3><span>生产进度、质量与入库状态</span></div>
               <el-descriptions :column="3" border>
                 <el-descriptions-item :label="processLabel(selected)">{{ value(selected.currentProcessName) }}（{{ value(selected.currentProcessCode) }}）</el-descriptions-item>
-                <el-descriptions-item label="工单状态"><el-tag :type="workOrderTagType(selected.status)" effect="light">{{ workOrderStatusText(selected.status) }}</el-tag></el-descriptions-item>
+                <el-descriptions-item label="工单状态"><el-tag :type="warehouseTagType(selected.warehouseStatus)" effect="plain">{{ warehouseStatusText(selected.warehouseStatus) }}</el-tag></el-descriptions-item>
                 <el-descriptions-item label="质量状态"><el-tag :type="qualityTagType(selected.qualityStatus)" effect="light">{{ qualityStatusText(selected.qualityStatus) }}</el-tag></el-descriptions-item>
                 <el-descriptions-item label="优先级">{{ priorityText(selected.priority) }}</el-descriptions-item>
                 <el-descriptions-item label="计划投产数">{{ value(selected.plannedQuantity) }}</el-descriptions-item>
@@ -222,7 +217,7 @@ onMounted(() => { void load() })
                 <el-descriptions-item label="累计入库数">{{ value(selected.cumulativeWarehouseQuantity) }}</el-descriptions-item>
                 <el-descriptions-item label="累计报废数">{{ value(selected.cumulativeScrapQuantity) }}</el-descriptions-item>
                 <el-descriptions-item label="累计不良数">{{ value(selected.cumulativeDefectQuantity) }}</el-descriptions-item>
-                <el-descriptions-item label="入库状态"><el-tag :type="warehouseTagType(selected.warehouseStatus)" effect="plain">{{ warehouseStatusText(selected.warehouseStatus) }}</el-tag></el-descriptions-item>
+                <el-descriptions-item label="QMS 状态"><el-tag :type="workOrderTagType(selected.status)" effect="light">{{ workOrderStatusText(selected.status) }}</el-tag></el-descriptions-item>
                 <el-descriptions-item label="未入库数量">{{ value(selected.unreceivedQuantity) }}</el-descriptions-item>
                 <el-descriptions-item label="最后入库日期">{{ formatDate(selected.lastWarehouseDate) }}</el-descriptions-item>
                 <el-descriptions-item label="生产通知单号">{{ value(selected.productionNoticeNo) }}</el-descriptions-item>

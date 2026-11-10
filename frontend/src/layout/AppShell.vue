@@ -111,6 +111,7 @@ onMounted(() => {
           <template #title><el-icon><Operation /></el-icon><span>报表</span></template>
           <el-menu-item v-if="isMenuVisible('ANALYTICS')" index="/analytics"><span>可视化报表分析</span></el-menu-item>
           <el-menu-item v-if="isMenuVisible('EQUIPMENT_FINISHED_TEST_SUMMARY')" index="/equipment/finished-test-summary"><span>成品测试汇总表</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('NONCONFORMITY_DETAILS')" index="/nonconformities/details"><span>不良品明细表</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('EQUIPMENT')" index="equipment">
