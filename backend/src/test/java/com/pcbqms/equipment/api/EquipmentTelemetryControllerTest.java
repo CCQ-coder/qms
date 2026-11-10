@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +22,23 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class EquipmentTelemetryControllerTest {
+    @Test
+    void returnsTodayBadBoardsByMaterial() throws Exception {
+        var summary = mock(FinishedTestDeviceSummaryService.class);
+        when(summary.todayBadBoards()).thenReturn(new FinishedTestDeviceSummaryService.DailyMaterialBadBoards(
+            "2026-11-10", List.of(new FinishedTestDeviceSummaryService.MaterialBadCount("42713", 24))));
+        var controller = new EquipmentTelemetryController(
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
+            mock(EquipmentTelemetryQueryApplicationService.class), summary);
+
+        MockMvcBuilders.standaloneSetup(controller).build()
+            .perform(get("/api/v1/equipment/telemetry/today-bad-boards-by-material"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.date").value("2026-11-10"))
+            .andExpect(jsonPath("$.data.materials[0].materialNo").value("42713"))
+            .andExpect(jsonPath("$.data.materials[0].badCount").value(24));
+    }
+
     @Test
     void acceptsAllDocumentedZhongboFields() throws Exception {
         var service = mock(EquipmentTelemetryApplicationService.class);

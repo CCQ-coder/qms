@@ -39,6 +39,11 @@ public class EquipmentTelemetryController {
         return ApiResponse.of(finishedTestDeviceSummaryService.monthlyAnalytics());
     }
 
+    @GetMapping("/today-bad-boards-by-material")
+    public ApiResponse<FinishedTestDeviceSummaryService.DailyMaterialBadBoards> todayBadBoardsByMaterial() {
+        return ApiResponse.of(finishedTestDeviceSummaryService.todayBadBoards());
+    }
+
     @PostMapping("/{telemetryId}/bind-work-order")
     public ApiResponse<String> bindZhongboWorkOrder(
         @PathVariable String telemetryId, @Valid @RequestBody BindFlyingProbeWorkOrderRequest request

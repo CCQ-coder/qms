@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.pcbqms.access.application.InspectionAccessScopeService;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
+import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.access.AccessDeniedException;
@@ -163,5 +165,30 @@ class FinishedTestDeviceSummaryServiceTest {
 
         assertThat(service.summariesForCurrentTenant()).isEmpty();
         assertThatThrownBy(service::listSummary).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void dailyBadBoardsUsesDetectionDayTenantAndProcessedBoardDeltas() {
+        TenantContext.set("customer-a", "admin");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        InspectionAccessScopeService access = mock(InspectionAccessScopeService.class);
+        LocalDate day = LocalDate.of(2026, 11, 10);
+        when(jdbc.query(any(String.class),
+            org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.MaterialBadCount>>any(),
+            eq("customer-a"), eq(day.atStartOfDay()), eq(day.plusDays(1).atStartOfDay())))
+            .thenReturn(List.of(new FinishedTestDeviceSummaryService.MaterialBadCount("44496", 3)));
+
+        var result = new FinishedTestDeviceSummaryService(jdbc, mock(WorkOrderMapper.class), access)
+            .badBoardsForDate(day);
+
+        assertThat(result.date()).isEqualTo("2026-11-10");
+        assertThat(result.materials()).containsExactly(
+            new FinishedTestDeviceSummaryService.MaterialBadCount("44496", 3));
+        verify(access).requireProcessAccess("FQC");
+        var sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(),
+            org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.MaterialBadCount>>any(),
+            eq("customer-a"), eq(day.atStartOfDay()), eq(day.plusDays(1).atStartOfDay()));
+        assertThat(sql.getValue()).contains("status = 'PROCESSED'", "delta_bad > 0", "GROUP BY", "ORDER BY");
     }
 }

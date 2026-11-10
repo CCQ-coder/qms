@@ -485,6 +485,11 @@ export type FinishedTestDeviceSummary = {
   passRate: number
 }
 
+export type DailyMaterialBadBoards = {
+  date: string
+  materials: Array<{ materialNo: string; badCount: number }>
+}
+
 export type FinishedTestMonthlyAnalytics = {
   month: string
   byModel: Array<{ model: string; totalCount: number; goodCount: number; badCount: number; passRate: number }>

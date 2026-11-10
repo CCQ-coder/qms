@@ -6,21 +6,24 @@ import { LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime } from '@/utils/display-text'
-import type { DashboardSummary, EquipmentTelemetryRecord, QualitySummary } from '@/types/qms'
+import type { DailyMaterialBadBoards, DashboardSummary, EquipmentTelemetryRecord, QualitySummary } from '@/types/qms'
 
 use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const loading = ref(true)
 const qualityLoading = ref(false)
+const dailyBadLoading = ref(false)
 const summary = ref<DashboardSummary>()
 const quality = ref<QualitySummary>()
+const dailyBad = ref<DailyMaterialBadBoards>()
 const summaryError = ref('')
 const qualityError = ref('')
+const dailyBadError = ref('')
 const probeRecords = ref<EquipmentTelemetryRecord[]>([])
 const probeError = ref('')
 const latestProbeRecord = computed(() => probeRecords.value[0])
 const businessUpdatedAt = ref<Date>()
-const updatedAtLabel = computed(() => businessUpdatedAt.value ? formatDateTime(businessUpdatedAt.value) : loading.value || qualityLoading.value ? '读取中' : '尚未完整读取')
+const updatedAtLabel = computed(() => businessUpdatedAt.value ? formatDateTime(businessUpdatedAt.value) : loading.value || qualityLoading.value || dailyBadLoading.value ? '读取中' : '尚未完整读取')
 const defectChartRef = ref<HTMLElement>()
 let defectChart: ECharts | undefined
 let loadVersion = 0
@@ -28,17 +31,18 @@ let loadVersion = 0
 function renderCharts() {
   defectChart?.dispose()
   defectChart = undefined
-  const currentQuality = quality.value
-  if (defectChartRef.value && currentQuality?.defectRanking.length) {
+  const materials = dailyBad.value?.materials ?? []
+  if (defectChartRef.value && materials.length) {
+    const badCounts = new Map(materials.map((item) => [item.materialNo, item.badCount]))
     defectChart = init(defectChartRef.value)
     defectChart.setOption({
       color: ['#d92d4b', '#b77900', '#7a36df', '#1570ef', '#12b76a', '#f79009'],
-      tooltip: { trigger: 'item', formatter: '{b}：{c} 条（{d}%）' },
-      legend: { type: 'scroll', orient: 'vertical', right: 4, top: 'middle', icon: 'circle', textStyle: { color: '#344054' } },
+      tooltip: { trigger: 'item', formatter: '{b}：{c} 块（{d}%）' },
+      legend: { type: 'scroll', orient: 'vertical', right: 4, top: 'middle', icon: 'circle', textStyle: { color: '#344054' }, formatter: (name: string) => `${name}  ${badCounts.get(name)} 块` },
       series: [{
         type: 'pie', radius: ['48%', '72%'], center: ['35%', '52%'], avoidLabelOverlap: true,
-        label: { show: true, position: 'center', formatter: `{count|${currentQuality.failRecords}}\n{label|不合格}`, rich: { count: { color: '#101828', fontSize: 22, fontWeight: 700, lineHeight: 28 }, label: { color: '#667085', fontSize: 12 } } },
-        labelLine: { show: false }, data: currentQuality.defectRanking.map((item) => ({ name: item.defectSummary || '未填写缺陷', value: item.failedRecords }))
+        label: { show: true, position: 'center', formatter: `{count|${materials.reduce((sum, item) => sum + item.badCount, 0)}}\n{label|坏板（块）}`, rich: { count: { color: '#101828', fontSize: 22, fontWeight: 700, lineHeight: 28 }, label: { color: '#667085', fontSize: 12 } } },
+        labelLine: { show: false }, data: materials.map((item) => ({ name: item.materialNo, value: item.badCount }))
       }]
     })
   }
@@ -50,8 +54,11 @@ async function load() {
   const version = ++loadVersion
   loading.value = true
   qualityLoading.value = true
+  dailyBadLoading.value = true
   quality.value = undefined
+  dailyBad.value = undefined
   qualityError.value = ''
+  dailyBadError.value = ''
   businessUpdatedAt.value = undefined
   renderCharts()
   try {
@@ -76,16 +83,20 @@ async function load() {
     probeError.value = '飞针机采集状态处理失败，请刷新重试。'
   } finally { if (version === loadVersion) loading.value = false }
   try {
-    const qualityResult = await qmsApi.getQualitySummary()
+    const [qualityResult, dailyBadResult] = await Promise.allSettled([
+      qmsApi.getQualitySummary(), qmsApi.getTodayBadBoardsByMaterial()
+    ])
     if (version !== loadVersion) return
-    quality.value = qualityResult
-    qualityError.value = ''
-    if (!summaryError.value) businessUpdatedAt.value = new Date()
+    quality.value = qualityResult.status === 'fulfilled' ? qualityResult.value : undefined
+    dailyBad.value = dailyBadResult.status === 'fulfilled' ? dailyBadResult.value : undefined
+    qualityError.value = qualityResult.status === 'rejected' ? '检验记录汇总读取失败，请刷新重试。' : ''
+    dailyBadError.value = dailyBadResult.status === 'rejected' ? '今日坏板数据读取失败，请刷新重试。' : ''
+    if (!summaryError.value && !qualityError.value && !dailyBadError.value) businessUpdatedAt.value = new Date()
     await nextTick()
     renderCharts()
   } catch {
-    if (version === loadVersion) qualityError.value = '检验记录与缺陷汇总读取失败，请刷新重试。'
-  } finally { if (version === loadVersion) qualityLoading.value = false }
+    if (version === loadVersion) dailyBadError.value = '今日坏板数据处理失败，请刷新重试。'
+  } finally { if (version === loadVersion) { qualityLoading.value = false; dailyBadLoading.value = false } }
 }
 
 onMounted(() => { window.addEventListener('resize', resizeCharts); void load() })
@@ -96,11 +107,12 @@ onBeforeUnmount(() => { loadVersion++; window.removeEventListener('resize', resi
   <section class="dashboard-page" v-loading="loading">
     <div class="dashboard-intro">
       <div><h2>质量总览</h2><p>同步汇总成品测试、待检任务、工序检验与不良处置数据，展示当前质量业务状态。</p></div>
-      <span class="dashboard-updated" :class="{ 'dashboard-updated--unavailable': summaryError || qualityError || !businessUpdatedAt }"><i></i>最近完整更新 {{ updatedAtLabel }}</span>
+      <span class="dashboard-updated" :class="{ 'dashboard-updated--unavailable': summaryError || qualityError || dailyBadError || !businessUpdatedAt }"><i></i>最近完整更新 {{ updatedAtLabel }}</span>
     </div>
 
     <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" />
     <el-alert v-if="qualityError" type="error" :closable="false" :title="qualityError" />
+    <el-alert v-if="dailyBadError" type="error" :closable="false" :title="dailyBadError" />
     <div class="dashboard-metrics">
       <article class="dashboard-metric"><span>检验记录总数</span><strong>{{ quality ? quality.totalRecords.toLocaleString() : '—' }}</strong><small>当前权限范围内的已提交记录</small></article>
       <article class="dashboard-metric success"><span>一次合格率</span><strong>{{ quality ? `${quality.firstPassRate.toFixed(2)}%` : '—' }}</strong><small>合格记录数 ÷ 检验记录总数</small></article>
@@ -126,9 +138,9 @@ onBeforeUnmount(() => { loadVersion++; window.removeEventListener('resize', resi
       <div class="dashboard-flow-grid"><article><span>待检任务</span><strong>{{ summary?.pendingInspectionTasks ?? '—' }}</strong></article><article class="attention"><span>进行中工单</span><strong>{{ summary?.activeWorkOrders ?? '—' }}</strong></article><article class="good"><span>已完成检验</span><strong>{{ summary?.completedInspectionTasks ?? '—' }}</strong></article><article class="good"><span>一次合格率</span><strong>{{ summary ? `${summary.firstPassRate.toFixed(2)}%` : '—' }}</strong></article></div>
     </el-card>
 
-    <el-card shadow="never" class="content-card dashboard-chart-card dashboard-defect-card" v-loading="qualityLoading">
-      <template #header><div class="dashboard-card-heading"><div><h3>不良缺陷分布</h3><p>按当前权限范围内的不合格检验记录汇总。</p></div><el-button @click="load">刷新看板</el-button></div></template>
-      <div v-if="quality?.defectRanking.length" ref="defectChartRef" class="dashboard-defect-chart" /><el-empty v-else :description="qualityError ? '缺陷数据暂不可用' : '当前暂无不良缺陷数据'" />
+    <el-card shadow="never" class="content-card dashboard-chart-card dashboard-defect-card" v-loading="dailyBadLoading">
+      <template #header><div class="dashboard-card-heading"><div><h3>今日坏板料号分布</h3><p>按{{ dailyBad?.date || '当天' }}飞针机检测的料号汇总已处理记录的坏板块数。</p></div><el-button @click="load">刷新看板</el-button></div></template>
+      <div v-if="dailyBad?.materials.length" ref="defectChartRef" class="dashboard-defect-chart" /><el-empty v-else :description="dailyBadError ? '今日坏板数据暂不可用' : '当天暂无飞针机坏板记录'" />
     </el-card>
   </section>
 </template>

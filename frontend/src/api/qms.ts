@@ -4,7 +4,7 @@ import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage, FinishedTestDeviceSummary
-  , MenuAccess, GatewayHostStatus, FinishedTestMonthlyAnalytics
+  , MenuAccess, GatewayHostStatus, FinishedTestMonthlyAnalytics, DailyMaterialBadBoards
 } from '@/types/qms'
 
 export const qmsApi = {
@@ -338,6 +338,11 @@ export const qmsApi = {
 
   async getFinishedTestMonthlyAnalytics() {
     const { data } = await http.get<ApiResponse<FinishedTestMonthlyAnalytics>>('/api/v1/equipment/telemetry/finished-test-monthly-analytics')
+    return data.data
+  },
+
+  async getTodayBadBoardsByMaterial() {
+    const { data } = await http.get<ApiResponse<DailyMaterialBadBoards>>('/api/v1/equipment/telemetry/today-bad-boards-by-material')
     return data.data
   },
 

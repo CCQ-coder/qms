@@ -8,6 +8,7 @@ import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -36,6 +37,8 @@ public class FinishedTestDeviceSummaryService {
     public record ModelMetric(String model, long totalCount, long goodCount, long badCount, double passRate) { }
     public record InternalDefectMetric(String internalProductNo, long badCount) { }
     public record MonthlyAnalytics(String month, List<ModelMetric> byModel, List<InternalDefectMetric> topInternalDefects) { }
+    public record MaterialBadCount(String materialNo, long badCount) { }
+    public record DailyMaterialBadBoards(String date, List<MaterialBadCount> materials) { }
     private record Attributed(Sample sample, WorkOrder order, long tested, long bad) { }
 
     record Binding(String workOrderNo, LocalDate detectionDate) { }
@@ -59,6 +62,25 @@ public class FinishedTestDeviceSummaryService {
                 return result;
             }, TenantContext.tenantCode());
         return aggregateMonthly(samples(), workOrders(), models, YearMonth.now());
+    }
+
+    public DailyMaterialBadBoards todayBadBoards() {
+        return badBoardsForDate(LocalDate.now(ZoneId.of("Asia/Shanghai")));
+    }
+
+    DailyMaterialBadBoards badBoardsForDate(LocalDate date) {
+        accessScopeService.requireProcessAccess("FQC");
+        List<MaterialBadCount> materials = jdbcTemplate.query("""
+            SELECT COALESCE(NULLIF(TRIM(material_no), ''), '未填写料号') AS material_no,
+                   SUM(delta_bad) AS bad_count
+            FROM qms_flying_probe_projection
+            WHERE tenant_code = ? AND device_time >= ? AND device_time < ?
+              AND status = 'PROCESSED' AND delta_bad > 0
+            GROUP BY COALESCE(NULLIF(TRIM(material_no), ''), '未填写料号')
+            ORDER BY bad_count DESC, material_no
+            """, (rs, row) -> new MaterialBadCount(rs.getString("material_no"), rs.getLong("bad_count")),
+            TenantContext.tenantCode(), date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        return new DailyMaterialBadBoards(date.toString(), materials);
     }
 
     public void matchUnboundZhongbo() {
