@@ -422,6 +422,11 @@ export const qmsApi = {
     return data as Blob
   },
 
+  async downloadScrapStatisticsExcel() {
+    const { data } = await http.get('/api/v1/reports/scrap-statistics.xlsx', { responseType: 'blob' })
+    return data as Blob
+  },
+
   async getBatchTraceability(batchNo: string) {
     const { data } = await http.get<ApiResponse<Traceability>>(`/api/v1/reports/traceability/batches/${encodeURIComponent(batchNo)}`)
     return data.data

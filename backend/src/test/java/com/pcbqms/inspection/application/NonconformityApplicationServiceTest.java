@@ -292,6 +292,7 @@ class NonconformityApplicationServiceTest {
         workOrder.setTenantCode("customer-a");
         workOrder.setWorkOrderNo("WO-001");
         workOrder.setInternalProductNo("INNER-001");
+        workOrder.setLayerCount(4);
         workOrder.setSinglePcsArea(new BigDecimal("0.25"));
         when(workOrderMapper.selectOne(any())).thenReturn(workOrder);
         when(nonconformityMapper.selectCount(any())).thenReturn(0L);
@@ -307,6 +308,7 @@ class NonconformityApplicationServiceTest {
         assertThat(ncr.getValue().getInspectionRecordId()).isNull();
         assertThat(ncr.getValue().getDispositionMethod()).isEqualTo("SCRAP");
         assertThat(response.details()).hasSize(1);
+        assertThat(response.details().getFirst().layerCount()).isEqualTo(4);
         assertThat(response.details().getFirst().scrapArea()).isEqualByComparingTo("1.00");
         verify(inspectionAccessScopeService).requireProcessAccess("FQC");
         verify(nonconformityDetailMapper).insert(any(NonconformityDetail.class));

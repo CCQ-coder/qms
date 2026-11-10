@@ -2,6 +2,7 @@ package com.pcbqms.reporting.api;
 
 import com.pcbqms.common.api.ApiResponse;
 import com.pcbqms.reporting.application.ReportingApplicationService;
+import com.pcbqms.reporting.application.ScrapStatisticsExportService;
 import lombok.RequiredArgsConstructor;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ReportingController {
     private final ReportingApplicationService reportingApplicationService;
+    private final ScrapStatisticsExportService scrapStatisticsExportService;
 
     @GetMapping("/quality-summary")
     public ApiResponse<QualitySummaryResponse> qualitySummary(
@@ -42,6 +44,15 @@ public class ReportingController {
             .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                 .filename("PCB-质量汇总报表.xlsx", StandardCharsets.UTF_8).build().toString())
             .body(content);
+    }
+
+    @GetMapping("/scrap-statistics.xlsx")
+    public ResponseEntity<byte[]> exportScrapStatisticsExcel() {
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename("报废统计.xlsx", StandardCharsets.UTF_8).build().toString())
+            .body(scrapStatisticsExportService.exportExcel());
     }
 
     @GetMapping("/traceability/batches/{batchNo}")

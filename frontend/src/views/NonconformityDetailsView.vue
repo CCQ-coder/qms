@@ -6,6 +6,7 @@ import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
 import type { Nonconformity } from '@/types/qms'
 
 const loading = ref(false)
+const exporting = ref(false)
 const nonconformities = ref<Nonconformity[]>([])
 const rows = computed(() => nonconformities.value.flatMap((ncr) =>
   ncr.details.map((detail) => ({ ncr, detail }))))
@@ -25,12 +26,29 @@ async function load() {
   }
 }
 
+async function exportScrapStatistics() {
+  exporting.value = true
+  try {
+    const blob = await qmsApi.downloadScrapStatisticsExcel()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '报废统计.xlsx'
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('报废统计导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(() => { void load() })
 </script>
 
 <template>
   <el-card shadow="never" class="content-card">
-    <template #header><div class="card-header"><span>不良品明细表</span><el-button link type="primary" @click="load">刷新</el-button></div></template>
+    <template #header><div class="card-header"><span>不良品明细表</span><div><el-button type="primary" :loading="exporting" @click="exportScrapStatistics">导出报废统计</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
     <el-table v-loading="loading" :data="rows" empty-text="暂无不良品明细" border>
       <el-table-column label="单据编号" min-width="180" fixed="left"><template #default="{ row }">{{ row.ncr.ncrNo }}</template></el-table-column>
       <el-table-column label="检测日期" min-width="120"><template #default="{ row }">{{ formatDate(row.ncr.detectionDate) }}</template></el-table-column>

@@ -300,7 +300,7 @@ public class NonconformityApplicationService {
             NonconformityDetail detail = newDetail(ncr, index + 1, workOrder, line.unit(), line.scrapQuantity(),
                 line.scrapReason(), line.remark());
             nonconformityDetailMapper.insert(detail);
-            responses.add(NonconformityDetailResponse.from(detail, workOrder.getWorkOrderNo(), workOrder.getInternalProductNo()));
+            responses.add(NonconformityDetailResponse.from(detail, workOrder));
         }
         return NonconformityResponse.from(ncr, workOrders.getFirst().getWorkOrderNo(), request.batchNo(), responses);
     }
@@ -447,8 +447,7 @@ public class NonconformityApplicationService {
         if (details == null) return List.of();
         return details.stream().map(detail -> {
             WorkOrder workOrder = workOrderMapper.selectById(detail.getWorkOrderId());
-            return NonconformityDetailResponse.from(detail, workOrder == null ? "已删除工单" : workOrder.getWorkOrderNo(),
-                workOrder == null ? null : workOrder.getInternalProductNo());
+            return NonconformityDetailResponse.from(detail, workOrder);
         }).toList();
     }
 
