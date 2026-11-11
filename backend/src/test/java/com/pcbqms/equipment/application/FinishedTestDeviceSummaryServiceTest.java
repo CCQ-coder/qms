@@ -3,7 +3,9 @@ package com.pcbqms.equipment.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,6 +29,157 @@ import org.springframework.security.access.AccessDeniedException;
 class FinishedTestDeviceSummaryServiceTest {
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
+
+    @Test
+    void settlesOnlyAfterTwelveHoursWithoutNewBoardsAcrossDevices() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        order.setInternalProductNo("IN-1");
+        LocalDateTime start = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "pcb-1", "WO-1", start, 5, 1, true),
+            new FinishedTestDeviceSummaryService.Sample("z2", "ZBX", "PCB-1", "WO-1", start.plusHours(2), 5, 1, true),
+            new FinishedTestDeviceSummaryService.Sample("p1", "WTD", "PCB-1", "WO-1", start.plusHours(3), 4, 1, false)
+        );
+
+        assertThat(FinishedTestDeviceSummaryService.planIdleSettlements(samples, List.of(order),
+            start.plusHours(15).minusSeconds(1))).isEmpty();
+        assertThat(FinishedTestDeviceSummaryService.planIdleSettlements(samples, List.of(order),
+            start.plusHours(15))).singleElement().satisfies(snapshot -> {
+                assertThat(snapshot.materialKey()).isEqualTo("PCB-1");
+                assertThat(snapshot.workOrderNo()).isEqualTo("WO-1");
+                assertThat(snapshot.tested()).isEqualTo(9);
+                assertThat(snapshot.good()).isEqualTo(7);
+                assertThat(snapshot.bad()).isEqualTo(2);
+                assertThat(snapshot.equipmentCount()).isEqualTo(2);
+                assertThat(snapshot.lastDetectionAt()).isEqualTo(start.plusHours(3));
+            });
+    }
+
+    @Test
+    void doesNotGuessAWorkOrderWhenOneMaterialHasConflictingBindings() {
+        WorkOrder first = new WorkOrder();
+        first.setWorkOrderNo("WO-1");
+        WorkOrder second = new WorkOrder();
+        second.setWorkOrderNo("WO-2");
+        LocalDateTime start = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1", start, 4, 0, false),
+            new FinishedTestDeviceSummaryService.Sample("p2", "WTD-2", "PCB-1", "WO-2", start.plusHours(1), 3, 1, false)
+        );
+
+        assertThat(FinishedTestDeviceSummaryService.planIdleSettlements(samples, List.of(first, second),
+            start.plusHours(14))).isEmpty();
+    }
+
+    @Test
+    void keepsThePreviousIdleRoundWhenADeviceStartsTestingAgain() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        LocalDateTime first = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1", first, 4, 1, false),
+            new FinishedTestDeviceSummaryService.Sample("p2", "WTD-2", "PCB-1", "WO-1",
+                first.plusHours(13), 3, 0, false)
+        );
+
+        assertThat(FinishedTestDeviceSummaryService.planIdleSettlements(samples, List.of(order),
+            first.plusHours(14))).singleElement().satisfies(snapshot -> {
+                assertThat(snapshot.firstDetectionAt()).isEqualTo(first);
+                assertThat(snapshot.lastDetectionAt()).isEqualTo(first);
+                assertThat(snapshot.tested()).isEqualTo(4);
+            });
+    }
+
+    @Test
+    void oneBoundDeviceIdentifiesTheOrderForOtherDevicesWithTheSameMaterial() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        LocalDateTime first = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1", first, 4, 1, false),
+            new FinishedTestDeviceSummaryService.Sample("z1", "ZBX-1", "PCB-1", null,
+                first.plusHours(1), 5, 2, true)
+        );
+
+        assertThat(FinishedTestDeviceSummaryService.planIdleSettlements(samples, List.of(order),
+            first.plusHours(13))).singleElement().satisfies(snapshot -> {
+                assertThat(snapshot.workOrderNo()).isEqualTo("WO-1");
+                assertThat(snapshot.tested()).isEqualTo(9);
+                assertThat(snapshot.bad()).isEqualTo(3);
+            });
+    }
+
+    @Test
+    void unresolvedFlyingProbeDataPreventsAutomaticSettlement() {
+        TenantContext.set("tenant-a", "admin");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        WorkOrderMapper orders = mock(WorkOrderMapper.class);
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        LocalDateTime detected = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var sample = new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1",
+            detected, 4, 1, false);
+        when(orders.selectList(any())).thenReturn(List.of(order));
+        when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Sample>>any(),
+            eq("tenant-a"))).thenReturn(List.of(sample), List.of());
+        when(jdbc.queryForObject(any(String.class), eq(Integer.class), eq("tenant-a"), eq("PCB-1"),
+            eq(detected), eq(detected.plusHours(12)))).thenReturn(1);
+
+        new FinishedTestDeviceSummaryService(jdbc, orders, mock(InspectionAccessScopeService.class))
+            .settleIdleMaterials(detected.plusHours(12));
+
+        verify(jdbc, never()).update(contains("qms_finished_test_settlement"), any(Object[].class));
+    }
+
+    @Test
+    void laterUnresolvedDataDoesNotBlockAnEarlierClosedRound() {
+        TenantContext.set("tenant-a", "admin");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        WorkOrderMapper orders = mock(WorkOrderMapper.class);
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        LocalDateTime first = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var sample = new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1",
+            first, 4, 1, false);
+        when(orders.selectList(any())).thenReturn(List.of(order));
+        when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Sample>>any(),
+            eq("tenant-a"))).thenReturn(List.of(sample), List.of());
+        when(jdbc.queryForObject(any(String.class), eq(Integer.class), eq("tenant-a"), eq("PCB-1"),
+            eq(first))).thenReturn(1);
+        when(jdbc.queryForObject(any(String.class), eq(Integer.class), eq("tenant-a"), eq("PCB-1"),
+            eq(first), eq(first.plusHours(12)))).thenReturn(0);
+
+        new FinishedTestDeviceSummaryService(jdbc, orders, mock(InspectionAccessScopeService.class))
+            .settleIdleMaterials(first.plusHours(24));
+
+        verify(jdbc).update(contains("qms_finished_test_settlement"), any(Object[].class));
+    }
+
+    @Test
+    void settledRoundLinksUnboundZhongboSamplesToTheOnlyKnownOrder() {
+        TenantContext.set("tenant-a", "admin");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        WorkOrderMapper orders = mock(WorkOrderMapper.class);
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        LocalDateTime first = LocalDateTime.of(2026, 11, 10, 8, 0);
+        var probe = new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1",
+            first, 4, 1, false);
+        var zhongbo = new FinishedTestDeviceSummaryService.Sample("z1", "ZBX-1", "PCB-1", null,
+            first.plusHours(1), 5, 2, true);
+        when(orders.selectList(any())).thenReturn(List.of(order));
+        when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Sample>>any(),
+            eq("tenant-a"))).thenReturn(List.of(probe), List.of(zhongbo));
+        when(jdbc.queryForObject(any(String.class), eq(Integer.class), eq("tenant-a"), eq("PCB-1"),
+            eq(first))).thenReturn(0);
+
+        new FinishedTestDeviceSummaryService(jdbc, orders, mock(InspectionAccessScopeService.class))
+            .settleIdleMaterials(first.plusHours(13));
+
+        verify(jdbc).update(contains("UPDATE qms_equipment_telemetry"), eq("WO-1"), eq("tenant-a"),
+            eq("PCB-1"), eq(first), eq(first.plusHours(13)));
+    }
 
     @Test
     void countsCounterDeltasOnceAndGroupsBothDevicesByDateAndProductionOrder() {

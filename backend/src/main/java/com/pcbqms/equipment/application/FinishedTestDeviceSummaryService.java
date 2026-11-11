@@ -7,14 +7,18 @@ import com.pcbqms.workorder.domain.WorkOrder;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -36,6 +40,13 @@ public class FinishedTestDeviceSummaryService {
     public record DeviceSummary(LocalDate inspectionDate, String equipmentCode, String workOrderNo,
                                 String internalProductNo, String pcbMaterialNo,
                                 long totalCount, long goodCount, long badCount, double passRate) { }
+    public record SettlementCandidate(String materialKey, String workOrderNo, String internalProductNo,
+                                      LocalDateTime firstDetectionAt, LocalDateTime lastDetectionAt,
+                                      int equipmentCount, long tested, long good, long bad) { }
+    public record SettlementSnapshot(String materialKey, String workOrderNo, String internalProductNo,
+                                     LocalDateTime firstDetectionAt, LocalDateTime lastDetectionAt,
+                                     LocalDateTime settledAt, int equipmentCount,
+                                     long tested, long good, long bad) { }
 
     public record ModelMetric(String model, long totalCount, long goodCount, long badCount, double passRate) { }
     public record InternalDefectMetric(String internalProductNo, long badCount) { }
@@ -65,6 +76,73 @@ public class FinishedTestDeviceSummaryService {
                 return result;
             }, TenantContext.tenantCode());
         return aggregateByDevice(samples(), workOrders(), equipmentCodes);
+    }
+
+    public List<SettlementSnapshot> listSettlementSnapshots() {
+        accessScopeService.requireProcessAccess("FQC");
+        return jdbcTemplate.query("""
+            SELECT material_key, work_order_no, internal_product_no, first_detection_at,
+                   last_detection_at, settled_at, equipment_count, tested_count, good_count, bad_count
+            FROM qms_finished_test_settlement
+            WHERE tenant_code = ?
+            ORDER BY last_detection_at DESC, material_key
+            LIMIT 100
+            """, (rs, row) -> new SettlementSnapshot(rs.getString("material_key"),
+                rs.getString("work_order_no"), rs.getString("internal_product_no"),
+                rs.getTimestamp("first_detection_at").toLocalDateTime(),
+                rs.getTimestamp("last_detection_at").toLocalDateTime(),
+                rs.getTimestamp("settled_at").toLocalDateTime(), rs.getInt("equipment_count"),
+                rs.getLong("tested_count"), rs.getLong("good_count"), rs.getLong("bad_count")),
+            TenantContext.tenantCode());
+    }
+
+    @Transactional
+    public void settleIdleMaterials(LocalDateTime now) {
+        String tenant = TenantContext.tenantCode();
+        for (SettlementCandidate candidate : planIdleSettlements(samples(), workOrders(), now)) {
+            Integer unresolved = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM qms_flying_probe_projection
+                WHERE tenant_code = ? AND UPPER(TRIM(material_no)) = ?
+                  AND device_time >= ? AND device_time < ? AND status <> 'PROCESSED'
+                """, Integer.class, tenant, candidate.materialKey(), candidate.firstDetectionAt(),
+                candidate.lastDetectionAt().plusHours(12));
+            if (unresolved != null && unresolved > 0) continue;
+            Integer unprojected = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM qms_equipment_telemetry telemetry
+                WHERE telemetry.tenant_code = ? AND UPPER(TRIM(telemetry.material_no)) = ?
+                  AND telemetry.event_type = 'FLYING_PROBE_TEST_COUNTERS'
+                  AND telemetry.device_time >= ? AND telemetry.device_time < ?
+                  AND NOT EXISTS (SELECT 1 FROM qms_flying_probe_projection projection
+                                  WHERE projection.telemetry_id = telemetry.id)
+                """, Integer.class, tenant, candidate.materialKey(), candidate.firstDetectionAt(),
+                candidate.lastDetectionAt().plusHours(12));
+            if (unprojected != null && unprojected > 0) continue;
+            jdbcTemplate.update("""
+                UPDATE qms_equipment_telemetry SET work_order_no = ?
+                WHERE tenant_code = ? AND UPPER(TRIM(material_no)) = ?
+                  AND event_type = 'ZHONGBO_TEST_REPORT'
+                  AND device_time >= ? AND device_time < ?
+                  AND (work_order_no IS NULL OR work_order_no = '')
+                """, candidate.workOrderNo(), tenant, candidate.materialKey(),
+                candidate.firstDetectionAt(), candidate.lastDetectionAt().plusHours(12));
+            jdbcTemplate.update("""
+                INSERT INTO qms_finished_test_settlement (
+                    tenant_code, material_key, work_order_no, internal_product_no,
+                    first_detection_at, last_detection_at, settled_at, equipment_count,
+                    tested_count, good_count, bad_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    work_order_no = VALUES(work_order_no),
+                    internal_product_no = VALUES(internal_product_no),
+                    last_detection_at = VALUES(last_detection_at),
+                    equipment_count = VALUES(equipment_count),
+                    tested_count = VALUES(tested_count),
+                    good_count = VALUES(good_count),
+                    bad_count = VALUES(bad_count)
+                """, tenant, candidate.materialKey(), candidate.workOrderNo(), candidate.internalProductNo(),
+                candidate.firstDetectionAt(), candidate.lastDetectionAt(), now, candidate.equipmentCount(),
+                candidate.tested(), candidate.good(), candidate.bad());
+        }
     }
 
     public MonthlyAnalytics monthlyAnalytics() {
@@ -234,6 +312,51 @@ public class FinishedTestDeviceSummaryService {
             .thenComparing(DeviceSummary::equipmentCode).thenComparing(DeviceSummary::workOrderNo)).toList();
     }
 
+    static List<SettlementCandidate> planIdleSettlements(List<Sample> samples, List<WorkOrder> orders,
+                                                          LocalDateTime now) {
+        Map<String, List<Attributed>> byMaterial = new HashMap<>();
+        for (Attributed item : attributed(samples, orders, true)) {
+            String key = materialKey(item.sample().materialNo());
+            if (key != null) byMaterial.computeIfAbsent(key, ignored -> new ArrayList<>()).add(item);
+        }
+        List<SettlementCandidate> result = new ArrayList<>();
+        for (var entry : byMaterial.entrySet()) {
+            List<Attributed> history = entry.getValue();
+            int start = 0;
+            for (int end = 0; end < history.size(); end++) {
+                if (end + 1 < history.size() && Duration.between(history.get(end).sample().deviceTime(),
+                    history.get(end + 1).sample().deviceTime()).compareTo(Duration.ofHours(12)) < 0) continue;
+                Attributed last = history.get(end);
+                if (!last.sample().deviceTime().plusHours(12).isAfter(now)) {
+                    WorkOrder chosen = null;
+                    boolean conflicting = false;
+                    long tested = 0;
+                    long bad = 0;
+                    Set<String> equipmentIds = new HashSet<>();
+                    for (int index = start; index <= end; index++) {
+                        Attributed item = history.get(index);
+                        if (item.order() != null) {
+                            if (chosen != null && !chosen.getWorkOrderNo().equals(item.order().getWorkOrderNo())) {
+                                conflicting = true;
+                                break;
+                            }
+                            chosen = item.order();
+                        }
+                        tested += item.tested();
+                        bad += item.bad();
+                        equipmentIds.add(item.sample().equipmentId());
+                    }
+                    if (!conflicting && chosen != null && tested > 0) result.add(new SettlementCandidate(entry.getKey(),
+                        chosen.getWorkOrderNo(), chosen.getInternalProductNo(), history.get(start).sample().deviceTime(),
+                        last.sample().deviceTime(), equipmentIds.size(), tested, tested - bad, bad));
+                }
+                start = end + 1;
+            }
+        }
+        return result.stream().sorted(Comparator.comparing(SettlementCandidate::lastDetectionAt).reversed()
+            .thenComparing(SettlementCandidate::materialKey)).toList();
+    }
+
     static MonthlyAnalytics aggregateMonthly(List<Sample> samples, List<WorkOrder> orders,
                                               Map<String, String> equipmentModels, YearMonth month) {
         Map<String, long[]> byModel = new HashMap<>();
@@ -274,7 +397,7 @@ public class FinishedTestDeviceSummaryService {
             long tested = sample.tested();
             long bad = sample.bad();
             if (sample.cumulative()) {
-                String counterKey = sample.equipmentId() + "\u0000" + sample.materialNo();
+                String counterKey = sample.equipmentId() + "\u0000" + materialKey(sample.materialNo());
                 long[] last = previous.put(counterKey, new long[] {tested, bad});
                 if (last != null) {
                     tested = sample.tested() >= last[0] ? sample.tested() - last[0] : sample.tested();
@@ -288,6 +411,10 @@ public class FinishedTestDeviceSummaryService {
             result.add(new Attributed(sample, order, tested, bad));
         }
         return result;
+    }
+
+    private static String materialKey(String materialNo) {
+        return StringUtils.hasText(materialNo) ? materialNo.trim().toUpperCase(Locale.ROOT) : null;
     }
 
     private static WorkOrder resolveOrder(Sample sample, List<WorkOrder> orders) {

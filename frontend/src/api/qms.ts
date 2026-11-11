@@ -3,7 +3,7 @@ import { requireHttpsDeviceToken } from '@/utils/device-upload-token'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
-  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage, FinishedTestDeviceSummary
+  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage, FinishedTestDeviceSummary, FinishedTestSettlement
   , MenuAccess, GatewayHostStatus, FinishedTestMonthlyAnalytics, DailyMaterialBadBoards
 } from '@/types/qms'
 
@@ -333,6 +333,11 @@ export const qmsApi = {
 
   async listFinishedTestDeviceSummary() {
     const { data } = await http.get<ApiResponse<FinishedTestDeviceSummary[]>>('/api/v1/equipment/telemetry/finished-test-summary/by-device')
+    return data.data
+  },
+
+  async listFinishedTestSettlements() {
+    const { data } = await http.get<ApiResponse<FinishedTestSettlement[]>>('/api/v1/equipment/telemetry/finished-test-settlements')
     return data.data
   },
 

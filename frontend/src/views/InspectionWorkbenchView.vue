@@ -12,7 +12,7 @@ import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, sav
 import { deriveInspectionMonitorStatus, inspectionDeviceOnline, monitorStatusLabel } from './inspectionMonitorStatus'
 import { flyingProbePassRate, useTelemetryHistory } from './useTelemetryHistory'
 import { groupFinishedTestSummary, type SummaryDimension } from './finishedTestSummary'
-import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestDeviceSummary, InspectionTask, InspectionTemplate, WorkOrder } from '@/types/qms'
+import type { Equipment, EquipmentRuntimeStatus, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestDeviceSummary, FinishedTestSettlement, InspectionTask, InspectionTemplate, WorkOrder } from '@/types/qms'
 
 const networkOnline = ref(navigator.onLine)
 const backendReachable = ref(true)
@@ -46,6 +46,7 @@ const finishedRecordsUpdatedAt = ref<Date>()
 const probeSnapshots = ref<Record<string, EquipmentTelemetryRecord>>({})
 const probeFailedEquipmentIds = ref<Set<string>>(new Set())
 const summaryError = ref('')
+const settlementError = ref('')
 const equipmentError = ref('')
 const runtimeError = ref('')
 const probeSnapshotsError = ref('')
@@ -107,6 +108,7 @@ watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
   void refreshWorkbench()
 })
 const deviceSummary = ref<FinishedTestDeviceSummary[]>([])
+const settlements = ref<FinishedTestSettlement[]>([])
 const summaryDateRange = ref<string[]>([])
 const summaryWorkOrder = ref('')
 const summaryPcbMaterial = ref('')
@@ -180,6 +182,15 @@ const filteredDeviceSummary = computed(() => deviceSummary.value.filter((row) =>
     && (!material || (row.pcbMaterialNo ?? '').toLowerCase().includes(material))
 }))
 const groupedDeviceSummary = computed(() => groupFinishedTestSummary(filteredDeviceSummary.value, summaryDimension.value))
+const filteredSettlements = computed(() => settlements.value.filter((row) => {
+  const [from, to] = summaryDateRange.value ?? []
+  const date = row.lastDetectionAt.slice(0, 10)
+  const workOrder = summaryWorkOrder.value.trim().toLowerCase()
+  const material = summaryPcbMaterial.value.trim().toLowerCase()
+  return (!from || date >= from) && (!to || date <= to)
+    && (!workOrder || row.workOrderNo.toLowerCase().includes(workOrder))
+    && (!material || row.materialKey.toLowerCase().includes(material))
+}))
 const summaryDimensionLabel = computed(() => ({ workOrderNo: '生产指令', internalProductNo: '厂内编号', dateEquipmentOrder: '检测日期＋设备编号＋生产指令' })[summaryDimension.value])
 const filteredSummaryTotals = computed(() => filteredDeviceSummary.value.reduce((totals, row) => ({
   tested: totals.tested + row.totalCount,
@@ -497,11 +508,18 @@ async function loadMonitoringData() {
 async function refreshWorkbench() {
   if (activePanel.value === 'records') { await Promise.all([refreshRecordPanel(), loadOfflineDrafts()]); return }
   if (activePanel.value === 'summary') {
-    try {
-      deviceSummary.value = await qmsApi.listFinishedTestDeviceSummary()
+    const [summary, snapshot] = await Promise.allSettled([
+      qmsApi.listFinishedTestDeviceSummary(), qmsApi.listFinishedTestSettlements()
+    ])
+    if (summary.status === 'fulfilled') {
+      deviceSummary.value = summary.value
       summaryError.value = ''
       updatedAt.value = new Date()
-    } catch { summaryError.value = '设备检测汇总读取失败，请重试。' }
+    } else summaryError.value = '设备检测汇总读取失败，请重试。'
+    if (snapshot.status === 'fulfilled') {
+      settlements.value = snapshot.value
+      settlementError.value = ''
+    } else settlementError.value = '结算快照读取失败，请重试。'
     return
   }
   if (activePanel.value === 'tasks') { await Promise.all([loadTasks(), loadOfflineDrafts()]); return }
@@ -1128,6 +1146,28 @@ onBeforeUnmount(() => {
         <el-table-column label="合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
       </paged-table>
       <div v-if="!summaryError" class="summary-footnote">当前筛选结果：{{ filteredSummaryTotals.tested }} 板，合格 {{ filteredSummaryTotals.good }} 板，不合格 {{ filteredSummaryTotals.bad }} 板（按{{ summaryDimensionLabel }}汇总，共 {{ groupedDeviceSummary.length }} 组）。</div>
+    </el-card>
+
+    <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card">
+      <template #header>
+        <div class="card-header">
+          <div><span>12 小时静默结算快照</span><small>同料号所有设备连续 12 小时没有新增已测板后自动生成；显示最近 100 轮，快照不重复计入上方汇总。</small></div>
+          <el-button @click="refreshWorkbench">刷新</el-button>
+        </div>
+      </template>
+      <el-alert v-if="settlementError" type="error" :closable="false" :title="settlementError" style="margin-bottom: 12px" />
+      <paged-table v-else :key="summaryFilterKey" :data="filteredSettlements" empty-text="当前筛选条件下暂无已结算的检测轮次">
+        <el-table-column prop="materialKey" label="设备料号" min-width="130" />
+        <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
+        <el-table-column prop="internalProductNo" label="厂内编号" min-width="160" />
+        <el-table-column label="首次检测" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.firstDetectionAt) }}</template></el-table-column>
+        <el-table-column label="最后新增" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.lastDetectionAt) }}</template></el-table-column>
+        <el-table-column prop="equipmentCount" label="有新增设备" min-width="110" align="right" />
+        <el-table-column prop="tested" label="已测" min-width="100" align="right" />
+        <el-table-column prop="good" label="好板" min-width="100" align="right" />
+        <el-table-column prop="bad" label="坏板" min-width="100" align="right" />
+        <el-table-column label="结算时间" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.settledAt) }}</template></el-table-column>
+      </paged-table>
     </el-card>
 
     <el-dialog v-model="bindingDialog" title="手动绑定生产指令" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">

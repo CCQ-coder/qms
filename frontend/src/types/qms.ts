@@ -486,6 +486,19 @@ export type FinishedTestDeviceSummary = {
   passRate: number
 }
 
+export type FinishedTestSettlement = {
+  materialKey: string
+  workOrderNo: string
+  internalProductNo?: string
+  firstDetectionAt: string
+  lastDetectionAt: string
+  settledAt: string
+  equipmentCount: number
+  tested: number
+  good: number
+  bad: number
+}
+
 export type DailyMaterialBadBoards = {
   date: string
   materials: Array<{ materialNo: string; badCount: number }>

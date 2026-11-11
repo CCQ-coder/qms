@@ -2,6 +2,7 @@ package com.pcbqms.inspection.application;
 
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,10 +23,21 @@ public class DeviceDispositionScheduler {
             "SELECT code FROM qms_tenant WHERE status = 'ACTIVE' ORDER BY code", String.class)) {
             TenantContext.set(tenant, "admin");
             try {
-                summaryService.matchUnboundZhongbo();
-                nonconformityService.syncDeviceDefects(summaryService.summariesForCurrentTenant());
-            } catch (RuntimeException exception) {
-                log.warn("设备不良品处置单汇总失败，租户={}", tenant, exception);
+                try {
+                    summaryService.matchUnboundZhongbo();
+                } catch (RuntimeException exception) {
+                    log.warn("众博信设备记录自动关联失败，租户={}", tenant, exception);
+                }
+                try {
+                    summaryService.settleIdleMaterials(LocalDateTime.now());
+                } catch (RuntimeException exception) {
+                    log.warn("成品检测静默结算失败，租户={}", tenant, exception);
+                }
+                try {
+                    nonconformityService.syncDeviceDefects(summaryService.summariesForCurrentTenant());
+                } catch (RuntimeException exception) {
+                    log.warn("设备不良品处置单汇总失败，租户={}", tenant, exception);
+                }
             } finally {
                 TenantContext.clear();
             }
