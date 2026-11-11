@@ -1104,11 +1104,11 @@ onBeforeUnmount(() => {
         </div>
       </template>
       <el-alert v-if="summaryError" type="error" :closable="false" :title="summaryError" style="margin-bottom: 12px" />
-      <el-radio-group v-model="summaryDimension" aria-label="汇总维度" class="finished-summary-dimensions">
-        <el-radio-button value="workOrderNo">生产指令</el-radio-button>
-        <el-radio-button value="internalProductNo">厂内编号</el-radio-button>
-        <el-radio-button value="dateEquipmentOrder">检测日期＋设备编号＋生产指令</el-radio-button>
-      </el-radio-group>
+      <div role="group" aria-label="汇总维度" class="finished-summary-dimensions">
+        <el-button :type="summaryDimension === 'workOrderNo' ? 'primary' : 'default'" :aria-pressed="summaryDimension === 'workOrderNo'" @click="summaryDimension = 'workOrderNo'">生产指令</el-button>
+        <el-button :type="summaryDimension === 'internalProductNo' ? 'primary' : 'default'" :aria-pressed="summaryDimension === 'internalProductNo'" @click="summaryDimension = 'internalProductNo'">厂内编号</el-button>
+        <el-button :type="summaryDimension === 'dateEquipmentOrder' ? 'primary' : 'default'" :aria-pressed="summaryDimension === 'dateEquipmentOrder'" @click="summaryDimension = 'dateEquipmentOrder'">检测日期＋设备编号＋生产指令</el-button>
+      </div>
       <div class="report-filter finished-summary-filters">
         <span>检测日期</span>
         <el-date-picker v-model="summaryDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable />
