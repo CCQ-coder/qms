@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { qmsApi } from '../api/qms'
 import { formatDate, formatDateTime } from '../utils/display-text'
+import { moveColumn } from './nonconformityColumns'
 import type { WorkOrder, WorkOrderQuery } from '../types/qms'
 
 const loading = ref(false)
@@ -20,11 +21,56 @@ const pageSize = ref(20)
 const detailVisible = ref(false)
 const selected = ref<WorkOrder | null>(null)
 const filtersCollapsed = ref(false)
+const workOrderColumns = ref<Array<{ key: keyof WorkOrder; label: string; width: number }>>([
+  { key: 'workOrderNo', label: '生产指令', width: 150 },
+  { key: 'materialInputDate', label: '投料日期', width: 125 },
+  { key: 'customerCode', label: '客户编号', width: 120 },
+  { key: 'customerOrderNo', label: '订单编号', width: 145 },
+  { key: 'internalProductNo', label: '厂内编号', width: 160 },
+  { key: 'customerPartNo', label: '客户料号', width: 180 },
+  { key: 'currentProcessName', label: '工艺', width: 120 },
+  { key: 'material', label: '材质', width: 115 },
+  { key: 'boardThickness', label: '板厚', width: 85 },
+  { key: 'copperThickness', label: '铜箔', width: 105 },
+  { key: 'formingMethod', label: '成型方式', width: 120 },
+  { key: 'layerCount', label: '层数', width: 75 },
+  { key: 'singlePcsArea', label: '单 PCS 面积', width: 115 },
+  { key: 'materialArea', label: '总投料面积', width: 125 },
+  { key: 'customerOrderQuantity', label: '订单数量', width: 105 },
+  { key: 'materialInputQuantity', label: '投料数量', width: 105 },
+  { key: 'cumulativeWarehouseQuantity', label: '累计入库', width: 105 },
+  { key: 'warehouseStatus', label: '入库/已结批', width: 120 },
+  { key: 'requiredDeliveryDate', label: '要求交期', width: 125 },
+  { key: 'pcsLength', label: 'PCS 长', width: 90 },
+  { key: 'pcsWidth', label: 'PCS 宽', width: 90 },
+  { key: 'pnlLength', label: 'PNL 长', width: 90 },
+  { key: 'pnlWidth', label: 'PNL 宽', width: 90 },
+  { key: 'aBoardLength', label: 'A 板长', width: 90 },
+  { key: 'aBoardWidth', label: 'A 板宽', width: 90 },
+  { key: 'bBoardLength', label: 'B 板长', width: 90 },
+  { key: 'bBoardWidth', label: 'B 板宽', width: 90 },
+  { key: 'aBoardPanelQuantity', label: 'A 板总 PNL', width: 115 },
+  { key: 'bBoardPanelQuantity', label: 'B 板总 PNL', width: 115 },
+  { key: 'totalPanelQuantity', label: '总 PNL 数', width: 105 },
+  { key: 'estimatedYieldRate', label: '成品利用率', width: 115 }
+])
+const draggedColumn = ref<keyof WorkOrder | null>(null)
 
 const pageStart = computed(() => total.value ? (currentPage.value - 1) * pageSize.value + 1 : 0)
 const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, total.value))
 const latestSyncTime = computed(() => rows.value[0]?.updatedAt ? formatDateTime(rows.value[0].updatedAt) : '暂无数据')
-const showBatchColumn = computed(() => rows.value.some(row => row.batches.some(batch => !!batch.batchNo?.trim())))
+
+function reorderColumn(target: keyof WorkOrder) {
+  const from = workOrderColumns.value.findIndex(column => column.key === draggedColumn.value)
+  const to = workOrderColumns.value.findIndex(column => column.key === target)
+  if (from >= 0 && to >= 0) workOrderColumns.value = moveColumn(workOrderColumns.value, from, to)
+  draggedColumn.value = null
+}
+
+function resizeColumn(width: number, _oldWidth: number, column: { property: string }) {
+  const entry = workOrderColumns.value.find(item => item.key === column.property)
+  if (entry) entry.width = width
+}
 
 function value(value: string | number | undefined | null) {
   return value === undefined || value === null || value === '' ? '—' : value
@@ -151,23 +197,20 @@ onMounted(() => { void load() })
 
     <el-card class="content-card work-order-list-card" shadow="never">
       <div class="work-order-list-heading">
-        <div><h2>生产指令列表</h2><p>默认显示现场排产、投料面积和入库信息；板材、尺寸与工艺明细请点击生产指令号查看。</p></div>
+        <div><h2>生产指令列表</h2><p>拖动表头可调整列顺序，拖动列边缘可调整宽度；点击生产指令查看完整详情。</p></div>
       </div>
 
-      <div class="work-order-table-wrap work-order-summary-table-wrap" :class="{ 'no-batch-column': !showBatchColumn }">
-        <el-table v-loading="loading" class="work-order-data-table" :data="rows" stripe>
-          <el-table-column label="生产指令号" min-width="150"><template #default="{ row }"><el-button class="work-order-detail-link" link type="primary" @click="openDetail(row)">{{ row.workOrderNo }}</el-button></template></el-table-column>
-          <el-table-column label="输入日期" min-width="145"><template #default="{ row }">{{ formatDate(row.inputDate) }}</template></el-table-column>
-          <el-table-column v-if="showBatchColumn" label="生产批次" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ batchText(row) }}</template></el-table-column>
-          <el-table-column label="厂内编号 / 客户料号" min-width="180"><template #default="{ row }"><div>{{ value(row.internalProductNo ?? row.productCode) }}</div><small>{{ value(row.customerPartNo) }}</small></template></el-table-column>
-          <el-table-column label="客户" min-width="100"><template #default="{ row }">{{ value(row.customerCode) }}</template></el-table-column>
-          <el-table-column label="工艺" min-width="135"><template #default="{ row }"><div>{{ value(row.currentProcessName) }}</div><small v-if="row.sourceSystem === 'ERP_EXCEL'">表面处理</small></template></el-table-column>
-          <el-table-column label="订单 / 投料 / 入库" min-width="160"><template #default="{ row }">{{ value(row.customerOrderQuantity) }} / {{ value(row.plannedQuantity) }} / {{ value(row.cumulativeWarehouseQuantity) }}</template></el-table-column>
-          <el-table-column label="投料面积" min-width="145"><template #default="{ row }"><div>{{ value(row.materialArea) }} m²</div><small>预投率 {{ value(row.estimatedYieldRate) }}% · 计划领料 {{ value(row.plannedMaterialIssueQuantity) }}</small></template></el-table-column>
-          <el-table-column label="总 / A / B PNL" min-width="130"><template #default="{ row }"><div>{{ value(row.totalPanelQuantity) }} / {{ value(row.aBoardPanelQuantity) }} / {{ value(row.bBoardPanelQuantity) }}</div><small>{{ value(row.panelizationNo) }}</small></template></el-table-column>
-          <el-table-column label="工单状态" min-width="105"><template #default="{ row }"><el-tag :type="warehouseTagType(row.warehouseStatus)" effect="plain">{{ warehouseStatusText(row.warehouseStatus) }}</el-tag></template></el-table-column>
-          <el-table-column label="优先级" min-width="80"><template #default="{ row }">{{ priorityText(row.priority) }}</template></el-table-column>
-          <el-table-column label="投料日期" min-width="110"><template #default="{ row }">{{ formatDate(row.materialInputDate ?? row.releasedAt) }}</template></el-table-column>
+      <div class="work-order-table-wrap work-order-summary-table-wrap">
+        <el-table :key="workOrderColumns.map(column => column.key).join(',')" v-loading="loading" class="work-order-data-table" :data="rows" stripe border @header-dragend="resizeColumn">
+          <el-table-column v-for="column in workOrderColumns" :key="column.key" :prop="column.key" :label="column.label" :width="column.width" show-overflow-tooltip>
+            <template #header><span draggable="true" title="拖动表头调整顺序，拖动列边缘调整宽度" @dragstart="draggedColumn = column.key" @dragover.prevent @drop.prevent="reorderColumn(column.key)" @dragend="draggedColumn = null">{{ column.label }}</span></template>
+            <template #default="{ row }">
+              <el-button v-if="column.key === 'workOrderNo'" class="work-order-detail-link" link type="primary" @click="openDetail(row)">{{ row.workOrderNo }}</el-button>
+              <template v-else-if="column.key === 'materialInputDate' || column.key === 'requiredDeliveryDate'">{{ formatDate(row[column.key]) }}</template>
+              <el-tag v-else-if="column.key === 'warehouseStatus'" :type="warehouseTagType(row.warehouseStatus)" effect="plain">{{ warehouseStatusText(row.warehouseStatus) }}</el-tag>
+              <template v-else>{{ value(row[column.key]) }}</template>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
 
@@ -286,8 +329,7 @@ onMounted(() => { void load() })
 .work-order-filter-heading-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 14px; }
 .work-order-filter-toggle { margin: 0; }
 .work-order-filter-toggle .el-icon { margin-right: 4px; }
-.work-order-summary-table-wrap .el-table { min-width: 1370px; }
-.work-order-summary-table-wrap.no-batch-column .el-table { min-width: 1225px; }
+.work-order-summary-table-wrap .el-table { min-width: 3500px; }
 .work-order-data-table small { color: #667085; font-size: 11px; }
 .work-order-detail-link { font-weight: 650; }
 .work-order-detail-dialog .el-dialog__header { margin-right: 0; padding: 20px 28px 16px; border-bottom: 1px solid #e5edf7; }

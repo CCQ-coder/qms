@@ -476,6 +476,7 @@ export type EquipmentTelemetryRecord = {
 
 export type FinishedTestDeviceSummary = {
   inspectionDate: string
+  equipmentCode: string
   workOrderNo: string
   internalProductNo?: string
   pcbMaterialNo?: string

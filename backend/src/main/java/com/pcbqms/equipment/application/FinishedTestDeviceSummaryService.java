@@ -33,6 +33,9 @@ public class FinishedTestDeviceSummaryService {
 
     public record Summary(LocalDate inspectionDate, String workOrderNo, String internalProductNo,
                           String pcbMaterialNo, long totalCount, long goodCount, long badCount, double passRate) { }
+    public record DeviceSummary(LocalDate inspectionDate, String equipmentCode, String workOrderNo,
+                                String internalProductNo, String pcbMaterialNo,
+                                long totalCount, long goodCount, long badCount, double passRate) { }
 
     public record ModelMetric(String model, long totalCount, long goodCount, long badCount, double passRate) { }
     public record InternalDefectMetric(String internalProductNo, long badCount) { }
@@ -50,6 +53,18 @@ public class FinishedTestDeviceSummaryService {
 
     public List<Summary> summariesForCurrentTenant() {
         return aggregate(samples(), workOrders());
+    }
+
+    public List<DeviceSummary> listDeviceSummary() {
+        accessScopeService.requireProcessAccess("FQC");
+        Map<String, String> equipmentCodes = jdbcTemplate.query(
+            "SELECT id, asset_no FROM qms_equipment WHERE tenant_code = ?",
+            rs -> {
+                Map<String, String> result = new HashMap<>();
+                while (rs.next()) result.put(rs.getString("id"), rs.getString("asset_no"));
+                return result;
+            }, TenantContext.tenantCode());
+        return aggregateByDevice(samples(), workOrders(), equipmentCodes);
     }
 
     public MonthlyAnalytics monthlyAnalytics() {
@@ -189,6 +204,34 @@ public class FinishedTestDeviceSummaryService {
                 item.order().getInternalProductNo(), item.sample().materialNo(), tested, tested - bad, bad,
                 Math.round((tested - bad) * 10000.0 / tested) / 100.0);
         }).sorted(Comparator.comparing(Summary::inspectionDate).reversed().thenComparing(Summary::workOrderNo)).toList();
+    }
+
+    static List<DeviceSummary> aggregateByDevice(List<Sample> samples, List<WorkOrder> orders,
+                                                 Map<String, String> equipmentCodes) {
+        Map<String, long[]> totals = new HashMap<>();
+        Map<String, Attributed> representatives = new HashMap<>();
+        for (Attributed item : attributed(samples, orders, false)) {
+            Sample sample = item.sample();
+            String key = sample.deviceTime().toLocalDate() + "\u0000" + sample.equipmentId() + "\u0000"
+                + item.order().getWorkOrderNo() + "\u0000" + Objects.toString(sample.materialNo(), "");
+            long[] sum = totals.computeIfAbsent(key, ignored -> new long[2]);
+            sum[0] += item.tested();
+            sum[1] += item.bad();
+            representatives.putIfAbsent(key, item);
+        }
+        return totals.entrySet().stream().map(entry -> {
+            Attributed item = representatives.get(entry.getKey());
+            Sample sample = item.sample();
+            long tested = entry.getValue()[0];
+            long bad = entry.getValue()[1];
+            String assetNo = equipmentCodes.get(sample.equipmentId());
+            return new DeviceSummary(sample.deviceTime().toLocalDate(),
+                StringUtils.hasText(assetNo) ? assetNo : Objects.toString(sample.equipmentId(), "未关联设备"),
+                item.order().getWorkOrderNo(),
+                item.order().getInternalProductNo(), sample.materialNo(), tested, tested - bad, bad,
+                Math.round((tested - bad) * 10000.0 / tested) / 100.0);
+        }).sorted(Comparator.comparing(DeviceSummary::inspectionDate).reversed()
+            .thenComparing(DeviceSummary::equipmentCode).thenComparing(DeviceSummary::workOrderNo)).toList();
     }
 
     static MonthlyAnalytics aggregateMonthly(List<Sample> samples, List<WorkOrder> orders,

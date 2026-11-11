@@ -23,6 +23,22 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class EquipmentTelemetryControllerTest {
     @Test
+    void returnsDeviceDimensionForFinishedTestSummary() throws Exception {
+        var summary = mock(FinishedTestDeviceSummaryService.class);
+        when(summary.listDeviceSummary()).thenReturn(List.of(new FinishedTestDeviceSummaryService.DeviceSummary(
+            java.time.LocalDate.of(2026, 11, 10), "WTD-1", "WO-1", "IN-1", "PCB-1", 4, 3, 1, 75)));
+        var controller = new EquipmentTelemetryController(
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
+            mock(EquipmentTelemetryQueryApplicationService.class), summary);
+
+        MockMvcBuilders.standaloneSetup(controller).build()
+            .perform(get("/api/v1/equipment/telemetry/finished-test-summary/by-device"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].equipmentCode").value("WTD-1"))
+            .andExpect(jsonPath("$.data[0].totalCount").value(4));
+    }
+
+    @Test
     void returnsTodayBadBoardsByMaterial() throws Exception {
         var summary = mock(FinishedTestDeviceSummaryService.class);
         when(summary.todayBadBoards()).thenReturn(new FinishedTestDeviceSummaryService.DailyMaterialBadBoards(

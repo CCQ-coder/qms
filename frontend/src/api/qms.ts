@@ -332,7 +332,7 @@ export const qmsApi = {
   },
 
   async listFinishedTestDeviceSummary() {
-    const { data } = await http.get<ApiResponse<FinishedTestDeviceSummary[]>>('/api/v1/equipment/telemetry/finished-test-summary')
+    const { data } = await http.get<ApiResponse<FinishedTestDeviceSummary[]>>('/api/v1/equipment/telemetry/finished-test-summary/by-device')
     return data.data
   },
 

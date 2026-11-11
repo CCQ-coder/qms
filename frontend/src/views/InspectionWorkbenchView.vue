@@ -180,7 +180,7 @@ const filteredDeviceSummary = computed(() => deviceSummary.value.filter((row) =>
     && (!material || (row.pcbMaterialNo ?? '').toLowerCase().includes(material))
 }))
 const groupedDeviceSummary = computed(() => groupFinishedTestSummary(filteredDeviceSummary.value, summaryDimension.value))
-const summaryDimensionLabel = computed(() => ({ workOrderNo: '生产指令', internalProductNo: '厂内编号', inspectionDate: '检测日期' })[summaryDimension.value])
+const summaryDimensionLabel = computed(() => ({ workOrderNo: '生产指令', internalProductNo: '厂内编号', dateEquipmentOrder: '检测日期＋设备编号＋生产指令' })[summaryDimension.value])
 const filteredSummaryTotals = computed(() => filteredDeviceSummary.value.reduce((totals, row) => ({
   tested: totals.tested + row.totalCount,
   good: totals.good + row.goodCount,
@@ -1099,7 +1099,7 @@ onBeforeUnmount(() => {
     <el-card v-if="activePanel === 'summary'" shadow="never" class="content-card summary-table-card">
       <template #header>
         <div class="card-header">
-          <div><span>成品测试汇总表</span><small>按生产指令、厂内编号或检测日期查看汇总；未关联生产指令的记录暂不计入。</small></div>
+          <div><span>成品测试汇总表</span><small>按生产指令、厂内编号或检测日期＋设备编号＋生产指令查看汇总；未关联生产指令的记录暂不计入。</small></div>
           <span class="live-status"><i></i>更新于 {{ updatedAtLabel }}</span>
         </div>
       </template>
@@ -1107,7 +1107,7 @@ onBeforeUnmount(() => {
       <el-radio-group v-model="summaryDimension" aria-label="汇总维度" class="finished-summary-dimensions">
         <el-radio-button value="workOrderNo">生产指令</el-radio-button>
         <el-radio-button value="internalProductNo">厂内编号</el-radio-button>
-        <el-radio-button value="inspectionDate">检测日期</el-radio-button>
+        <el-radio-button value="dateEquipmentOrder">检测日期＋设备编号＋生产指令</el-radio-button>
       </el-radio-group>
       <div class="report-filter finished-summary-filters">
         <span>检测日期</span>
@@ -1117,11 +1117,15 @@ onBeforeUnmount(() => {
         <el-button @click="resetSummaryFilters">重置</el-button>
       </div>
       <paged-table v-if="!summaryError" :key="summaryFilterKey" :data="groupedDeviceSummary" empty-text="当前筛选条件下暂无设备检测记录">
-        <el-table-column prop="key" :label="summaryDimensionLabel" min-width="180" />
+        <el-table-column v-if="summaryDimension === 'dateEquipmentOrder'" prop="inspectionDate" label="检测日期" min-width="140" />
+        <el-table-column v-if="summaryDimension === 'dateEquipmentOrder'" prop="equipmentCode" label="设备编号" min-width="135" />
+        <el-table-column v-if="summaryDimension !== 'internalProductNo'" prop="workOrderNo" label="生产指令" min-width="150" />
+        <el-table-column prop="internalProductNo" label="厂内编号" min-width="160" />
+        <el-table-column v-if="summaryDimension !== 'internalProductNo'" prop="pcbMaterialNo" label="料号" min-width="165" show-overflow-tooltip><template #default="scope">{{ scope.row.pcbMaterialNo || '—' }}</template></el-table-column>
         <el-table-column prop="totalCount" label="检测总数" min-width="130" align="right" />
         <el-table-column prop="goodCount" label="合格" min-width="110" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodCount }}</span></template></el-table-column>
         <el-table-column prop="badCount" label="不合格" min-width="110" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badCount }}</span></template></el-table-column>
-        <el-table-column label="一次合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
+        <el-table-column label="合格率" min-width="190"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="9" :color="scope.row.passRate >= 98.5 ? '#12b76a' : '#f79009'" /></template></el-table-column>
       </paged-table>
       <div v-if="!summaryError" class="summary-footnote">当前筛选结果：{{ filteredSummaryTotals.tested }} 板，合格 {{ filteredSummaryTotals.good }} 板，不合格 {{ filteredSummaryTotals.bad }} 板（按{{ summaryDimensionLabel }}汇总，共 {{ groupedDeviceSummary.length }} 组）。</div>
     </el-card>

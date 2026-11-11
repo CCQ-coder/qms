@@ -34,6 +34,11 @@ public class EquipmentTelemetryController {
         return ApiResponse.of(finishedTestDeviceSummaryService.listSummary());
     }
 
+    @GetMapping("/finished-test-summary/by-device")
+    public ApiResponse<List<FinishedTestDeviceSummaryService.DeviceSummary>> finishedTestSummaryByDevice() {
+        return ApiResponse.of(finishedTestDeviceSummaryService.listDeviceSummary());
+    }
+
     @GetMapping("/finished-test-monthly-analytics")
     public ApiResponse<FinishedTestDeviceSummaryService.MonthlyAnalytics> finishedTestMonthlyAnalytics() {
         return ApiResponse.of(finishedTestDeviceSummaryService.monthlyAnalytics());

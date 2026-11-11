@@ -54,6 +54,34 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void deviceSummaryKeepsEquipmentAndMaterialDistinctWithoutChangingOverallCounts() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        order.setInternalProductNo("IN-1");
+        LocalDateTime day = LocalDateTime.of(2026, 11, 3, 9, 0);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "PCB-1", "WO-1", day, 5, 2, true),
+            new FinishedTestDeviceSummaryService.Sample("z2", "ZBX", "PCB-1", "WO-1", day.plusMinutes(5), 8, 3, true),
+            new FinishedTestDeviceSummaryService.Sample("z3", "ZBX", "PCB-2", "WO-1", day.plusMinutes(6), 2, 0, false),
+            new FinishedTestDeviceSummaryService.Sample("p1", "WTD", "PCB-1", "WO-1", day, 4, 1, false)
+        );
+
+        var result = FinishedTestDeviceSummaryService.aggregateByDevice(samples, List.of(order),
+            Map.of("ZBX", "ZBX-1", "WTD", "WTD-1"));
+
+        assertThat(result).hasSize(3);
+        assertThat(result).filteredOn(row -> row.equipmentCode().equals("ZBX-1") && row.pcbMaterialNo().equals("PCB-1"))
+            .singleElement().satisfies(row -> {
+                assertThat(row.totalCount()).isEqualTo(8);
+                assertThat(row.goodCount()).isEqualTo(5);
+                assertThat(row.badCount()).isEqualTo(3);
+                assertThat(row.internalProductNo()).isEqualTo("IN-1");
+            });
+        assertThat(result.stream().mapToLong(FinishedTestDeviceSummaryService.DeviceSummary::totalCount).sum())
+            .isEqualTo(FinishedTestDeviceSummaryService.aggregate(samples, List.of(order)).getFirst().totalCount());
+    }
+
+    @Test
     void ambiguousLatestProductionOrderIsNotGuessed() {
         WorkOrder first = new WorkOrder();
         first.setWorkOrderNo("WO-1");
