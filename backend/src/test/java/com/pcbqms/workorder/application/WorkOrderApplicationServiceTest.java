@@ -74,6 +74,24 @@ class WorkOrderApplicationServiceTest {
     }
 
     @Test
+    void pageSortsNewestMaterialInputDateFirst() {
+        TenantContext.set("customer-a", "supervisor");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+            new org.apache.ibatis.builder.MapperBuilderAssistant(new org.apache.ibatis.session.Configuration(), ""), WorkOrder.class);
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor", "SUPERVISOR", true, Set.of()));
+        when(workOrderMapper.selectCount(any())).thenReturn(1L);
+        when(workOrderMapper.selectList(any())).thenAnswer(invocation -> {
+            var query = (com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?>) invocation.getArgument(0);
+            assertThat(query.getSqlSegment()).contains("ORDER BY COALESCE(material_input_date, released_at) DESC, updated_at DESC, id DESC");
+            return List.of();
+        });
+
+        service().page(new WorkOrderQueryRequest(null, null, null, null, null, null, null,
+            null, null, null, null, null, 1L, 20L));
+    }
+
+    @Test
     void manualWorkOrderMaintenanceRequiresSupervisorOrAdministrator() {
         TenantContext.set("customer-a", "tester.a");
         doThrow(new AccessDeniedException("not manager")).when(inspectionAccessScopeService).requireSupervisorOrAdministrator();

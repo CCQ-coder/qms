@@ -48,8 +48,8 @@ public class WorkOrderApplicationService {
         long pageSize = request.resolvedPageSize();
         long offset = (page - 1) * pageSize;
         List<WorkOrder> rows = offset >= total ? List.of() : workOrderMapper.selectList(query
-            .orderByDesc(WorkOrder::getUpdatedAt)
-            .last("LIMIT " + pageSize + " OFFSET " + offset));
+            .last("ORDER BY COALESCE(material_input_date, released_at) DESC, updated_at DESC, id DESC"
+                + " LIMIT " + pageSize + " OFFSET " + offset));
         return new WorkOrderPageResponse(rows.stream().map(this::toResponse).toList(), total, page, pageSize);
     }
 

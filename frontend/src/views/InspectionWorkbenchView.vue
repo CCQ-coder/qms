@@ -32,7 +32,7 @@ const offlineDrafts = ref<OfflineInspectionDraft[]>([])
 const syncingOfflineDrafts = ref(false)
 const route = useRoute()
 const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
-const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
+const activePanel = ref<'monitor' | 'records' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
 const equipment = ref<Equipment[]>([])
 const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
@@ -532,7 +532,6 @@ async function refreshWorkbench() {
     } else settlementError.value = '结算快照读取失败，请重试。'
     return
   }
-  if (activePanel.value === 'tasks') { await Promise.all([loadTasks(), loadOfflineDrafts()]); return }
   if (monitoringLoading.value) return
   await Promise.all([loadMonitoringData(), loadOfflineDrafts()])
   if (!monitorDevices.value.some((device) => device.assetNo === selectedDeviceId.value)) {
@@ -540,7 +539,7 @@ async function refreshWorkbench() {
   }
 }
 
-function showPanel(panel: 'monitor' | 'records' | 'tasks') {
+function showPanel(panel: 'monitor' | 'records') {
   activePanel.value = panel
   taskListDeviceAssetNo.value = ''
   if (panel === 'records') recordSource.value = 'probe'
@@ -790,12 +789,6 @@ async function submitBinding() {
   }
 }
 
-function openSelectedDeviceTask() {
-  taskListDeviceAssetNo.value = selectedDevice.value?.assetNo ?? ''
-  activePanel.value = 'tasks'
-  void refreshWorkbench()
-}
-
 function selectDevice(assetNo: string) {
   selectedDeviceId.value = assetNo
 }
@@ -938,7 +931,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">成品检测</p>
         <h2>成品测试实时监控工作台</h2>
-        <p>集中查看成品测试工位、待检队列和质量结果；检测记录可通过扫码或任务列表直接处理。</p>
+        <p>集中查看成品测试工位和质量结果；检测记录可在记录列表查看。</p>
       </div>
       <div class="finished-test-hero-actions">
         <span class="workstation-connection" :class="workstationConnectionClass"><i></i>{{ workstationConnectionLabel }}</span>
@@ -950,7 +943,6 @@ onBeforeUnmount(() => {
     <nav v-if="!isSummaryRoute" class="finished-test-tabs" aria-label="成品测试页面模块">
       <button :class="{ active: activePanel === 'monitor' }" type="button" @click="showPanel('monitor')">实时监控</button>
       <button :class="{ active: activePanel === 'records' }" type="button" @click="showPanel('records')">设备检测记录</button>
-      <button :class="{ active: activePanel === 'tasks' }" type="button" @click="showPanel('tasks')">待检任务</button>
     </nav>
 
     <template v-if="activePanel === 'monitor'">
@@ -1015,35 +1007,10 @@ onBeforeUnmount(() => {
             <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
             <div><span>关联生产指令 / 批次</span><strong>{{ selectedAssociation }}</strong></div>
           </template>
-          <div><span>待检任务</span><strong>未关联待检任务，请从列表选择</strong></div>
-          <el-button type="primary" @click="openSelectedDeviceTask">查看待检任务</el-button>
         </div>
       </section>
 
     </template>
-
-    <el-card v-if="activePanel === 'tasks'" shadow="never" class="content-card task-queue-card">
-      <template #header>
-        <div class="card-header">
-          <div><span>成品测试待检任务</span><small>任务按当前登录用户的工序权限返回，支持扫码定位后直接填写检验。</small></div>
-          <div class="task-queue-actions"><el-button link type="primary" @click="refreshWorkbench">刷新</el-button><el-button type="primary" size="small" :disabled="!filteredTasks.length" @click="openNextTask">处理下一条</el-button></div>
-        </div>
-      </template>
-      <div class="task-queue-toolbar">
-        <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号或检验员" />
-        <span>共 {{ filteredTasks.length }} 条待处理任务</span>
-      </div>
-      <el-alert v-if="taskListDeviceAssetNo" type="info" :closable="false" :title="`从设备 ${taskListDeviceAssetNo} 进入：选择任务后将预填检测设备；任务未与设备绑定，请提交前核对。`" style="margin-bottom: 12px" />
-      <paged-table :key="taskKeyword" v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
-        <el-table-column prop="taskNo" label="任务号" min-width="150" />
-        <el-table-column prop="workOrderNo" label="工单号" min-width="145" />
-        <el-table-column prop="processName" label="工序" min-width="130" />
-        <el-table-column label="类型" min-width="100"><template #default="scope">{{ taskTypeText(scope.row.taskType) }}</template></el-table-column>
-        <el-table-column prop="assigneeName" label="检验员" min-width="110" />
-        <el-table-column label="计划完成" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.dueAt) }}</template></el-table-column>
-        <el-table-column label="操作" width="120" fixed="right"><template #default="scope"><el-button type="primary" link @click="openRecord(scope.row)">填写检验</el-button></template></el-table-column>
-      </paged-table>
-    </el-card>
 
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>

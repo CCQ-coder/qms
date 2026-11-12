@@ -58,7 +58,10 @@ const draggedColumn = ref<keyof WorkOrder | null>(null)
 
 const pageStart = computed(() => total.value ? (currentPage.value - 1) * pageSize.value + 1 : 0)
 const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, total.value))
-const latestSyncTime = computed(() => rows.value[0]?.updatedAt ? formatDateTime(rows.value[0].updatedAt) : '暂无数据')
+const latestSyncTime = computed(() => {
+  const latest = rows.value.reduce((time, row) => row.updatedAt > time ? row.updatedAt : time, '')
+  return latest ? formatDateTime(latest) : '暂无数据'
+})
 
 function reorderColumn(target: keyof WorkOrder) {
   const from = workOrderColumns.value.findIndex(column => column.key === draggedColumn.value)
