@@ -50,4 +50,11 @@ public class LocalAttachmentStorage {
         }
         return targetFile;
     }
+
+    public void delete(String storedPath) {
+        Path targetFile = rootPath.resolve(storedPath).normalize();
+        if (!targetFile.startsWith(rootPath)) throw new IllegalArgumentException("附件路径不合法");
+        try { Files.deleteIfExists(targetFile); }
+        catch (IOException exception) { throw new IllegalStateException("附件清理失败", exception); }
+    }
 }

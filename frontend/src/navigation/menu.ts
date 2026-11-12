@@ -16,6 +16,7 @@ export const navigationMenuDefinitions: NavigationMenuDefinition[] = [
   { code: 'WORK_ORDERS', label: '生产指令查询', parentCode: 'QUALITY', path: '/work-orders' },
   { code: 'INSPECTION_WORKBENCH', label: '成品测试', parentCode: 'QUALITY', path: '/inspection' },
   { code: 'NONCONFORMITIES', label: '不良品处理', parentCode: 'QUALITY', path: '/nonconformities' },
+  { code: 'SCRAP_IMPORT', label: '报废明细导入', parentCode: 'NONCONFORMITIES' },
   { code: 'TRACE', label: '报表' },
   { code: 'ANALYTICS', label: '可视化报表分析', parentCode: 'TRACE', path: '/analytics' },
   { code: 'EQUIPMENT_FINISHED_TEST_SUMMARY', label: '成品测试汇总表', parentCode: 'TRACE', path: '/equipment/finished-test-summary' },

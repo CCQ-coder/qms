@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 public class DeviceDispositionScheduler {
     private final JdbcTemplate jdbcTemplate;
     private final FinishedTestDeviceSummaryService summaryService;
-    private final NonconformityApplicationService nonconformityService;
 
     @Scheduled(fixedDelayString = "${qms.inspection.device-disposition.fixed-delay-ms:60000}")
     public void sync() {
@@ -32,11 +31,6 @@ public class DeviceDispositionScheduler {
                     summaryService.settleIdleMaterials(LocalDateTime.now());
                 } catch (RuntimeException exception) {
                     log.warn("成品检测静默结算失败，租户={}", tenant, exception);
-                }
-                try {
-                    nonconformityService.syncDeviceDefects(summaryService.summariesForCurrentTenant());
-                } catch (RuntimeException exception) {
-                    log.warn("设备不良品处置单汇总失败，租户={}", tenant, exception);
                 }
             } finally {
                 TenantContext.clear();

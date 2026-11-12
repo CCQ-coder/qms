@@ -6,6 +6,7 @@ import com.pcbqms.inspection.domain.FlyingProbeProjection;
 import com.pcbqms.inspection.domain.FlyingProbeRun;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -221,6 +222,37 @@ public interface FlyingProbeProjectionMapper {
         WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
         """)
     long countRunNonconformities(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
+
+    @Select("""
+        SELECT COUNT(*) FROM qms_flying_probe_projection
+        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey}
+          AND (inspection_task_id IS NOT NULL OR inspection_record_id IS NOT NULL)
+        """)
+    long countRunInspectionDependencies(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
+
+    @Select("""
+        SELECT COUNT(*) FROM qms_finished_test_settlement settlement
+        WHERE settlement.tenant_code = #{tenantCode} AND settlement.work_order_no = #{workOrderNo}
+          AND EXISTS (SELECT 1 FROM qms_flying_probe_projection projection
+              WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+                AND UPPER(TRIM(projection.material_no)) = settlement.material_key
+                AND projection.device_time BETWEEN settlement.first_detection_at AND settlement.last_detection_at)
+        """)
+    long countRunSettlements(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                             @Param("workOrderNo") String workOrderNo);
+
+    @Update("""
+        UPDATE qms_flying_probe_projection SET work_order_no = NULL, batch_no = NULL,
+            inspection_task_id = NULL, inspection_record_id = NULL,
+            delta_tested = NULL, delta_good = NULL, delta_bad = NULL,
+            status = 'UNBOUND', reason = '已手动取消关联', retry_after = NULL,
+            processed_at = CURRENT_TIMESTAMP
+        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey}
+        """)
+    int unbindRunProjections(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
+
+    @Delete("DELETE FROM qms_flying_probe_run WHERE tenant_code = #{tenantCode} AND run_key = #{runKey}")
+    int deleteRun(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
 
     @Select("""
         SELECT COUNT(*) FROM qms_nonconformity ncr

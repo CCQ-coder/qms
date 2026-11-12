@@ -267,7 +267,7 @@ export type ScanLookup = {
 export type Nonconformity = {
   id: string
   ncrNo: string
-  workOrderNo: string
+  workOrderNo?: string
   batchNo?: string
   status: string
   sourceType?: string
@@ -288,8 +288,9 @@ export type Nonconformity = {
 export type NonconformityDetail = {
   id: string
   lineNo: number
-  workOrderNo: string
+  workOrderNo?: string
   internalProductNo?: string
+  materialNo?: string
   layerCount?: number
   processName: string
   unit: string
@@ -299,6 +300,19 @@ export type NonconformityDetail = {
   scrapReason?: string
   remark?: string
   status: string
+}
+
+export type ScrapImportJob = {
+  id: string
+  filename: string
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  total: number
+  processed: number
+  imported: number
+  unmatched: number
+  invalid: number
+  errors: string[]
+  createdAt: string
 }
 
 export type ManualNonconformityInput = {

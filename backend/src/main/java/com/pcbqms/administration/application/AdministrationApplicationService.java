@@ -46,6 +46,7 @@ public class AdministrationApplicationService {
         new MenuDefinition("INSPECTION_RULES", "自动派单规则", "QUALITY", 25),
         new MenuDefinition("TRACE", "报表", null, 30),
         new MenuDefinition("NONCONFORMITIES", "不良品处理", "QUALITY", 26),
+        new MenuDefinition("SCRAP_IMPORT", "报废明细导入", "NONCONFORMITIES", 27),
         new MenuDefinition("TRACEABILITY", "质量追溯", "TRACE", 32),
         new MenuDefinition("ANALYTICS", "可视化报表分析", "TRACE", 33),
         new MenuDefinition("EQUIPMENT_FINISHED_TEST_SUMMARY", "成品测试汇总表", "TRACE", 34),
@@ -134,11 +135,22 @@ public class AdministrationApplicationService {
         boolean menuSelectionConfigured = "true".equalsIgnoreCase(roleAttributes.get("menuCodesConfigured"));
         Set<String> permittedMenuCodes = menuSelectionConfigured
             ? parseMenuCodes(roleAttributes.get("menuCodes"), knownMenuCodes)
-            : knownMenuCodes;
+            : new HashSet<>(knownMenuCodes);
+        if (!menuSelectionConfigured && !Set.of("PLATFORM_ADMIN", "TENANT_ADMIN", "SUPERVISOR").contains(access.roleCode())) {
+            permittedMenuCodes.remove("SCRAP_IMPORT");
+        }
 
         Map<String, String> menuNames = new LinkedHashMap<>();
         menus.forEach(item -> menuNames.put(item.getItemCode(), item.getItemName()));
         return new MenuAccessResponse(access.roleCode(), activeMenuCodes, new ArrayList<>(permittedMenuCodes), menuNames);
+    }
+
+    public void requireScrapImportAccess() {
+        MenuAccessResponse access = menuAccess();
+        if (!access.activeMenuCodes().contains("SCRAP_IMPORT")
+            || !access.permittedMenuCodes().contains("SCRAP_IMPORT")) {
+            throw new org.springframework.security.access.AccessDeniedException("当前角色没有报废明细导入权限");
+        }
     }
 
     @Transactional

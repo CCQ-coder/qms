@@ -16,6 +16,8 @@ public class NonconformityDetail {
     private String nonconformityId;
     private Integer lineNo;
     private String workOrderId;
+    private String internalProductNo;
+    private Integer layerCount;
     private String processCode;
     private String processName;
     private String unit;

@@ -112,7 +112,7 @@ const menuItemByCode = computed(() => new Map(menuItems.value.map((item) => [ite
 const roleMenuGroups = computed(() => menuGroups().map((group) => ({
   ...group,
   label: menuItemByCode.value.get(group.code)?.itemName ?? group.label,
-  items: menuPages(group.code).map((item) => ({
+  items: menuPages(group.code).flatMap((item) => [item, ...menuPages(item.code)]).map((item) => ({
     ...item,
     label: menuItemByCode.value.get(item.code)?.itemName ?? item.label
   }))

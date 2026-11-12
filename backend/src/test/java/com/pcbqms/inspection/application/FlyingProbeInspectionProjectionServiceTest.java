@@ -168,6 +168,45 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void cancelBindingClearsAWholeFileOnlyWithoutInspectionDependencies() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("cancel", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-1");
+        projection.setWorkOrderNo("WO-1");
+        FlyingProbeRun run = run();
+        run.setRunKey("run-1");
+        when(projectionMapper.lockProjection("cancel")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run);
+
+        service().unbindManually("cancel");
+
+        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-1", null);
+        verify(projectionMapper).unbindRunProjections("tenant-a", "run-1");
+        verify(projectionMapper).deleteRun("tenant-a", "run-1");
+    }
+
+    @Test
+    void cancelBindingSkipsAFileWithInspectionTasks() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("cancel", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-1");
+        projection.setWorkOrderNo("WO-1");
+        FlyingProbeRun run = run();
+        run.setRunKey("run-1");
+        when(projectionMapper.lockProjection("cancel")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run);
+        when(projectionMapper.countRunInspectionDependencies("tenant-a", "run-1")).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().unbindManually("cancel"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("检验");
+        verify(projectionMapper, never()).unbindRunProjections(any(), any());
+    }
+
+    @Test
     void repeatingTheSameManualBindingKeepsTheOriginalAudit() {
         TenantContext.set("tenant-a", "second-supervisor");
         var now = LocalDateTime.now();
@@ -375,6 +414,30 @@ class FlyingProbeInspectionProjectionServiceTest {
 
         assertThat(projection.getStatus()).isEqualTo("PROCESSED");
         assertThat(projection.getWorkOrderNo()).isEqualTo("26100242");
+    }
+
+    @Test
+    void configuredRuleMatchesOnlyFiveDigitsFromAlphanumericDeviceMaterial() {
+        TenantContext.set("tenant-a", "admin");
+        var telemetry = event("five-digit", LocalDateTime.of(2026, 11, 3, 9, 5),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1);
+        telemetry.setMaterialNo("26676a");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("five-digit")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        configuredMaterialRule();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("WO-26676", "02PT26676A01", LocalDate.of(2026, 10, 11))));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        FlyingProbeRun run = run();
+        run.setMaterialNo("26676a");
+        run.setWorkOrderNo("WO-26676");
+        when(projectionMapper.lockRun(any())).thenReturn(null, run);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-26676");
     }
 
     @Test

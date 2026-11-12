@@ -305,6 +305,82 @@ public class NonconformityApplicationService {
         return NonconformityResponse.from(ncr, workOrders.getFirst().getWorkOrderNo(), request.batchNo(), responses);
     }
 
+    @Transactional
+    public boolean createImportedScrapRow(String documentId, String importer,
+                                           ScrapExcelImportParser.ScrapRow row, WorkOrder order) {
+        String tenant = TenantContext.tenantCode();
+        String sourceKey = "scrap:" + documentId + ":" + row.rowNumber();
+        if (nonconformityMapper.selectCount(Wrappers.lambdaQuery(Nonconformity.class)
+            .eq(Nonconformity::getTenantCode, tenant).eq(Nonconformity::getSourceGroupKey, sourceKey)) > 0) return false;
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId(UUID.randomUUID().toString());
+        ncr.setTenantCode(tenant);
+        ncr.setNcrNo("NCR-EXCEL-" + documentId + "-" + row.rowNumber());
+        ncr.setWorkOrderId(order == null ? null : order.getId());
+        ncr.setStatus("OPEN");
+        ncr.setSourceType("EXCEL");
+        ncr.setSourceGroupKey(sourceKey);
+        ncr.setDetectionDate(row.date());
+        ncr.setProcessCode("FQC");
+        ncr.setProcessName(row.station());
+        ncr.setResponsibleDepartment(row.department());
+        ncr.setDispositionMethod("SCRAP");
+        ncr.setInitiatedBy(importer);
+        ncr.setCreatedAt(LocalDateTime.now());
+        nonconformityMapper.insert(ncr);
+
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setId(UUID.randomUUID().toString());
+        detail.setTenantCode(tenant);
+        detail.setNonconformityId(ncr.getId());
+        detail.setLineNo(1);
+        detail.setWorkOrderId(order == null ? null : order.getId());
+        detail.setInternalProductNo(row.internalProductNo());
+        detail.setLayerCount(row.layerCount());
+        detail.setProcessCode("FQC");
+        detail.setProcessName(row.station());
+        detail.setUnit("PCS");
+        detail.setSinglePcsArea(row.singlePcsArea());
+        detail.setScrapQuantity(row.quantity());
+        detail.setScrapArea(row.scrapArea());
+        detail.setScrapReason(row.scrapReason());
+        detail.setRemark(row.remark());
+        detail.setStatus("OPEN");
+        nonconformityDetailMapper.insert(detail);
+        return true;
+    }
+
+    @Transactional
+    public void bindImportedScrapRow(String ncrId, String detailId, String requestedWorkOrderNo) {
+        Nonconformity ncr = requireNcr(ncrId);
+        requireNonconformityProcessAccess(ncr);
+        if (!"EXCEL".equals(ncr.getSourceType()) || !"OPEN".equals(ncr.getStatus())) {
+            throw new IllegalArgumentException("仅未审核的 Excel 导入明细可手工关联");
+        }
+        NonconformityDetail detail = nonconformityDetailMapper.selectById(detailId);
+        if (detail == null || !TenantContext.tenantCode().equals(detail.getTenantCode())
+            || !ncrId.equals(detail.getNonconformityId()) || detail.getWorkOrderId() != null) {
+            throw new IllegalArgumentException("明细不存在、已关联或无权操作");
+        }
+        if (!StringUtils.hasText(requestedWorkOrderNo)) throw new IllegalArgumentException("请选择生产指令");
+        WorkOrder order = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
+            .eq(WorkOrder::getTenantCode, TenantContext.tenantCode())
+            .eq(WorkOrder::getWorkOrderNo, requestedWorkOrderNo.trim()));
+        if (order == null || !TenantContext.tenantCode().equals(order.getTenantCode())) {
+            throw new IllegalArgumentException("当前租户不存在此生产指令");
+        }
+        if (!ScrapWorkOrderMatcher.matches(detail.getInternalProductNo(), order.getInternalProductNo())) {
+            throw new IllegalArgumentException("生产指令厂内编号与 Excel 明细不一致");
+        }
+        if (order.getInputDate() == null || order.getInputDate().isAfter(ncr.getDetectionDate())) {
+            throw new IllegalArgumentException("生产指令输入时间缺失或晚于 Excel 表格时间");
+        }
+        detail.setWorkOrderId(order.getId());
+        ncr.setWorkOrderId(order.getId());
+        nonconformityDetailMapper.updateById(detail);
+        nonconformityMapper.updateById(ncr);
+    }
+
     private NonconformityDetail newDetail(Nonconformity ncr, int lineNo, WorkOrder workOrder, String unit,
                                           int scrapQuantity, String scrapReason, String remark) {
         NonconformityDetail detail = new NonconformityDetail();
@@ -435,7 +511,8 @@ public class NonconformityApplicationService {
     private NonconformityResponse toNonconformityResponse(Nonconformity ncr) {
         WorkOrder workOrder = StringUtils.hasText(ncr.getWorkOrderId()) ? workOrderMapper.selectById(ncr.getWorkOrderId()) : null;
         ProductionBatch batch = StringUtils.hasText(ncr.getBatchId()) ? productionBatchMapper.selectById(ncr.getBatchId()) : null;
-        return NonconformityResponse.from(ncr, workOrder == null ? "已删除工单" : workOrder.getWorkOrderNo(),
+        return NonconformityResponse.from(ncr, workOrder == null
+                ? (ncr.getWorkOrderId() == null ? null : "已删除工单") : workOrder.getWorkOrderNo(),
             StringUtils.hasText(ncr.getBatchNo()) ? ncr.getBatchNo() : batch == null ? null : batch.getBatchNo(), detailsFor(ncr));
     }
 
@@ -446,7 +523,7 @@ public class NonconformityApplicationService {
             .orderByAsc(NonconformityDetail::getLineNo));
         if (details == null) return List.of();
         return details.stream().map(detail -> {
-            WorkOrder workOrder = workOrderMapper.selectById(detail.getWorkOrderId());
+            WorkOrder workOrder = detail.getWorkOrderId() == null ? null : workOrderMapper.selectById(detail.getWorkOrderId());
             return NonconformityDetailResponse.from(detail, workOrder);
         }).toList();
     }

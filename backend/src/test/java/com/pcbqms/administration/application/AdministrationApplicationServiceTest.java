@@ -147,4 +147,25 @@ class AdministrationApplicationServiceTest {
 
         assertThat(access.menuNames()).containsEntry("DASHBOARD", "品质看板");
     }
+
+    @Test
+    void scrapImportIsHiddenByDefaultFromOperatorsButCanBeGrantedByRole() {
+        TenantContext.set("customer-b", "operator.b");
+        AdministrationItem menu = new AdministrationItem();
+        menu.setItemCode("SCRAP_IMPORT");
+        menu.setItemName("报废明细导入");
+        menu.setStatus("ACTIVE");
+        when(inspectionAccessScopeService.currentAccess())
+            .thenReturn(new InspectionAccess("operator.b", "INSPECTOR", false, Set.of("FQC")));
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of(menu));
+        var service = new AdministrationApplicationService(administrationItemMapper,
+            administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper());
+
+        assertThat(service.menuAccess().permittedMenuCodes()).doesNotContain("SCRAP_IMPORT");
+
+        AdministrationItem role = new AdministrationItem();
+        role.setAttributesJson("{\"menuCodesConfigured\":\"true\",\"menuCodes\":\"SCRAP_IMPORT\"}");
+        when(administrationItemMapper.selectOne(any())).thenReturn(role);
+        assertThat(service.menuAccess().permittedMenuCodes()).contains("SCRAP_IMPORT");
+    }
 }

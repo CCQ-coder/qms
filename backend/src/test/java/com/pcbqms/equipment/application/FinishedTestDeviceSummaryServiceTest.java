@@ -332,6 +332,24 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void cancelZhongboBindingSkipsAnExistingDeviceDisposition() {
+        TenantContext.set("customer-a", "supervisor");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Binding>>any(),
+            eq("z1"), eq("customer-a"))).thenReturn(List.of(
+                new FinishedTestDeviceSummaryService.Binding("WO-1", LocalDate.of(2026, 11, 3))));
+        when(jdbc.queryForObject(any(String.class), eq(Integer.class), eq("customer-a"), eq("customer-a"),
+            eq("WO-1"), eq(LocalDate.of(2026, 11, 3)))).thenReturn(1);
+
+        var service = new FinishedTestDeviceSummaryService(jdbc, mock(WorkOrderMapper.class),
+            mock(InspectionAccessScopeService.class));
+
+        assertThatThrownBy(() -> service.unbindZhongboWorkOrder("z1"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("处置单");
+        verify(jdbc, never()).update(any(String.class), any(), any());
+    }
+
+    @Test
     void scheduledSummaryDoesNotNeedAProvisionedAdminButApiSummaryStillChecksAccess() {
         TenantContext.set("customer-a", "admin");
         JdbcTemplate jdbc = mock(JdbcTemplate.class);

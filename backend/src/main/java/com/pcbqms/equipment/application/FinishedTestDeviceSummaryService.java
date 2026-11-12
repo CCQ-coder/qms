@@ -122,6 +122,7 @@ public class FinishedTestDeviceSummaryService {
                 WHERE tenant_code = ? AND UPPER(TRIM(material_no)) = ?
                   AND event_type = 'ZHONGBO_TEST_REPORT'
                   AND device_time >= ? AND device_time < ?
+                  AND manual_binding_disabled = FALSE
                   AND (work_order_no IS NULL OR work_order_no = '')
                 """, candidate.workOrderNo(), tenant, candidate.materialKey(),
                 candidate.firstDetectionAt(), candidate.lastDetectionAt().plusHours(12));
@@ -184,6 +185,7 @@ public class FinishedTestDeviceSummaryService {
             if (order != null) {
                 jdbcTemplate.update("UPDATE qms_equipment_telemetry SET work_order_no = ? "
                     + "WHERE id = ? AND tenant_code = ? AND event_type = 'ZHONGBO_TEST_REPORT' "
+                    + "AND manual_binding_disabled = FALSE "
                     + "AND (work_order_no IS NULL OR work_order_no = '')",
                     order.getWorkOrderNo(), sample.id(), TenantContext.tenantCode());
             }
@@ -220,14 +222,62 @@ public class FinishedTestDeviceSummaryService {
             if (approved != null && approved > 0) {
                 throw new IllegalArgumentException("原生产指令的不良品处置单已审核，不能更改关联");
             }
+            if (hasSettlement(telemetryId, tenant, binding.workOrderNo())) {
+                throw new IllegalArgumentException("该设备记录已有结算数据，不能更改关联");
+            }
         }
         int updated = jdbcTemplate.update("""
-            UPDATE qms_equipment_telemetry SET work_order_no = ?
+            UPDATE qms_equipment_telemetry SET work_order_no = ?, manual_binding_disabled = FALSE
             WHERE id = ? AND tenant_code = ? AND event_type = 'ZHONGBO_TEST_REPORT'
               AND work_order_no <=> ?
             """, order.getWorkOrderNo(), telemetryId, tenant, binding.workOrderNo());
         if (updated != 1) throw new IllegalArgumentException("设备记录关联已变化，请刷新后重试");
         return order.getWorkOrderNo();
+    }
+
+    @Transactional
+    public void unbindZhongboWorkOrder(String telemetryId) {
+        accessScopeService.requireSupervisorOrAdministrator();
+        String tenant = TenantContext.tenantCode();
+        List<Binding> current = jdbcTemplate.query("""
+            SELECT work_order_no, DATE(device_time) AS detection_date FROM qms_equipment_telemetry
+            WHERE id = ? AND tenant_code = ? AND event_type = 'ZHONGBO_TEST_REPORT' FOR UPDATE
+            """, (rs, row) -> new Binding(rs.getString("work_order_no"),
+                rs.getDate("detection_date").toLocalDate()), telemetryId, tenant);
+        if (current.isEmpty()) throw new IllegalArgumentException("当前租户不存在此众博信设备记录");
+        Binding binding = current.getFirst();
+        if (!StringUtils.hasText(binding.workOrderNo())) return;
+        Integer dispositions = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM qms_nonconformity disposition
+            JOIN qms_work_order work_order
+              ON work_order.id COLLATE utf8mb4_0900_ai_ci = disposition.work_order_id COLLATE utf8mb4_0900_ai_ci
+            WHERE disposition.tenant_code = ? AND work_order.tenant_code = ?
+              AND work_order.work_order_no = ? AND disposition.detection_date = ?
+              AND disposition.source_type = 'DEVICE'
+            """, Integer.class, tenant, tenant, binding.workOrderNo(), binding.detectionDate());
+        if (dispositions != null && dispositions > 0) {
+            throw new IllegalArgumentException("该生产指令当日已有设备处置单，不能取消关联");
+        }
+        if (hasSettlement(telemetryId, tenant, binding.workOrderNo())) {
+            throw new IllegalArgumentException("该设备记录已有结算数据，不能取消关联");
+        }
+        jdbcTemplate.update("""
+            UPDATE qms_equipment_telemetry SET work_order_no = NULL, manual_binding_disabled = TRUE
+            WHERE id = ? AND tenant_code = ? AND event_type = 'ZHONGBO_TEST_REPORT'
+            """, telemetryId, tenant);
+    }
+
+    private boolean hasSettlement(String telemetryId, String tenant, String workOrderNo) {
+        Integer settlements = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM qms_finished_test_settlement settlement
+            JOIN qms_equipment_telemetry telemetry
+              ON telemetry.tenant_code = settlement.tenant_code
+             AND UPPER(TRIM(telemetry.material_no)) = settlement.material_key
+             AND telemetry.device_time BETWEEN settlement.first_detection_at AND settlement.last_detection_at
+            WHERE telemetry.id = ? AND telemetry.tenant_code = ?
+              AND settlement.work_order_no = ?
+            """, Integer.class, telemetryId, tenant, workOrderNo);
+        return settlements != null && settlements > 0;
     }
 
     private List<WorkOrder> workOrders() {
@@ -256,6 +306,7 @@ public class FinishedTestDeviceSummaryService {
               ON equipment.id COLLATE utf8mb4_0900_ai_ci = telemetry.equipment_id COLLATE utf8mb4_0900_ai_ci
              AND equipment.tenant_code COLLATE utf8mb4_0900_ai_ci = telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
             WHERE telemetry.tenant_code = ? AND telemetry.event_type = 'ZHONGBO_TEST_REPORT'
+              AND telemetry.manual_binding_disabled = FALSE
               AND equipment.equipment_type = '成品测试设备'
             """, (rs, row) -> new Sample(rs.getString("id"), rs.getString("equipment_id"),
                 rs.getString("material_no"), rs.getString("work_order_no"),

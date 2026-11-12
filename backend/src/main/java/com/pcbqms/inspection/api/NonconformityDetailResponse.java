@@ -9,6 +9,7 @@ public record NonconformityDetailResponse(
     Integer lineNo,
     String workOrderNo,
     String internalProductNo,
+    String materialNo,
     Integer layerCount,
     String processName,
     String unit,
@@ -21,9 +22,12 @@ public record NonconformityDetailResponse(
 ) {
     public static NonconformityDetailResponse from(NonconformityDetail detail, WorkOrder workOrder) {
         return new NonconformityDetailResponse(detail.getId(), detail.getLineNo(),
-            workOrder == null ? "已删除工单" : workOrder.getWorkOrderNo(),
-            workOrder == null ? null : workOrder.getInternalProductNo(),
-            workOrder == null ? null : workOrder.getLayerCount(),
+            workOrder == null ? (detail.getWorkOrderId() == null ? null : "已删除工单") : workOrder.getWorkOrderNo(),
+            detail.getInternalProductNo() != null ? detail.getInternalProductNo()
+                : workOrder == null ? null : workOrder.getInternalProductNo(),
+            workOrder == null ? null : workOrder.getMaterialNo(),
+            detail.getLayerCount() != null ? detail.getLayerCount()
+                : workOrder == null ? null : workOrder.getLayerCount(),
             detail.getProcessName(), detail.getUnit(), detail.getSinglePcsArea(), detail.getScrapQuantity(),
             detail.getScrapArea(), detail.getScrapReason(), detail.getRemark(), detail.getStatus());
     }

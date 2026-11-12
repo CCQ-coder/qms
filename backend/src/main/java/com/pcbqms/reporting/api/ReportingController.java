@@ -55,6 +55,15 @@ public class ReportingController {
             .body(scrapStatisticsExportService.exportExcel());
     }
 
+    @GetMapping("/scrap-import-template.xlsx")
+    public ResponseEntity<byte[]> scrapImportTemplate() {
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                .filename("报废明细导入模板.xlsx", StandardCharsets.UTF_8).build().toString())
+            .body(scrapStatisticsExportService.templateExcel());
+    }
+
     @GetMapping("/traceability/batches/{batchNo}")
     public ApiResponse<TraceabilityResponse> traceability(@PathVariable String batchNo) {
         return ApiResponse.of(reportingApplicationService.traceByBatch(batchNo));

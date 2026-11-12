@@ -3,6 +3,8 @@ package com.pcbqms.equipment.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,13 +17,41 @@ import com.pcbqms.equipment.application.EquipmentTelemetryApplicationService;
 import com.pcbqms.equipment.application.EquipmentTelemetryQueryApplicationService;
 import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
+import com.pcbqms.inspection.application.FlyingProbeInspectionProjectionService;
+import com.pcbqms.access.application.InspectionAccessScopeService;
+import com.pcbqms.common.tenancy.TenantContext;
+import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class EquipmentTelemetryControllerTest {
+    @AfterEach
+    void clearTenant() { TenantContext.clear(); }
+
+    @Test
+    void batchCancellationReportsEachSkippedRecord() {
+        TenantContext.set("tenant-a", "supervisor");
+        var summary = mock(FinishedTestDeviceSummaryService.class);
+        var jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(any(String.class), eq(String.class), eq("z1"), eq("tenant-a")))
+            .thenReturn(List.of("ZHONGBO_TEST_REPORT"));
+        doThrow(new IllegalArgumentException("已有处置单")).when(summary).unbindZhongboWorkOrder("z1");
+        var controller = new EquipmentTelemetryController(mock(GatewayIntegrationAuthentication.class),
+            mock(EquipmentTelemetryApplicationService.class), mock(EquipmentTelemetryQueryApplicationService.class),
+            summary, mock(FlyingProbeInspectionProjectionService.class), mock(InspectionAccessScopeService.class), jdbc);
+
+        var result = controller.batchWorkOrder(new EquipmentTelemetryController.BatchWorkOrderRequest(
+            List.of("z1"), "CANCEL", null)).data();
+
+        assertThat(result.changed()).isZero();
+        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.reasons()).containsExactly("z1：已有处置单");
+    }
+
     @Test
     void returnsDeviceDimensionForFinishedTestSummary() throws Exception {
         var summary = mock(FinishedTestDeviceSummaryService.class);
@@ -29,7 +59,8 @@ class EquipmentTelemetryControllerTest {
             java.time.LocalDate.of(2026, 11, 10), "WTD-1", "WO-1", "IN-1", "PCB-1", 4, 3, 1, 75)));
         var controller = new EquipmentTelemetryController(
             mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
-            mock(EquipmentTelemetryQueryApplicationService.class), summary);
+            mock(EquipmentTelemetryQueryApplicationService.class), summary,
+            mock(FlyingProbeInspectionProjectionService.class), mock(InspectionAccessScopeService.class), mock(JdbcTemplate.class));
 
         MockMvcBuilders.standaloneSetup(controller).build()
             .perform(get("/api/v1/equipment/telemetry/finished-test-summary/by-device"))
@@ -45,7 +76,8 @@ class EquipmentTelemetryControllerTest {
             "2026-11-10", List.of(new FinishedTestDeviceSummaryService.MaterialBadCount("42713", 24))));
         var controller = new EquipmentTelemetryController(
             mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
-            mock(EquipmentTelemetryQueryApplicationService.class), summary);
+            mock(EquipmentTelemetryQueryApplicationService.class), summary,
+            mock(FlyingProbeInspectionProjectionService.class), mock(InspectionAccessScopeService.class), mock(JdbcTemplate.class));
 
         MockMvcBuilders.standaloneSetup(controller).build()
             .perform(get("/api/v1/equipment/telemetry/today-bad-boards-by-material"))
@@ -61,7 +93,8 @@ class EquipmentTelemetryControllerTest {
         when(service.receive(any())).thenReturn(new EquipmentTelemetryResponse(1, 0));
         var controller = new EquipmentTelemetryController(
             mock(GatewayIntegrationAuthentication.class), service, mock(EquipmentTelemetryQueryApplicationService.class),
-            mock(FinishedTestDeviceSummaryService.class)
+            mock(FinishedTestDeviceSummaryService.class), mock(FlyingProbeInspectionProjectionService.class),
+            mock(InspectionAccessScopeService.class), mock(JdbcTemplate.class)
         );
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 
@@ -103,7 +136,8 @@ class EquipmentTelemetryControllerTest {
         when(queryService.pageHistory(any())).thenReturn(new EquipmentTelemetryHistoryPageResponse(List.of(), null, 100));
         var controller = new EquipmentTelemetryController(
             mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class), queryService,
-            mock(FinishedTestDeviceSummaryService.class)
+            mock(FinishedTestDeviceSummaryService.class), mock(FlyingProbeInspectionProjectionService.class),
+            mock(InspectionAccessScopeService.class), mock(JdbcTemplate.class)
         );
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 

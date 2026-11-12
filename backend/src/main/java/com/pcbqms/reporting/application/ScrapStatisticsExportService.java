@@ -30,6 +30,17 @@ public class ScrapStatisticsExportService {
 
     private final NonconformityApplicationService nonconformityApplicationService;
 
+    public byte[] templateExcel() {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Row header = workbook.createSheet("报废明细").createRow(0);
+            for (int index = 0; index < HEADERS.length; index++) header.createCell(index).setCellValue(HEADERS[index]);
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new IllegalStateException("报废明细模板生成失败", exception);
+        }
+    }
+
     public byte[] exportExcel() {
         var nonconformities = nonconformityApplicationService.listNonconformities(null);
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {

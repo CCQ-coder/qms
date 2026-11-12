@@ -53,6 +53,13 @@ public class NonconformityController {
         service.updateDetail(ncrId, detailId, request);
     }
 
+    @PostMapping("/nonconformities/{ncrId}/details/{detailId}/bind-work-order")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void bindImportedScrapRow(@PathVariable String ncrId, @PathVariable String detailId,
+                                      @Valid @RequestBody BindImportedScrapWorkOrderRequest request) {
+        service.bindImportedScrapRow(ncrId, detailId, request.workOrderNo());
+    }
+
     @PostMapping("/nonconformities/{ncrId}/capas")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CapaResponse> createCapa(@PathVariable String ncrId, @Valid @RequestBody CreateCapaRequest request) {

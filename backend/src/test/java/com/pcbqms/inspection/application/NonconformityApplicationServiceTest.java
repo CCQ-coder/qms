@@ -315,6 +315,54 @@ class NonconformityApplicationServiceTest {
     }
 
     @Test
+    void importsUnmatchedExcelRowWithoutLosingTheOriginalScrapValues() {
+        TenantContext.set("customer-a", "admin");
+        var row = new ScrapExcelImportParser.ScrapRow(2, LocalDate.of(2026, 10, 14), 4, "31281", 55,
+            new BigDecimal("0.02907"), "锣坏机器故障", "成型", new BigDecimal("1.59885"), "来料", "备注");
+
+        boolean inserted = service().createImportedScrapRow("document-1", "importer", row, null);
+
+        assertThat(inserted).isTrue();
+        ArgumentCaptor<Nonconformity> ncr = ArgumentCaptor.forClass(Nonconformity.class);
+        ArgumentCaptor<NonconformityDetail> detail = ArgumentCaptor.forClass(NonconformityDetail.class);
+        verify(nonconformityMapper).insert(ncr.capture());
+        verify(nonconformityDetailMapper).insert(detail.capture());
+        assertThat(ncr.getValue().getSourceType()).isEqualTo("EXCEL");
+        assertThat(ncr.getValue().getWorkOrderId()).isNull();
+        assertThat(ncr.getValue().getSourceGroupKey()).isEqualTo("scrap:document-1:2");
+        assertThat(detail.getValue().getInternalProductNo()).isEqualTo("31281");
+        assertThat(detail.getValue().getLayerCount()).isEqualTo(4);
+        assertThat(detail.getValue().getSinglePcsArea()).isEqualByComparingTo("0.02907");
+        assertThat(detail.getValue().getScrapArea()).isEqualByComparingTo("1.59885");
+    }
+
+    @Test
+    void rejectsImportedRowBindingToAnOrderEnteredAfterExcelDate() {
+        TenantContext.set("customer-a", "admin");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setSourceType("EXCEL");
+        ncr.setStatus("OPEN");
+        ncr.setDetectionDate(LocalDate.of(2026, 10, 14));
+        ncr.setProcessCode("FQC");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setId("detail-1");
+        detail.setTenantCode("customer-a");
+        detail.setNonconformityId("ncr-1");
+        detail.setInternalProductNo("31281");
+        WorkOrder order = new WorkOrder();
+        order.setTenantCode("customer-a");
+        order.setInternalProductNo("02PT31281A01");
+        order.setInputDate(LocalDate.of(2026, 10, 15));
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(nonconformityDetailMapper.selectById("detail-1")).thenReturn(detail);
+        when(workOrderMapper.selectOne(any())).thenReturn(order);
+
+        assertThatThrownBy(() -> service().bindImportedScrapRow("ncr-1", "detail-1", "WO-LATE"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("晚于");
+        verify(nonconformityDetailMapper, never()).updateById(any(NonconformityDetail.class));
+    }
+
+    @Test
     void manualNonconformityCanStartCapaUsingItsProcessAccess() {
         TenantContext.set("customer-a", "tester.a");
         Nonconformity ncr = nonconformity("ncr-1", null);

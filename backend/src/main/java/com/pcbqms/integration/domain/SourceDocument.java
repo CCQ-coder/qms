@@ -16,6 +16,8 @@ public class SourceDocument {
     private String documentType;
     private String originalFilename;
     private String storagePath;
+    private String contentHash;
+    private LocalDateTime processingUpdatedAt;
     private String status;
     private String extractedPayloadJson;
     private String confirmedPayloadJson;

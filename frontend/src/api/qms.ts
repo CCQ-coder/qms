@@ -2,7 +2,7 @@ import { http } from '@/api/http'
 import { requireHttpsDeviceToken } from '@/utils/device-upload-token'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
-  InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary,
+  InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary, ScrapImportJob,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage, FinishedTestDeviceSummary, FinishedTestSettlement
   , MenuAccess, GatewayHostStatus, FinishedTestMonthlyAnalytics, DailyMaterialBadBoards
 } from '@/types/qms'
@@ -223,6 +223,32 @@ export const qmsApi = {
     return data.data
   },
 
+  async uploadScrapImport(file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await http.post<ApiResponse<ScrapImportJob>>('/api/v1/nonconformities/scrap-imports', form)
+    return data.data
+  },
+
+  async listScrapImports() {
+    const { data } = await http.get<ApiResponse<ScrapImportJob[]>>('/api/v1/nonconformities/scrap-imports')
+    return data.data
+  },
+
+  async getScrapImport(id: string) {
+    const { data } = await http.get<ApiResponse<ScrapImportJob>>(`/api/v1/nonconformities/scrap-imports/${encodeURIComponent(id)}`)
+    return data.data
+  },
+
+  async downloadScrapImportTemplate() {
+    const { data } = await http.get('/api/v1/reports/scrap-import-template.xlsx', { responseType: 'blob' })
+    return data as Blob
+  },
+
+  async bindImportedScrapRow(ncrId: string, detailId: string, workOrderNo: string) {
+    await http.post(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}/details/${encodeURIComponent(detailId)}/bind-work-order`, { workOrderNo })
+  },
+
   async approveDeviceDisposition(ncrId: string, expectedBadCount: number) {
     const { data } = await http.post<ApiResponse<Nonconformity>>(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}/approve`, null, { params: { expectedBadCount } })
     return data.data
@@ -369,6 +395,13 @@ export const qmsApi = {
   async batchBindFlyingProbeWorkOrder(telemetryIds: string[], workOrderNo: string) {
     const { data } = await http.post<ApiResponse<{ bound: number; skipped: number; failed: number }>>(
       '/api/v1/inspection/flying-probe-projections/batch-bind-work-order', { telemetryIds, workOrderNo }
+    )
+    return data.data
+  },
+
+  async batchManageTelemetryWorkOrder(telemetryIds: string[], action: 'BIND' | 'CANCEL', workOrderNo?: string) {
+    const { data } = await http.post<ApiResponse<{ changed: number; skipped: number; failed: number; reasons: string[] }>>(
+      '/api/v1/equipment/telemetry/batch-work-order', { telemetryIds, action, workOrderNo }
     )
     return data.data
   },

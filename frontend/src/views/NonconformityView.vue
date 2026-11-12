@@ -6,6 +6,7 @@ import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
 import { moveColumn } from './nonconformityColumns'
 import { finishedTestProcess, responsibleDepartmentForProcess } from './nonconformityForm'
+import ScrapImportPanel from './ScrapImportPanel.vue'
 import type { ManualNonconformityInput, Nonconformity, NonconformityDetail, ProcessMaster, WorkOrder } from '@/types/qms'
 
 const loading = ref(false)
@@ -20,11 +21,21 @@ const canReview = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'
 const manualDialog = ref(false)
 const manualSaving = ref(false)
 const selectedDetailNcrId = ref('')
+const detailListDialog = ref(false)
 const selectedLine = ref<NonconformityDetail>()
 const detailDialog = ref(false)
 const detailSaving = ref(false)
 const detailForm = reactive({ scrapQuantity: 1, scrapReason: '' })
 const draggedColumn = ref('')
+const filters = reactive({ ncrNo: '', dateRange: [] as string[], processName: '', department: '' })
+const appliedFilters = ref({ ncrNo: '', dateRange: [] as string[], processName: '', department: '' })
+const filteredNcrs = computed(() => ncrs.value.filter((ncr) => {
+  const filter = appliedFilters.value
+  return (!filter.ncrNo || ncr.ncrNo.toLowerCase().includes(filter.ncrNo.toLowerCase()))
+    && (!filter.dateRange.length || Boolean(ncr.detectionDate && ncr.detectionDate >= filter.dateRange[0] && ncr.detectionDate <= filter.dateRange[1]))
+    && (!filter.processName || (ncr.processName ?? '').includes(filter.processName))
+    && (!filter.department || (ncr.responsibleDepartment ?? '').includes(filter.department))
+}))
 const ncrColumns = ref([
   { key: 'ncrNo', label: '单据编号', width: 180 },
   { key: 'detectionDate', label: '检测日期', width: 120 },
@@ -105,11 +116,17 @@ function openManualDialog() {
 }
 
 function openDetail(line: NonconformityDetail) {
+  detailListDialog.value = false
   selectedLine.value = line
   detailForm.scrapQuantity = line.scrapQuantity
   detailForm.scrapReason = line.scrapReason ?? ''
   detailDialog.value = true
   void loadScrapReasons()
+}
+
+function openDetailList(ncr: Nonconformity) {
+  selectedDetailNcrId.value = ncr.id
+  detailListDialog.value = true
 }
 
 function reorderColumn(target: string) {
@@ -210,8 +227,16 @@ onMounted(async () => {
 <template>
   <section class="page-stack">
     <el-card shadow="never" class="content-card" v-loading="loading">
-      <template #header><div class="card-header"><span>不良品处置单</span><div><el-button type="primary" @click="openManualDialog">新增</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
-      <el-table :key="ncrColumns.map(column => column.key).join(',')" :data="ncrs" empty-text="暂无不良品处置单" border max-height="600" @header-dragend="resizeColumn">
+      <template #header><div class="card-header"><span>不良品处置单</span><div><el-button type="primary" @click="openManualDialog">新增</el-button><ScrapImportPanel @imported="load" /><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
+      <div class="report-filter">
+        <el-input v-model="filters.ncrNo" clearable placeholder="单据编号" aria-label="单据编号" />
+        <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
+        <el-input v-model="filters.processName" clearable placeholder="检验工序" aria-label="检验工序" />
+        <el-input v-model="filters.department" clearable placeholder="责任部门" aria-label="责任部门" />
+        <el-button type="primary" @click="appliedFilters = { ...filters, dateRange: [...filters.dateRange] }">查询</el-button>
+        <el-button @click="Object.assign(filters, { ncrNo: '', dateRange: [], processName: '', department: '' }); appliedFilters = { ...filters, dateRange: [] }">重置</el-button>
+      </div>
+      <el-table :key="ncrColumns.map(column => column.key).join(',')" :data="filteredNcrs" empty-text="暂无不良品处置单" border max-height="600" @header-dragend="resizeColumn">
         <el-table-column v-for="column in ncrColumns" :key="column.key" :label="column.label" :width="column.width" :fixed="column.key === 'operation' ? 'right' : undefined" :show-overflow-tooltip="['remark', 'responsibleDepartment'].includes(column.key)">
           <template #header><span :draggable="column.key !== 'operation'" :title="column.key === 'operation' ? '' : '拖动表头调整顺序，拖动列边缘调整宽度'" @dragstart="draggedColumn = column.key" @dragover.prevent @drop.prevent="reorderColumn(column.key)" @dragend="draggedColumn = ''">{{ column.label }}</span></template>
           <template #default="scope">
@@ -227,14 +252,13 @@ onMounted(async () => {
             <template v-else-if="column.key === 'reviewedBy'">{{ scope.row.reviewedBy || '—' }}</template>
             <template v-else-if="column.key === 'reviewedAt'">{{ formatDateTime(scope.row.reviewedAt) }}</template>
             <el-tag v-else-if="column.key === 'status'" :type="['APPROVED', 'CLOSED'].includes(scope.row.status) ? 'success' : 'warning'">{{ statusText(scope.row.status) }}</el-tag>
-            <template v-else-if="column.key === 'operation'"><el-button type="primary" link @click="selectedDetailNcrId = scope.row.id">查看明细</el-button><el-button v-if="canReview && scope.row.status === 'PENDING_REVIEW'" type="primary" link :disabled="saving" @click="approve(scope.row)">审核</el-button></template>
+            <template v-else-if="column.key === 'operation'"><el-button type="primary" link @click="openDetailList(scope.row)">查看明细</el-button><el-button v-if="canReview && scope.row.status === 'PENDING_REVIEW'" type="primary" link :disabled="saving" @click="approve(scope.row)">审核</el-button></template>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="content-card">
-      <template #header><div class="card-header"><span>明细</span><span v-if="selectedDetailNcr" class="helper-text">{{ selectedDetailNcr.ncrNo }}</span></div></template>
+    <el-dialog v-model="detailListDialog" :title="`不良品明细 · ${selectedDetailNcr?.ncrNo || ''}`" width="min(1300px, 96vw)">
       <paged-table :key="selectedDetailNcrId" :data="selectedDetailNcr?.details ?? []" empty-text="暂无不良品明细">
         <el-table-column prop="lineNo" label="行号" min-width="70" />
         <el-table-column prop="workOrderNo" label="生产指令" min-width="155" />
@@ -249,9 +273,9 @@ onMounted(async () => {
         <el-table-column label="状态" min-width="100"><template #default="scope">{{ statusText(scope.row.status) }}</template></el-table-column>
         <el-table-column label="操作" width="85" fixed="right"><template #default="scope"><el-button link type="primary" @click="openDetail(scope.row)">{{ canEditDetail(scope.row) ? '编辑' : '查看' }}</el-button></template></el-table-column>
       </paged-table>
-    </el-card>
+    </el-dialog>
 
-    <el-dialog v-model="detailDialog" title="不良品明细" width="min(650px, 94vw)">
+    <el-dialog v-model="detailDialog" title="不良品明细" width="min(650px, 94vw)" @closed="detailListDialog = true">
       <el-descriptions v-if="selectedLine" :column="2" border>
         <el-descriptions-item label="行号">{{ selectedLine.lineNo }}</el-descriptions-item>
         <el-descriptions-item label="生产指令">{{ selectedLine.workOrderNo }}</el-descriptions-item>
