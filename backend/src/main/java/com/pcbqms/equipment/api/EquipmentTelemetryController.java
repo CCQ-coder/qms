@@ -80,12 +80,12 @@ public class EquipmentTelemetryController {
                 changed++;
             } catch (IllegalArgumentException exception) {
                 skipped++;
-                if (reasons.size() < 20) reasons.add(id + "：" + exception.getMessage());
+                reasons.add(id + "：" + exception.getMessage());
             } catch (AccessDeniedException exception) {
                 throw exception;
             } catch (RuntimeException exception) {
                 failed++;
-                if (reasons.size() < 20) reasons.add(id + "：处理失败，请查看服务日志");
+                reasons.add(id + "：处理失败，请查看服务日志");
                 log.warn("设备记录批量关联失败，记录={}", id, exception);
             }
         }

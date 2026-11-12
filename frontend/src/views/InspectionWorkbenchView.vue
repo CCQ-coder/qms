@@ -596,6 +596,16 @@ function openSelectedRecordBindingDialog() {
   openBindingDialog(records[0], records)
 }
 
+function describeBatchReasons(reasons: string[], records: EquipmentTelemetryRecord[]) {
+  const labels = new Map(records.map((record) => [record.id,
+    `${formatDateTime(record.deviceTime)} · ${record.equipmentCode || record.machineName || '设备'} · ${record.materialNo || '无料号'}`]))
+  return reasons.map((reason) => {
+    const separator = reason.indexOf('：')
+    const id = reason.slice(0, separator)
+    return separator >= 0 && labels.has(id) ? `${labels.get(id)}：${reason.slice(separator + 1)}` : reason
+  }).join('； ')
+}
+
 async function cancelSelectedRecordBindings() {
   const records = selectedDeviceRecords.value.filter((record) => record.workOrderNo)
   if (!records.length) return
@@ -606,7 +616,7 @@ async function cancelSelectedRecordBindings() {
   try {
     const result = await qmsApi.batchManageTelemetryWorkOrder(records.map((record) => record.id), 'CANCEL')
     ElMessage.success(`已取消 ${result.changed} 条；跳过 ${result.skipped} 条，失败 ${result.failed} 条`)
-    if (result.reasons.length) await ElMessageBox.alert(result.reasons.join('；'), '跳过记录原因')
+    if (result.reasons.length) await ElMessageBox.alert(describeBatchReasons(result.reasons, records), '跳过记录原因')
     selectedProbeRecords.value = []
     selectedZhongboRecords.value = []
     selectedAllRecords.value = []
@@ -757,7 +767,8 @@ async function submitBinding() {
       const message = `已绑定 ${'bound' in result ? result.bound : result.changed} 条，跳过 ${result.skipped} 条，失败 ${result.failed} 条`
       if (result.skipped || result.failed) ElMessage.warning(message)
       else ElMessage.success(message)
-      if ('reasons' in result && result.reasons.length) await ElMessageBox.alert(result.reasons.join('；'), '跳过记录原因')
+      if ('reasons' in result && result.reasons.length) await ElMessageBox.alert(
+        describeBatchReasons(result.reasons, batchRecords as EquipmentTelemetryRecord[]), '跳过记录原因')
     } else if (record.eventType === 'ZHONGBO_TEST_REPORT') {
       await qmsApi.bindZhongboWorkOrder(record.id, selected.workOrderNo)
     } else {
