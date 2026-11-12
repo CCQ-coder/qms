@@ -114,7 +114,7 @@ onMounted(() => { void load() })
 
 <template>
   <el-card shadow="never" class="content-card">
-    <template #header><div class="card-header"><span>不良品明细表</span><div><ScrapImportPanel @imported="load" /><el-button type="primary" :loading="exporting" @click="exportScrapStatistics">导出报废统计</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
+    <template #header><div class="card-header"><span>不良品明细表</span><div class="ncr-card-actions"><ScrapImportPanel @imported="load" /><el-button type="primary" :loading="exporting" @click="exportScrapStatistics">导出报废统计</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
     <div class="report-filter ncr-details-filter">
       <el-input v-model="filters.ncrNo" clearable placeholder="单据编号" aria-label="单据编号" />
       <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
@@ -123,8 +123,7 @@ onMounted(() => { void load() })
       <el-input v-model="filters.workOrderNo" clearable placeholder="生产指令" aria-label="生产指令" />
       <el-input v-model="filters.internalNo" clearable placeholder="厂内编号" aria-label="厂内编号" />
       <el-input v-model="filters.materialNo" clearable placeholder="料号" aria-label="料号" />
-      <el-button type="primary" @click="appliedFilters = { ...filters, dateRange: [...filters.dateRange] }">查询</el-button>
-      <el-button @click="resetFilters">重置</el-button>
+      <div class="ncr-details-filter-actions"><el-button type="primary" @click="appliedFilters = { ...filters, dateRange: [...filters.dateRange] }">查询</el-button><el-button @click="resetFilters">重置</el-button></div>
     </div>
     <el-table v-loading="loading" :data="filteredRows" empty-text="暂无不良品明细" border>
       <el-table-column label="单据编号" min-width="180" fixed="left"><template #default="{ row }">{{ row.ncr.ncrNo }}</template></el-table-column>
@@ -133,7 +132,6 @@ onMounted(() => { void load() })
       <el-table-column label="检验工序" min-width="130"><template #default="{ row }">{{ row.ncr.processName || '—' }}</template></el-table-column>
       <el-table-column label="责任部门" min-width="130"><template #default="{ row }">{{ row.ncr.responsibleDepartment || '—' }}</template></el-table-column>
       <el-table-column label="处置方式" min-width="105"><template #default="{ row }">{{ dispositionText(row.ncr.dispositionMethod) }}</template></el-table-column>
-      <el-table-column label="行号" min-width="70"><template #default="{ row }">{{ row.detail.lineNo }}</template></el-table-column>
       <el-table-column label="生产指令" min-width="150"><template #default="{ row }">{{ row.detail.workOrderNo || '待关联' }}</template></el-table-column>
       <el-table-column label="厂内编号" min-width="135"><template #default="{ row }">{{ row.detail.internalProductNo || '—' }}</template></el-table-column>
       <el-table-column label="料号" min-width="125"><template #default="{ row }">{{ row.detail.materialNo || '—' }}</template></el-table-column>

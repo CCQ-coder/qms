@@ -25,7 +25,8 @@ public record NonconformityDetailResponse(
             workOrder == null ? (detail.getWorkOrderId() == null ? null : "已删除工单") : workOrder.getWorkOrderNo(),
             detail.getInternalProductNo() != null ? detail.getInternalProductNo()
                 : workOrder == null ? null : workOrder.getInternalProductNo(),
-            workOrder == null ? null : workOrder.getMaterialNo(),
+            detail.getMaterialNo() != null ? detail.getMaterialNo()
+                : workOrder == null ? null : workOrder.getMaterialNo(),
             detail.getLayerCount() != null ? detail.getLayerCount()
                 : workOrder == null ? null : workOrder.getLayerCount(),
             detail.getProcessName(), detail.getUnit(), detail.getSinglePcsArea(), detail.getScrapQuantity(),

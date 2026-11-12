@@ -59,7 +59,9 @@ function canEditDetail(line?: NonconformityDetail) {
 const detailEditable = computed(() => canEditDetail(selectedLine.value))
 const calculatedScrapArea = computed(() => selectedLine.value?.singlePcsArea == null || !Number.isInteger(detailForm.scrapQuantity)
   ? '—' : Number((selectedLine.value.singlePcsArea * detailForm.scrapQuantity).toFixed(6)))
-const newDetail = () => ({ workOrderNo: '', unit: 'PCS', scrapQuantity: 1, scrapReason: '', remark: '' })
+const newDetail = () => ({ workOrderNo: '', internalProductNo: '', materialNo: '', layerCount: undefined as number | undefined,
+  unit: 'PCS', singlePcsArea: undefined as number | undefined, scrapQuantity: 1,
+  scrapArea: undefined as number | undefined, scrapReason: '', remark: '' })
 const manualForm = reactive<ManualNonconformityInput>({
   detectionDate: formatDate(new Date()), shiftName: '', processCode: '', processName: '',
   responsibleDepartment: '测试', remark: '', dispositionMethod: 'SCRAP', details: [newDetail()]
@@ -101,6 +103,15 @@ function selectProcess(code: string) {
   const process = processes.value.find((item) => item.processCode === code)
   manualForm.processName = process?.processName ?? ''
   manualForm.responsibleDepartment = responsibleDepartmentForProcess(process, code)
+}
+
+function selectManualWorkOrder(line: ManualNonconformityInput['details'][number]) {
+  const order = workOrderOptions.value.find(item => item.workOrderNo === line.workOrderNo)
+  if (!order) return
+  line.internalProductNo = order.internalProductNo || line.internalProductNo
+  line.materialNo = order.materialNo || line.materialNo
+  line.layerCount = order.layerCount ?? line.layerCount
+  line.singlePcsArea = order.singlePcsArea ?? line.singlePcsArea
 }
 
 function openManualDialog() {
@@ -171,8 +182,9 @@ async function createManualNcr() {
     ElMessage.warning('请填写检测日期、工序编码和检验工序')
     return
   }
-  if (!manualForm.details.length || manualForm.details.some((line) => !line.workOrderNo.trim() || line.scrapQuantity < 1)) {
-    ElMessage.warning('每条明细都需要生产指令和大于 0 的报废数量')
+  if (!manualForm.details.length || manualForm.details.some((line) =>
+    (!line.workOrderNo.trim() && !line.internalProductNo.trim()) || !Number.isInteger(line.scrapQuantity) || line.scrapQuantity < 1)) {
+    ElMessage.warning('每条明细都需要生产指令或厂内编号，以及大于 0 的报废数量')
     return
   }
   manualSaving.value = true
@@ -181,7 +193,8 @@ async function createManualNcr() {
       ...manualForm,
       processCode: manualForm.processCode.trim(),
       processName: manualForm.processName.trim(),
-      details: manualForm.details.map((line) => ({ ...line, workOrderNo: line.workOrderNo.trim() }))
+      details: manualForm.details.map((line) => ({ ...line, workOrderNo: line.workOrderNo.trim(),
+        internalProductNo: line.internalProductNo.trim(), materialNo: line.materialNo.trim() }))
     })
     manualDialog.value = false
     selectedDetailNcrId.value = created.id
@@ -227,7 +240,7 @@ onMounted(async () => {
 <template>
   <section class="page-stack">
     <el-card shadow="never" class="content-card" v-loading="loading">
-      <template #header><div class="card-header"><span>不良品处置单</span><div><el-button type="primary" @click="openManualDialog">新增</el-button><ScrapImportPanel @imported="load" /><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
+      <template #header><div class="card-header"><span>不良品处置单</span><div class="ncr-card-actions"><el-button type="primary" @click="openManualDialog">新增</el-button><ScrapImportPanel @imported="load" /><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
       <div class="report-filter ncr-list-filter">
         <el-input v-model="filters.ncrNo" clearable placeholder="单据编号" aria-label="单据编号" />
         <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
@@ -260,7 +273,6 @@ onMounted(async () => {
 
     <el-dialog v-model="detailListDialog" :title="`不良品明细 · ${selectedDetailNcr?.ncrNo || ''}`" width="min(1300px, 96vw)">
       <paged-table :key="selectedDetailNcrId" :data="selectedDetailNcr?.details ?? []" empty-text="暂无不良品明细">
-        <el-table-column prop="lineNo" label="行号" min-width="70" />
         <el-table-column prop="workOrderNo" label="生产指令" min-width="155" />
         <el-table-column prop="internalProductNo" label="厂内编号" min-width="135"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
         <el-table-column prop="processName" label="工序" min-width="125" />
@@ -277,7 +289,6 @@ onMounted(async () => {
 
     <el-dialog v-model="detailDialog" title="不良品明细" width="min(650px, 94vw)" @closed="detailListDialog = true">
       <el-descriptions v-if="selectedLine" :column="2" border>
-        <el-descriptions-item label="行号">{{ selectedLine.lineNo }}</el-descriptions-item>
         <el-descriptions-item label="生产指令">{{ selectedLine.workOrderNo }}</el-descriptions-item>
         <el-descriptions-item label="厂内编号">{{ selectedLine.internalProductNo || '—' }}</el-descriptions-item>
         <el-descriptions-item label="工序">{{ selectedLine.processName }}</el-descriptions-item>
@@ -296,26 +307,29 @@ onMounted(async () => {
         <div class="form-grid">
           <el-form-item label="检测日期" required><el-date-picker v-model="manualForm.detectionDate" type="date" value-format="YYYY-MM-DD" class="full-width" /></el-form-item>
           <el-form-item label="班次"><el-input v-model="manualForm.shiftName" placeholder="如白班" /></el-form-item>
-          <el-form-item label="工序编码" required><el-select v-model="manualForm.processCode" filterable placeholder="请选择工序" class="full-width" @change="selectProcess"><el-option v-for="process in processes" :key="process.id" :label="`${process.processCode} · ${process.processName}`" :value="process.processCode" /></el-select></el-form-item>
-          <el-form-item label="检验工序" required><el-input v-model="manualForm.processName" readonly /></el-form-item>
+          <el-form-item label="检验工序" required><el-select v-model="manualForm.processCode" filterable placeholder="请选择检验工序" class="full-width" @change="selectProcess"><el-option v-for="process in processes" :key="process.id" :label="process.processName" :value="process.processCode" /></el-select></el-form-item>
           <el-form-item label="责任部门"><el-select v-model="manualForm.responsibleDepartment" filterable clearable placeholder="请选择责任部门" class="full-width"><el-option v-for="department in departments" :key="department" :label="department" :value="department" /></el-select></el-form-item>
           <el-form-item label="处置方式"><el-select v-model="manualForm.dispositionMethod" class="full-width"><el-option label="报废" value="SCRAP" /><el-option label="返工" value="REWORK" /><el-option label="让步接收" value="CONCESSION" /></el-select></el-form-item>
           <el-form-item label="备注"><el-input v-model="manualForm.remark" /></el-form-item>
         </div>
         <div class="item-editor-header"><strong>明细行</strong><el-button link type="primary" @click="manualForm.details.push(newDetail())">+ 添加明细</el-button></div>
         <div class="ncr-detail-editor-scroll">
-          <div class="ncr-detail-editor ncr-detail-editor-header"><span>行号</span><span>生产指令号 *</span><span>单位</span><span>报废数量 *</span><span>报废原因</span><span>备注</span><span>操作</span></div>
+          <div class="ncr-detail-editor ncr-detail-editor-header"><span>生产指令</span><span>厂内编号 *</span><span>料号</span><span>层数</span><span>单位</span><span>单 PCS 面积</span><span>报废数量 *</span><span>报废总面积</span><span>报废原因</span><span>备注</span><span>操作</span></div>
           <div v-for="(line, index) in manualForm.details" :key="index" class="ncr-detail-editor">
-            <strong>{{ index + 1 }}</strong>
-            <el-select v-model="line.workOrderNo" filterable remote :remote-method="searchWorkOrders" placeholder="选择生产指令号 *"><el-option v-for="order in workOrderOptions" :key="order.id" :label="`${order.workOrderNo} · ${order.internalProductNo || '无厂内编号'}`" :value="order.workOrderNo" /></el-select>
+            <el-select v-model="line.workOrderNo" filterable remote clearable :remote-method="searchWorkOrders" placeholder="可选生产指令" @change="selectManualWorkOrder(line)"><el-option v-for="order in workOrderOptions" :key="order.id" :label="`${order.workOrderNo} · ${order.internalProductNo || '无厂内编号'}`" :value="order.workOrderNo" /></el-select>
+            <el-input v-model="line.internalProductNo" placeholder="厂内编号" />
+            <el-input v-model="line.materialNo" placeholder="料号" />
+            <el-input-number v-model="line.layerCount" :min="1" :precision="0" placeholder="层数" />
             <el-input v-model="line.unit" placeholder="单位" />
+            <el-input-number v-model="line.singlePcsArea" :min="0" :precision="6" placeholder="单 PCS 面积" />
             <el-input-number v-model="line.scrapQuantity" :min="1" class="full-width" />
+            <el-input-number v-model="line.scrapArea" :min="0" :precision="6" placeholder="自动计算" />
             <el-select v-model="line.scrapReason" filterable clearable placeholder="选择报废原因"><el-option v-for="reason in scrapReasons" :key="reason" :label="reason" :value="reason" /></el-select>
             <el-input v-model="line.remark" placeholder="备注" />
             <el-button link type="danger" :disabled="manualForm.details.length === 1" @click="manualForm.details.splice(index, 1)">移除</el-button>
           </div>
         </div>
-        <p class="helper-text">厂内编号和单 PCS 面积从生产指令读取，报废总面积按单 PCS 面积 × 报废数量计算。</p>
+        <p class="helper-text">生产指令可选；未选择时填写厂内编号。未填写报废总面积时按单 PCS 面积 × 报废数量计算。</p>
       </el-form>
       <template #footer><el-button @click="manualDialog = false">取消</el-button><el-button type="primary" :loading="manualSaving" @click="createManualNcr">保存处置单</el-button></template>
     </el-dialog>

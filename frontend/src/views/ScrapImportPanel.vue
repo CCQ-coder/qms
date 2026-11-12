@@ -66,7 +66,7 @@ onBeforeUnmount(() => { if (timer != null) window.clearInterval(timer) })
 </script>
 
 <template>
-  <el-button v-if="canImport" type="primary" @click="open">批量导入报废明细</el-button>
+  <div v-if="canImport" class="scrap-import-actions"><el-button type="primary" @click="open">批量导入报废明细</el-button><el-button @click="downloadTemplate">下载模板</el-button></div>
   <el-dialog v-model="visible" title="批量导入报废明细" width="min(900px, 94vw)">
     <p class="helper-text">按十列模板填写。上传后后台逐行导入；未找到唯一合适生产指令的明细可在报废明细表手工关联。</p>
     <div class="task-queue-actions">

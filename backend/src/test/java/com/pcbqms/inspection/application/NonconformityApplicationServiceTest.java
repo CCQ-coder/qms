@@ -298,7 +298,8 @@ class NonconformityApplicationServiceTest {
         when(nonconformityMapper.selectCount(any())).thenReturn(0L);
         var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 10, 20), "白班", "FQC", "成品测试",
             "品质部", "手工登记", "SCRAP", "BATCH-001", List.of(
-                new CreateNonconformityDetailRequest("WO-001", "PCS", 4, "板边破损", "复核后报废")));
+                new CreateNonconformityDetailRequest("WO-001", "PCS", 4, "板边破损", "复核后报废",
+                    null, null, null, null, null)));
 
         var response = service().createManualNonconformity(request);
 
@@ -315,6 +316,24 @@ class NonconformityApplicationServiceTest {
     }
 
     @Test
+    void createsManualScrapFromEnteredFactoryNumberWithoutWorkOrder() {
+        TenantContext.set("customer-a", "tester.a");
+        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
+        var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 11, 3), "", "FQC", "成品测试",
+            "阻焊", null, "SCRAP", null, List.of(
+                new CreateNonconformityDetailRequest(null, "PCS", 8, "擦花", "", "12893", "12893a", 2,
+                    new BigDecimal("0.00897"), null)));
+
+        var response = service().createManualNonconformity(request);
+
+        assertThat(response.workOrderNo()).isNull();
+        assertThat(response.details().getFirst().internalProductNo()).isEqualTo("12893");
+        assertThat(response.details().getFirst().materialNo()).isEqualTo("12893a");
+        assertThat(response.details().getFirst().scrapArea()).isEqualByComparingTo("0.07176");
+        verify(workOrderMapper, never()).selectOne(any());
+    }
+
+    @Test
     void importsUnmatchedExcelRowWithoutLosingTheOriginalScrapValues() {
         TenantContext.set("customer-a", "admin");
         var row = new ScrapExcelImportParser.ScrapRow(2, LocalDate.of(2026, 10, 14), 4, "31281", 55,
@@ -328,6 +347,7 @@ class NonconformityApplicationServiceTest {
         verify(nonconformityMapper).insert(ncr.capture());
         verify(nonconformityDetailMapper).insert(detail.capture());
         assertThat(ncr.getValue().getSourceType()).isEqualTo("EXCEL");
+        assertThat(ncr.getValue().getNcrNo()).matches("NCR-\\d{8}-\\d{4}");
         assertThat(ncr.getValue().getWorkOrderId()).isNull();
         assertThat(ncr.getValue().getSourceGroupKey()).isEqualTo("scrap:document-1:2");
         assertThat(detail.getValue().getInternalProductNo()).isEqualTo("31281");

@@ -268,11 +268,21 @@ public class NonconformityApplicationService {
         String tenantCode = TenantContext.tenantCode();
         List<WorkOrder> workOrders = new ArrayList<>();
         for (var line : request.details()) {
-            WorkOrder workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
-                .eq(WorkOrder::getTenantCode, tenantCode)
-                .eq(WorkOrder::getWorkOrderNo, line.workOrderNo().trim()));
-            if (workOrder == null || !tenantCode.equals(workOrder.getTenantCode())) {
-                throw new IllegalArgumentException("生产指令不存在或无权操作：" + line.workOrderNo());
+            WorkOrder workOrder = null;
+            if (StringUtils.hasText(line.workOrderNo())) {
+                workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
+                    .eq(WorkOrder::getTenantCode, tenantCode)
+                    .eq(WorkOrder::getWorkOrderNo, line.workOrderNo().trim()));
+                if (workOrder == null || !tenantCode.equals(workOrder.getTenantCode())) {
+                    throw new IllegalArgumentException("生产指令不存在或无权操作：" + line.workOrderNo());
+                }
+            } else if (!StringUtils.hasText(line.internalProductNo())) {
+                throw new IllegalArgumentException("未选择生产指令时必须填写厂内编号");
+            }
+            if (line.layerCount() != null && line.layerCount() < 1
+                || line.singlePcsArea() != null && line.singlePcsArea().signum() < 0
+                || line.scrapArea() != null && line.scrapArea().signum() < 0) {
+                throw new IllegalArgumentException("层数和面积不能为负，层数须大于零");
             }
             workOrders.add(workOrder);
         }
@@ -280,7 +290,7 @@ public class NonconformityApplicationService {
         ncr.setId(UUID.randomUUID().toString());
         ncr.setTenantCode(tenantCode);
         ncr.setNcrNo(nextNcrNo());
-        ncr.setWorkOrderId(workOrders.getFirst().getId());
+        ncr.setWorkOrderId(workOrders.getFirst() == null ? null : workOrders.getFirst().getId());
         ncr.setDetectionDate(request.detectionDate());
         ncr.setShiftName(request.shiftName());
         ncr.setProcessCode(request.processCode().trim());
@@ -299,10 +309,20 @@ public class NonconformityApplicationService {
             WorkOrder workOrder = workOrders.get(index);
             NonconformityDetail detail = newDetail(ncr, index + 1, workOrder, line.unit(), line.scrapQuantity(),
                 line.scrapReason(), line.remark());
+            detail.setInternalProductNo(StringUtils.hasText(line.internalProductNo())
+                ? line.internalProductNo().trim() : workOrder == null ? null : workOrder.getInternalProductNo());
+            detail.setMaterialNo(StringUtils.hasText(line.materialNo())
+                ? line.materialNo().trim() : workOrder == null ? null : workOrder.getMaterialNo());
+            detail.setLayerCount(line.layerCount() != null ? line.layerCount()
+                : workOrder == null ? null : workOrder.getLayerCount());
+            if (line.singlePcsArea() != null) detail.setSinglePcsArea(line.singlePcsArea());
+            detail.setScrapArea(line.scrapArea() != null ? line.scrapArea()
+                : detail.getSinglePcsArea() == null ? null
+                    : detail.getSinglePcsArea().multiply(BigDecimal.valueOf(line.scrapQuantity())));
             nonconformityDetailMapper.insert(detail);
             responses.add(NonconformityDetailResponse.from(detail, workOrder));
         }
-        return NonconformityResponse.from(ncr, workOrders.getFirst().getWorkOrderNo(), request.batchNo(), responses);
+        return NonconformityResponse.from(ncr, workOrders.getFirst() == null ? null : workOrders.getFirst().getWorkOrderNo(), request.batchNo(), responses);
     }
 
     @Transactional
@@ -315,7 +335,7 @@ public class NonconformityApplicationService {
         Nonconformity ncr = new Nonconformity();
         ncr.setId(UUID.randomUUID().toString());
         ncr.setTenantCode(tenant);
-        ncr.setNcrNo("NCR-EXCEL-" + documentId + "-" + row.rowNumber());
+        ncr.setNcrNo(nextNcrNo());
         ncr.setWorkOrderId(order == null ? null : order.getId());
         ncr.setStatus("OPEN");
         ncr.setSourceType("EXCEL");
@@ -388,13 +408,13 @@ public class NonconformityApplicationService {
         detail.setTenantCode(ncr.getTenantCode());
         detail.setNonconformityId(ncr.getId());
         detail.setLineNo(lineNo);
-        detail.setWorkOrderId(workOrder.getId());
+        detail.setWorkOrderId(workOrder == null ? null : workOrder.getId());
         detail.setProcessCode(ncr.getProcessCode());
         detail.setProcessName(ncr.getProcessName());
         detail.setUnit(StringUtils.hasText(unit) ? unit.trim() : "PCS");
-        detail.setSinglePcsArea(workOrder.getSinglePcsArea());
+        detail.setSinglePcsArea(workOrder == null ? null : workOrder.getSinglePcsArea());
         detail.setScrapQuantity(scrapQuantity);
-        detail.setScrapArea(workOrder.getSinglePcsArea() == null ? null
+        detail.setScrapArea(workOrder == null || workOrder.getSinglePcsArea() == null ? null
             : workOrder.getSinglePcsArea().multiply(BigDecimal.valueOf(scrapQuantity)));
         detail.setScrapReason(scrapReason);
         detail.setRemark(remark);

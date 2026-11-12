@@ -326,8 +326,13 @@ export type ManualNonconformityInput = {
   batchNo?: string
   details: Array<{
     workOrderNo: string
+    internalProductNo: string
+    materialNo: string
+    layerCount?: number
     unit: string
+    singlePcsArea?: number
     scrapQuantity: number
+    scrapArea?: number
     scrapReason?: string
     remark?: string
   }>
