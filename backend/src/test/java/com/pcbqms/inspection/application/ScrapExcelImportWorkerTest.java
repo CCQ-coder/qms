@@ -2,11 +2,13 @@ package com.pcbqms.inspection.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.integration.domain.SourceDocument;
 import com.pcbqms.integration.infrastructure.persistence.SourceDocumentMapper;
 import com.pcbqms.integration.infrastructure.storage.LocalAttachmentStorage;
@@ -21,15 +23,29 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class ScrapExcelImportWorkerTest {
+    @Mock private JdbcTemplate jdbcTemplate;
     @Mock private SourceDocumentMapper documentMapper;
     @Mock private LocalAttachmentStorage storage;
     @Mock private ScrapExcelImportParser parser;
     @Mock private WorkOrderMapper workOrderMapper;
     @Mock private NonconformityApplicationService nonconformityService;
     @TempDir java.nio.file.Path directory;
+
+    @Test
+    void pollsImportJobsWithinTheTenantContext() {
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class))).thenReturn(List.of("customer-a"));
+        when(documentMapper.selectList(any())).thenAnswer(call -> {
+            assertThat(TenantContext.tenantCode()).isEqualTo("customer-a");
+            return List.of();
+        });
+
+        new ScrapExcelImportWorker(jdbcTemplate, documentMapper, storage, parser, workOrderMapper,
+            nonconformityService, new ObjectMapper()).run();
+    }
 
     @Test
     void processesInBackgroundAndLeavesUnmatchedRowsVisibleForManualBinding() throws Exception {
@@ -45,13 +61,14 @@ class ScrapExcelImportWorkerTest {
         var row = new ScrapExcelImportParser.ScrapRow(2, LocalDate.of(2026, 10, 14), 4, "31281", 55,
             new BigDecimal("0.02907"), "锣坏", "成型", new BigDecimal("1.59885"), "来料", "");
         when(documentMapper.selectList(any())).thenReturn(List.of(document));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class))).thenReturn(List.of("customer-a"));
         when(storage.resolve(document.getStoragePath())).thenReturn(file);
         when(parser.parse(any(byte[].class))).thenReturn(new ScrapExcelImportParser.ParseResult(List.of(row), List.of()));
         when(workOrderMapper.selectList(any())).thenReturn(List.of());
         when(nonconformityService.createImportedScrapRow(eq("document-1"), eq("importer"), eq(row), eq(null)))
             .thenReturn(true);
 
-        new ScrapExcelImportWorker(documentMapper, storage, parser, workOrderMapper,
+        new ScrapExcelImportWorker(jdbcTemplate, documentMapper, storage, parser, workOrderMapper,
             nonconformityService, new ObjectMapper()).run();
 
         verify(nonconformityService).createImportedScrapRow("document-1", "importer", row, null);

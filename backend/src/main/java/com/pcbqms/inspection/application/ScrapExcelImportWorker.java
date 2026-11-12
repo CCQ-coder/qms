@@ -16,12 +16,14 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ScrapExcelImportWorker {
+    private final JdbcTemplate jdbcTemplate;
     private final SourceDocumentMapper documentMapper;
     private final LocalAttachmentStorage storage;
     private final ScrapExcelImportParser parser;
@@ -31,16 +33,20 @@ public class ScrapExcelImportWorker {
 
     @Scheduled(fixedDelayString = "${qms.scrap-import.fixed-delay-ms:3000}")
     public synchronized void run() {
-        List<SourceDocument> jobs = documentMapper.selectList(Wrappers.lambdaQuery(SourceDocument.class)
-            .eq(SourceDocument::getDocumentType, ScrapExcelImportService.DOCUMENT_TYPE)
-            .in(SourceDocument::getStatus, "PENDING", "PROCESSING")
-            .orderByAsc(SourceDocument::getCreatedAt).last("LIMIT 5"));
-        for (SourceDocument document : jobs) {
-            if ("PROCESSING".equals(document.getStatus()) && document.getProcessingUpdatedAt() != null
-                && document.getProcessingUpdatedAt().isAfter(LocalDateTime.now().minusMinutes(5))) continue;
-            TenantContext.set(document.getTenantCode(), "admin");
+        for (String tenant : jdbcTemplate.queryForList(
+            "SELECT code FROM qms_tenant WHERE status = 'ACTIVE' ORDER BY code", String.class)) {
+            TenantContext.set(tenant, "admin");
             try {
-                process(document);
+                List<SourceDocument> jobs = documentMapper.selectList(Wrappers.lambdaQuery(SourceDocument.class)
+                    .eq(SourceDocument::getTenantCode, tenant)
+                    .eq(SourceDocument::getDocumentType, ScrapExcelImportService.DOCUMENT_TYPE)
+                    .in(SourceDocument::getStatus, "PENDING", "PROCESSING")
+                    .orderByAsc(SourceDocument::getCreatedAt).last("LIMIT 5"));
+                for (SourceDocument document : jobs) {
+                    if ("PROCESSING".equals(document.getStatus()) && document.getProcessingUpdatedAt() != null
+                        && document.getProcessingUpdatedAt().isAfter(LocalDateTime.now().minusMinutes(5))) continue;
+                    process(document);
+                }
             } finally {
                 TenantContext.clear();
             }
