@@ -366,6 +366,13 @@ export const qmsApi = {
     return data.data
   },
 
+  async batchMatchFlyingProbeByMaterial(telemetryIds: string[]) {
+    const { data } = await http.post<ApiResponse<{ matched: number; remaining: number; skipped: number; failed: number }>>(
+      '/api/v1/inspection/flying-probe-projections/batch-match-by-material', { telemetryIds }
+    )
+    return data.data
+  },
+
   async listRetryableFlyingProbeProjections(page = 1, pageSize = 50, search: { workOrderNo?: string; internalProductNo?: string; factoryInternalNo?: string; fromTime?: string; toTime?: string } = {}) {
     const { data } = await http.get<ApiResponse<FlyingProbeRetryableProjectionPage>>(
       '/api/v1/inspection/flying-probe-projections/retryable', { params: { page, pageSize, ...search } }

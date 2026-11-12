@@ -100,7 +100,8 @@ public class EquipmentTelemetryQueryApplicationService {
             StringUtils.hasText(query.workOrderNo()) ? query.workOrderNo().trim() : null,
             StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null,
             StringUtils.hasText(query.factoryInternalNo()) ? query.factoryInternalNo().trim() : null,
-            Boolean.TRUE.equals(query.unmatchedOnly()) && "ZHONGBO_TEST_REPORT".equals(eventType)
+            Boolean.TRUE.equals(query.unmatchedOnly()) && "ZHONGBO_TEST_REPORT".equals(eventType),
+            Boolean.TRUE.equals(query.workOrderEmptyOnly())
         );
         boolean hasMore = rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
@@ -145,7 +146,7 @@ public class EquipmentTelemetryQueryApplicationService {
     ) {
         if (equipment == null) return null;
         JsonNode attributes = attributesOf(record);
-        String workOrderNo = projection != null && projection.getWorkOrderNo() != null
+        String workOrderNo = projection != null && StringUtils.hasText(projection.getWorkOrderNo())
             ? projection.getWorkOrderNo() : record.getWorkOrderNo();
         return EquipmentTelemetryRecordResponse.from(
             record,

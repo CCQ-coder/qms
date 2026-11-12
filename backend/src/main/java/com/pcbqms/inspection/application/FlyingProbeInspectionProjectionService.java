@@ -86,6 +86,27 @@ public class FlyingProbeInspectionProjectionService {
         }
     }
 
+    @Transactional
+    public boolean retryUnboundNow(String telemetryId) {
+        accessScopeService.requireSupervisorOrAdministrator();
+        String tenantCode = TenantContext.tenantCode();
+        FlyingProbeProjection projection = projectionMapper.lockProjection(telemetryId);
+        if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
+            throw new IllegalArgumentException("当前租户不存在此飞针记录");
+        }
+        if (!"RETRYABLE".equals(projection.getStatus()) || StringUtils.hasText(projection.getWorkOrderNo())) {
+            throw new IllegalArgumentException("该飞针记录已处理或已有生产指令");
+        }
+        String actor = TenantContext.actor();
+        try {
+            TenantContext.set(tenantCode, ADMIN);
+            process(projection);
+        } finally {
+            TenantContext.set(tenantCode, actor);
+        }
+        return StringUtils.hasText(projection.getWorkOrderNo());
+    }
+
     public FlyingProbeRetryablePageResponse listRetryable(
         Integer requestedPage, Integer requestedPageSize, String requestedWorkOrderNo, String requestedInternalProductNo,
         String requestedFactoryInternalNo,
@@ -164,7 +185,9 @@ public class FlyingProbeInspectionProjectionService {
             throw new IllegalArgumentException("飞针文件状态已变化，无法手动绑定");
         }
         if (!workOrderNo.equals(run.getWorkOrderNo())) {
-            throw new IllegalArgumentException("同一飞针文件已绑定其他生产指令，不能改绑已处理的 FQC");
+            projection.setRunKey(runKey);
+            projectionMapper.updateProjection(projection);
+            return rebindProcessedRun(projection, workOrder);
         }
         if (!"MANUAL".equals(run.getBindingSource())) {
             run.setBindingSource("MANUAL");
@@ -297,18 +320,12 @@ public class FlyingProbeInspectionProjectionService {
             }
         }
         boolean extractNumericKey = materialPattern != null;
-        Pattern matchingPattern = materialPattern;
         WorkOrder workOrder;
         if (run == null) {
             var query = Wrappers.lambdaQuery(WorkOrder.class).eq(WorkOrder::getTenantCode, projection.getTenantCode());
-            if (extractNumericKey) {
-                query.like(WorkOrder::getInternalProductNo, materialKey);
-            } else {
-                query.apply("internal_product_no_match_key = {0}", materialKey);
-            }
+            query.like(WorkOrder::getInternalProductNo, materialKey);
             List<WorkOrder> candidates = workOrderMapper.selectList(query).stream()
-                .filter(order -> materialKey.equals(workOrderMaterialKey(order.getInternalProductNo(),
-                    extractNumericKey ? matchingPattern : null)))
+                .filter(order -> matchesMaterial(materialKey, order.getInternalProductNo()))
                 .toList();
             if (extractNumericKey) {
                 if (candidates.stream().anyMatch(order -> order.getReleasedAt() == null)) {
@@ -323,8 +340,8 @@ public class FlyingProbeInspectionProjectionService {
             }
             if (candidates.size() != 1) {
                 retryLater(projection, extractNumericKey
-                    ? "飞针料号与文件开始时间按下达日期匹配生产指令数量为 " + candidates.size() + "，最近日期必须恰好为 1"
-                    : "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
+                    ? "飞针料号模糊匹配后按下达日期筛选生产指令数量为 " + candidates.size() + "，最近日期必须恰好为 1"
+                    : "厂内编号模糊匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
                 return;
             }
             workOrder = candidates.getFirst();
@@ -343,8 +360,7 @@ public class FlyingProbeInspectionProjectionService {
                 .eq(WorkOrder::getTenantCode, projection.getTenantCode())
                 .eq(WorkOrder::getWorkOrderNo, run.getWorkOrderNo()));
             if (workOrder == null || (!manuallyBound
-                && !materialKey.equals(workOrderMaterialKey(workOrder.getInternalProductNo(),
-                    extractNumericKey ? materialPattern : null)))) {
+                && !matchesMaterial(materialKey, workOrder.getInternalProductNo()))) {
                 retryLater(projection, "文件批次工单映射发生变化，需人工核对", now);
                 return;
             }
@@ -573,17 +589,9 @@ public class FlyingProbeInspectionProjectionService {
         }
     }
 
-    private String workOrderMaterialKey(String internalProductNo, Pattern pattern) {
+    private boolean matchesMaterial(String materialKey, String internalProductNo) {
         String normalized = normalizeMaterialKey(internalProductNo);
-        if (pattern == null || normalized == null) {
-            return normalized;
-        }
-        var matcher = pattern.matcher(normalized);
-        if (!matcher.matches() || !StringUtils.hasText(matcher.group(1))) {
-            return null;
-        }
-        String captured = matcher.group(1);
-        return captured.matches("[0-9]+") ? captured : null;
+        return materialKey != null && normalized != null && normalized.contains(materialKey);
     }
 
     private void skip(FlyingProbeProjection projection, String reason, LocalDateTime now) {

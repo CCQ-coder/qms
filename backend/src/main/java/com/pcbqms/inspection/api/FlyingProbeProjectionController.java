@@ -3,6 +3,9 @@ package com.pcbqms.inspection.api;
 import com.pcbqms.common.api.ApiResponse;
 import com.pcbqms.inspection.application.FlyingProbeInspectionProjectionService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDateTime;
+import java.util.List;
+import org.springframework.security.access.AccessDeniedException;
 
 @RestController
 @RequestMapping("/api/v1/inspection/flying-probe-projections")
@@ -21,6 +26,9 @@ import java.time.LocalDateTime;
 @Slf4j
 public class FlyingProbeProjectionController {
     private final FlyingProbeInspectionProjectionService projectionService;
+
+    public record BatchMatchRequest(@NotEmpty @Size(max = 100) List<@NotBlank @Size(max = 80) String> telemetryIds) { }
+    public record BatchMatchResponse(int matched, int remaining, int skipped, int failed) { }
 
     @GetMapping("/retryable")
     public ApiResponse<FlyingProbeRetryablePageResponse> listRetryable(
@@ -46,5 +54,27 @@ public class FlyingProbeProjectionController {
             log.warn("飞针工单已绑定，但同文件快照立即重试失败，遥测={}", telemetryId, exception);
         }
         return ApiResponse.of(request.workOrderNo().trim());
+    }
+
+    @PostMapping("/batch-match-by-material")
+    public ApiResponse<BatchMatchResponse> batchMatchByMaterial(@Valid @RequestBody BatchMatchRequest request) {
+        int matched = 0;
+        int remaining = 0;
+        int skipped = 0;
+        int failed = 0;
+        for (String telemetryId : request.telemetryIds().stream().distinct().toList()) {
+            try {
+                if (projectionService.retryUnboundNow(telemetryId)) matched++;
+                else remaining++;
+            } catch (IllegalArgumentException exception) {
+                skipped++;
+            } catch (AccessDeniedException exception) {
+                throw exception;
+            } catch (RuntimeException exception) {
+                failed++;
+                log.warn("飞针料号批量匹配失败，遥测={}", telemetryId, exception);
+            }
+        }
+        return ApiResponse.of(new BatchMatchResponse(matched, remaining, skipped, failed));
     }
 }

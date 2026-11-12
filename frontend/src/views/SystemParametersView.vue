@@ -70,7 +70,7 @@ async function saveFlyingProbeRule() {
   savingFlyingProbeRule.value = true
   try {
     await qmsApi.updateTenantParameter(FLYING_PROBE_PATTERN_KEY, pattern)
-    ElMessage.success(pattern ? '飞针料号提取规则已保存' : '已恢复完整编号精确匹配')
+    ElMessage.success(pattern ? '飞针料号提取规则已保存' : '已恢复料号模糊匹配')
   } catch {
     ElMessage.error('飞针规则保存失败；请检查正则表达式和管理员权限')
   } finally {
@@ -156,15 +156,15 @@ onMounted(load)
     </el-card>
 
     <el-card shadow="never" class="content-card compact-card">
-      <template #header><div class="card-header"><span>飞针料号提取</span></div></template>
+      <template #header><div class="card-header"><span>飞针料号匹配</span></div></template>
       <el-form label-position="top" class="system-parameter-form">
-        <el-form-item label="厂内编号提取规则（正则表达式，保留一个数字捕获组）">
+        <el-form-item label="数字料号规则（正则表达式，保留一个数字捕获组）">
           <el-input v-model="flyingProbePattern" placeholder="例如：^02PT([0-9]{5})A[0-9]{2}$" />
-          <div class="field-help">从生产指令的厂内编号提取中间数字，与飞针机料号比较；同一文件选择开始时间之前最近下达的工单。保存后会重试待匹配的历史飞针记录，可能自动生成 FQC 检验；留空保存可恢复完整编号精确匹配。</div>
+          <div class="field-help">飞针料号在厂内编号中模糊匹配；配置规则后，按文件开始时间之前最近的下达日期选单，多个候选保留待匹配。保存后会重试历史记录，可能自动生成 FQC 检验；留空时仅在模糊匹配结果唯一时关联。</div>
         </el-form-item>
         <el-form-item label="厂内编号示例">
           <el-input v-model="flyingProbeExample" placeholder="例如：02PT42777A01" />
-          <div class="rule-preview" :class="flyingProbePattern.trim() ? (flyingProbeExtracted ? 'rule-preview--pass' : 'rule-preview--fail') : ''">{{ flyingProbePattern.trim() ? (flyingProbeExtracted ? `提取到飞针料号：${flyingProbeExtracted}` : '未提取到数字料号') : '未配置，按完整编号精确匹配' }}</div>
+          <div class="rule-preview" :class="flyingProbePattern.trim() ? (flyingProbeExtracted ? 'rule-preview--pass' : 'rule-preview--fail') : ''">{{ flyingProbePattern.trim() ? (flyingProbeExtracted ? `规则提取到数字：${flyingProbeExtracted}；匹配仍使用料号包含关系` : '示例不符合规则；实际匹配仍使用料号包含关系') : '未配置，按料号模糊匹配' }}</div>
         </el-form-item>
         <el-button type="primary" :loading="savingFlyingProbeRule" @click="saveFlyingProbeRule">保存飞针规则</el-button>
       </el-form>

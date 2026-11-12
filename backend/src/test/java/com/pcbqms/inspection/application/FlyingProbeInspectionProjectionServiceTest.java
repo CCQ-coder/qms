@@ -102,7 +102,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void manualBindingCannotChangeTheOrderOfAnExistingFile() {
+    void retryableSnapshotCanCorrectAnExistingFileBinding() {
         TenantContext.set("tenant-a", "supervisor");
         var telemetry = event("already-bound", LocalDateTime.now().minusHours(1),
             LocalDateTime.now().minusMinutes(1), 3, 3, 0);
@@ -110,13 +110,17 @@ class FlyingProbeInspectionProjectionServiceTest {
         projection.setStatus("RETRYABLE");
         when(projectionMapper.lockProjection("already-bound")).thenReturn(projection);
         when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-OTHER", "PART-1", LocalDate.now()));
-        when(projectionMapper.lockRun(any())).thenReturn(run());
+        FlyingProbeRun run = run();
+        when(projectionMapper.lockRun(any())).thenReturn(run);
 
-        assertThatThrownBy(() -> service().bindManually("already-bound", "WO-OTHER"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("已绑定");
+        service().bindManually("already-bound", "WO-OTHER");
+
+        assertThat(run.getWorkOrderNo()).isEqualTo("WO-OTHER");
+        verify(projectionMapper).rebindRunTasks(org.mockito.ArgumentMatchers.eq("tenant-a"), any(),
+            org.mockito.ArgumentMatchers.eq("WO-OTHER"));
+        verify(projectionMapper).rebindRunProjections(org.mockito.ArgumentMatchers.eq("tenant-a"), any(),
+            org.mockito.ArgumentMatchers.eq("WO-OTHER"));
         verify(projectionMapper, never()).insertRunIfAbsent(any());
-        verify(projectionMapper, never()).wakeRetryableRun(any(), any());
     }
 
     @Test
@@ -322,6 +326,93 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void configuredRuleFuzzilyMatchesInternalNumberWithDifferentPrefix() {
+        TenantContext.set("tenant-a", "admin");
+        var telemetry = event("fuzzy", LocalDateTime.of(2026, 11, 3, 9, 5),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1);
+        telemetry.setMaterialNo("44489");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("fuzzy")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        configuredMaterialRule();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("26100242", "04PC44489A01", LocalDate.of(2026, 10, 11))));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        FlyingProbeRun run = run();
+        run.setMaterialNo("44489");
+        run.setWorkOrderNo("26100242");
+        when(projectionMapper.lockRun(any())).thenReturn(null, run);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26100242");
+    }
+
+    @Test
+    void unconfiguredRuleAlsoFuzzilyMatchesAUniqueInternalNumber() {
+        TenantContext.set("tenant-a", "admin");
+        var telemetry = event("fuzzy-default", LocalDateTime.now().minusDays(9),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1);
+        telemetry.setMaterialNo("44489");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("fuzzy-default")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("26100242", "04PC44489A01", LocalDate.now().minusDays(1))));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        FlyingProbeRun run = run();
+        run.setMaterialNo("44489");
+        run.setWorkOrderNo("26100242");
+        when(projectionMapper.lockRun(any())).thenReturn(null, run);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26100242");
+    }
+
+    @Test
+    void batchRetryMatchesAnUnboundFileWithoutWaitingForTheScheduler() {
+        TenantContext.set("tenant-a", "supervisor");
+        var telemetry = event("batch", LocalDateTime.of(2026, 11, 3, 9, 5),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1);
+        telemetry.setMaterialNo("44489");
+        var projection = projection(telemetry);
+        projection.setStatus("RETRYABLE");
+        projection.setRetryAfter(LocalDateTime.now().plusDays(1));
+        when(projectionMapper.lockProjection("batch")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        configuredMaterialRule();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(
+            releasedOrder("26100242", "04PC44489A01", LocalDate.of(2026, 10, 11))));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        FlyingProbeRun run = run();
+        run.setMaterialNo("44489");
+        run.setWorkOrderNo("26100242");
+        when(projectionMapper.lockRun(any())).thenReturn(null, run);
+
+        assertThat(service().retryUnboundNow("batch")).isTrue();
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26100242");
+        assertThat(TenantContext.actor()).isEqualTo("supervisor");
+    }
+
+    @Test
+    void batchRetryCannotProcessAnotherTenantsProjection() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("foreign-batch", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 1, 1, 0));
+        projection.setTenantCode("tenant-b");
+        projection.setStatus("RETRYABLE");
+        when(projectionMapper.lockProjection("foreign-batch")).thenReturn(projection);
+
+        assertThatThrownBy(() -> service().retryUnboundNow("foreign-batch"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("当前租户");
+        verify(projectionMapper, never()).updateProjection(any());
+        assertThat(TenantContext.actor()).isEqualTo("supervisor");
+    }
+
+    @Test
     void configuredMiddleDigitsKeepSameDayOrderTieRetryable() {
         TenantContext.set("tenant-a", "admin");
         var now = LocalDateTime.now();
@@ -333,8 +424,8 @@ class FlyingProbeInspectionProjectionServiceTest {
         configuredMaterialRule();
         LocalDate releasedAt = now.toLocalDate().minusDays(1);
         when(workOrderMapper.selectList(any())).thenReturn(List.of(
-            releasedOrder("WO-1", "02PT08169A01", releasedAt),
-            releasedOrder("WO-2", "02PT08169A01", releasedAt)));
+            releasedOrder("WO-1", "04PC08169A01", releasedAt),
+            releasedOrder("WO-2", "04PC08169A02", releasedAt)));
 
         service().projectNew(telemetry);
 
