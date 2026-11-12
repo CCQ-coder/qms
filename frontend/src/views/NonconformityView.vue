@@ -228,7 +228,7 @@ onMounted(async () => {
   <section class="page-stack">
     <el-card shadow="never" class="content-card" v-loading="loading">
       <template #header><div class="card-header"><span>不良品处置单</span><div><el-button type="primary" @click="openManualDialog">新增</el-button><ScrapImportPanel @imported="load" /><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
-      <div class="report-filter">
+      <div class="report-filter ncr-list-filter">
         <el-input v-model="filters.ncrNo" clearable placeholder="单据编号" aria-label="单据编号" />
         <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
         <el-input v-model="filters.processName" clearable placeholder="检验工序" aria-label="检验工序" />
