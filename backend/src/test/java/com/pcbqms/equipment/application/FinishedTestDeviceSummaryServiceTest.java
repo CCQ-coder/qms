@@ -265,6 +265,35 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void zhongboPcbMaterialMatchesPartOfInternalProductNumber() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("26100731");
+        order.setInternalProductNo("02PT35048A01");
+        order.setReleasedAt(LocalDate.of(2026, 10, 27));
+        var sample = new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "35048", null,
+            LocalDateTime.of(2026, 11, 11, 16, 1), 1, 0, true);
+
+        assertThat(FinishedTestDeviceSummaryService.aggregate(List.of(sample), List.of(order)))
+            .singleElement().satisfies(row -> assertThat(row.workOrderNo()).isEqualTo("26100731"));
+    }
+
+    @Test
+    void fuzzyZhongboMatchStillSkipsOrdersWithTheSameLatestReleaseDate() {
+        WorkOrder first = new WorkOrder();
+        first.setWorkOrderNo("26110009");
+        first.setInternalProductNo("02PT44382A01");
+        first.setReleasedAt(LocalDate.of(2026, 11, 2));
+        WorkOrder second = new WorkOrder();
+        second.setWorkOrderNo("26110010");
+        second.setInternalProductNo("02PT44382A01");
+        second.setReleasedAt(LocalDate.of(2026, 11, 2));
+        var sample = new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "44382", null,
+            LocalDateTime.of(2026, 11, 10, 19, 36), 1, 0, true);
+
+        assertThat(FinishedTestDeviceSummaryService.aggregate(List.of(sample), List.of(first, second))).isEmpty();
+    }
+
+    @Test
     void currentMonthAnalyticsUsesDeviceDeltasAndRanksInternalNumbers() {
         WorkOrder first = new WorkOrder();
         first.setWorkOrderNo("WO-1");

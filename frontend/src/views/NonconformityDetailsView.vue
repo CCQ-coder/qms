@@ -115,7 +115,7 @@ onMounted(() => { void load() })
 <template>
   <el-card shadow="never" class="content-card">
     <template #header><div class="card-header"><span>不良品明细表</span><div><ScrapImportPanel @imported="load" /><el-button type="primary" :loading="exporting" @click="exportScrapStatistics">导出报废统计</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
-    <div class="report-filter">
+    <div class="report-filter ncr-details-filter">
       <el-input v-model="filters.ncrNo" clearable placeholder="单据编号" aria-label="单据编号" />
       <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
       <el-input v-model="filters.process" clearable placeholder="检验工序" aria-label="检验工序" />

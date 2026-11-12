@@ -470,12 +470,14 @@ public class FinishedTestDeviceSummaryService {
 
     private static WorkOrder resolveOrder(Sample sample, List<WorkOrder> orders) {
         if (!StringUtils.hasText(sample.materialNo())) return null;
+        String key = materialKey(sample.materialNo());
         List<WorkOrder> candidates = orders.stream()
-            .filter(order -> (StringUtils.hasText(order.getInternalProductNo())
-                    && sample.materialNo().trim().equalsIgnoreCase(order.getInternalProductNo().trim())
-                || StringUtils.hasText(order.getMaterialNo())
-                    && sample.materialNo().trim().equalsIgnoreCase(order.getMaterialNo().trim()))
-                && order.getReleasedAt() != null && !order.getReleasedAt().isAfter(sample.deviceTime().toLocalDate()))
+            .filter(order -> {
+                String internal = materialKey(order.getInternalProductNo());
+                String material = materialKey(order.getMaterialNo());
+                return ((internal != null && internal.contains(key)) || (material != null && material.contains(key)))
+                    && order.getReleasedAt() != null && !order.getReleasedAt().isAfter(sample.deviceTime().toLocalDate());
+            })
             .toList();
         LocalDate latest = candidates.stream().map(WorkOrder::getReleasedAt)
             .max(LocalDate::compareTo).orElse(null);
