@@ -60,7 +60,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void manualBindingProjectsAFileWithNoNumericMaterialUnderTheChosenOrder() {
+    void batchManualBindingProjectsAFileWithNoNumericMaterialUnderTheChosenOrder() {
         TenantContext.set("tenant-a", "supervisor");
         var now = LocalDateTime.now();
         var telemetry = event("manual", now.minusHours(1), now.minusMinutes(1), 3, 2, 1);
@@ -88,7 +88,7 @@ class FlyingProbeInspectionProjectionServiceTest {
             new InspectionRecordResponse("record-manual", "task-manual", "FAIL", 1, null, null, null, now));
 
         var service = service();
-        service.bindManually("manual", "WO-SELECTED");
+        service.bindRetryableUnboundManually("manual", "WO-SELECTED");
         assertThat(savedRun.get().getWorkOrderNo()).isEqualTo("WO-SELECTED");
         assertThat(savedRun.get().getBindingSource()).isEqualTo("MANUAL");
         assertThat(savedRun.get().getBoundBy()).isEqualTo("supervisor");
@@ -236,6 +236,34 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void batchBindingSkipsAFileThatWasProcessedAfterSelection() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("stale", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 1, 1, 0));
+        projection.setStatus("PROCESSED");
+        when(projectionMapper.lockProjection("stale")).thenReturn(projection);
+
+        assertThatThrownBy(() -> service().bindRetryableUnboundManually("stale", "WO-2"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("待匹配");
+        verify(workOrderMapper, never()).selectOne(any());
+    }
+
+    @Test
+    void batchBindingSkipsAFileWhoseRunAlreadyHasAnOrder() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("bound-run", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 1, 1, 0));
+        projection.setStatus("RETRYABLE");
+        projection.setRunKey("run-1");
+        when(projectionMapper.lockProjection("bound-run")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run());
+
+        assertThatThrownBy(() -> service().bindRetryableUnboundManually("bound-run", "WO-2"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("已有生产指令");
+        verify(workOrderMapper, never()).selectOne(any());
+    }
+
+    @Test
     void createsOnlyNewBoardsAndFailsOnlyWhenNewBadBoardsAppear() {
         TenantContext.set("tenant-a", "admin");
         var now = LocalDateTime.now();
@@ -370,46 +398,6 @@ class FlyingProbeInspectionProjectionServiceTest {
 
         assertThat(projection.getStatus()).isEqualTo("PROCESSED");
         assertThat(projection.getWorkOrderNo()).isEqualTo("26100242");
-    }
-
-    @Test
-    void batchRetryMatchesAnUnboundFileWithoutWaitingForTheScheduler() {
-        TenantContext.set("tenant-a", "supervisor");
-        var telemetry = event("batch", LocalDateTime.of(2026, 11, 3, 9, 5),
-            LocalDateTime.now().minusMinutes(1), 5, 4, 1);
-        telemetry.setMaterialNo("44489");
-        var projection = projection(telemetry);
-        projection.setStatus("RETRYABLE");
-        projection.setRetryAfter(LocalDateTime.now().plusDays(1));
-        when(projectionMapper.lockProjection("batch")).thenReturn(projection);
-        validEquipmentAndTemplate();
-        configuredMaterialRule();
-        when(workOrderMapper.selectList(any())).thenReturn(List.of(
-            releasedOrder("26100242", "04PC44489A01", LocalDate.of(2026, 10, 11))));
-        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
-        FlyingProbeRun run = run();
-        run.setMaterialNo("44489");
-        run.setWorkOrderNo("26100242");
-        when(projectionMapper.lockRun(any())).thenReturn(null, run);
-
-        assertThat(service().retryUnboundNow("batch")).isTrue();
-        assertThat(projection.getWorkOrderNo()).isEqualTo("26100242");
-        assertThat(TenantContext.actor()).isEqualTo("supervisor");
-    }
-
-    @Test
-    void batchRetryCannotProcessAnotherTenantsProjection() {
-        TenantContext.set("tenant-a", "supervisor");
-        var projection = projection(event("foreign-batch", LocalDateTime.now().minusHours(1),
-            LocalDateTime.now().minusMinutes(1), 1, 1, 0));
-        projection.setTenantCode("tenant-b");
-        projection.setStatus("RETRYABLE");
-        when(projectionMapper.lockProjection("foreign-batch")).thenReturn(projection);
-
-        assertThatThrownBy(() -> service().retryUnboundNow("foreign-batch"))
-            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("当前租户");
-        verify(projectionMapper, never()).updateProjection(any());
-        assertThat(TenantContext.actor()).isEqualTo("supervisor");
     }
 
     @Test

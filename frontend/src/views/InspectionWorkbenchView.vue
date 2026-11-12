@@ -52,7 +52,6 @@ const runtimeError = ref('')
 const probeSnapshotsError = ref('')
 const finishedRecordsError = ref('')
 const recordSource = ref<'probe' | 'zhongbo' | 'retryable' | 'all'>('probe')
-const recordEmptyWorkOrderOnly = ref(false)
 const recordMaterialPrompt = computed(() => `搜索${recordSource.value === 'probe' || recordSource.value === 'retryable' ? '设备料号' : 'PCB料号'}`)
 const zhongboUnmatchedOnly = ref(false)
 const recordDateRange = ref<string[]>([])
@@ -66,18 +65,19 @@ const retryableLoading = ref(false)
 const retryableLoaded = ref(false)
 const retryableError = ref('')
 const retryableUpdatedAt = ref<Date>()
+const selectedRetryableRecords = ref<FlyingProbeRetryableProjection[]>([])
 const recordWorkOrderNo = ref('')
 const recordMaterialNo = ref('')
 const recordFactoryInternalNo = ref('')
 const appliedRecordSearch = ref<{ workOrderNo?: string; internalProductNo?: string; factoryInternalNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection & { eventType?: string }>()
+const bindingBatchRecords = ref<FlyingProbeRetryableProjection[]>([])
 const bindingKeyword = ref('')
 const bindingWorkOrders = ref<WorkOrder[]>([])
 const bindingWorkOrderNo = ref('')
 const bindingSearchLoading = ref(false)
 const bindingSaving = ref(false)
-const batchMatching = ref(false)
 const bindingError = ref('')
 let bindingSearchVersion = 0
 const {
@@ -106,8 +106,6 @@ const recordPanelUpdatedAt = computed(() => recordSource.value === 'probe' ? fly
 const recordPanelLoading = computed(() => recordSource.value === 'probe' ? flyingProbeLoading.value
   : recordSource.value === 'zhongbo' ? zhongboLoading.value
   : recordSource.value === 'retryable' ? retryableLoading.value : finishedRecordsLoading.value)
-const batchMatchCandidates = computed(() => flyingProbeRecords.value.filter((record) =>
-  !record.workOrderNo && record.fqcProjectionStatus === 'RETRYABLE'))
 watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
   activePanel.value = summaryRoute ? 'summary' : panel === 'records' ? 'records' : 'monitor'
   void refreshWorkbench()
@@ -393,14 +391,12 @@ function recordTimeFilter() {
 }
 
 function refreshFilteredProbeRecords() {
-  return refreshFlyingProbeRecords({ ...appliedRecordSearch.value, ...recordTimeFilter(),
-    ...(recordEmptyWorkOrderOnly.value ? { workOrderEmptyOnly: true } : {}) })
+  return refreshFlyingProbeRecords({ ...appliedRecordSearch.value, ...recordTimeFilter() })
 }
 
 function refreshFilteredZhongboReports() {
   return refreshZhongboReports({ ...appliedRecordSearch.value, ...recordTimeFilter(),
-    ...(zhongboUnmatchedOnly.value ? { unmatchedOnly: true } : {}),
-    ...(recordEmptyWorkOrderOnly.value ? { workOrderEmptyOnly: true } : {}) })
+    ...(zhongboUnmatchedOnly.value ? { unmatchedOnly: true } : {}) })
 }
 
 async function loadDeviceRecords(cursor?: string) {
@@ -409,8 +405,7 @@ async function loadDeviceRecords(cursor?: string) {
   finishedRecordsError.value = ''
   try {
     const page = await qmsApi.listEquipmentTelemetryHistory({ eventType: 'FINISHED_TEST', limit: 100,
-      ...appliedRecordSearch.value, ...recordTimeFilter(),
-      ...(recordEmptyWorkOrderOnly.value ? { workOrderEmptyOnly: true } : {}), ...(cursor ? { cursor } : {}) })
+      ...appliedRecordSearch.value, ...recordTimeFilter(), ...(cursor ? { cursor } : {}) })
     finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
     finishedRecordsNextCursor.value = page.nextCursor ?? undefined
     if (!cursor) finishedRecordsUpdatedAt.value = new Date()
@@ -438,6 +433,7 @@ async function loadRetryableProjections(page = retryablePage.value) {
     const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize,
       { ...appliedRecordSearch.value, ...recordTimeFilter() })
     retryableRecords.value = result.records
+    selectedRetryableRecords.value = []
     retryableTotal.value = result.total
     retryablePage.value = result.page
     retryableLoaded.value = true
@@ -547,7 +543,6 @@ function showPanel(panel: 'monitor' | 'records' | 'tasks') {
 
 function showRecordSource(source: 'probe' | 'zhongbo' | 'retryable' | 'all') {
   recordSource.value = source
-  if (source === 'retryable') recordEmptyWorkOrderOnly.value = false
   if (source === 'zhongbo') zhongboUnmatchedOnly.value = false
   if (source === 'probe') void refreshFilteredProbeRecords()
   if (source === 'zhongbo') void refreshFilteredZhongboReports()
@@ -560,45 +555,23 @@ function showUnmatchedZhongbo() {
   void refreshFilteredZhongboReports()
 }
 
-function toggleEmptyWorkOrderRecords() {
-  recordEmptyWorkOrderOnly.value = !recordEmptyWorkOrderOnly.value
-  if (recordEmptyWorkOrderOnly.value) {
-    recordWorkOrderNo.value = ''
-    const otherFilters = { ...appliedRecordSearch.value }
-    delete otherFilters.workOrderNo
-    appliedRecordSearch.value = otherFilters
-  }
-  void refreshRecordPanel()
+function canSelectRetryableRecord(record: FlyingProbeRetryableProjection) {
+  return !record.workOrderNo
 }
 
-async function batchMatchByMaterial() {
-  const materialKeyword = appliedRecordSearch.value.internalProductNo
-  if (!materialKeyword || recordMaterialNo.value.trim() !== materialKeyword || !recordEmptyWorkOrderOnly.value
-      || recordSource.value !== 'probe' || !batchMatchCandidates.value.length || batchMatching.value) return
-  const records = [...batchMatchCandidates.value].sort((left, right) =>
-    left.deviceTime.localeCompare(right.deviceTime) || left.receivedAt.localeCompare(right.receivedAt)
-      || left.id.localeCompare(right.id))
-  try {
-    await ElMessageBox.confirm(
-      `按设备料号“${materialKeyword}”处理当前已加载的 ${records.length} 条生产指令为空的飞针记录。厂内编号按料号模糊匹配；无法唯一确定工单时不会自动绑定，确定继续吗？`,
-      '按料号批量绑定', { confirmButtonText: '开始匹配', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
+function updateRetryableSelection(records: FlyingProbeRetryableProjection[]) {
+  selectedRetryableRecords.value = records
+}
+
+function openBatchBindingDialog() {
+  const records = selectedRetryableRecords.value
+  if (!records.length) return
+  const material = records[0].materialNo?.trim().toUpperCase()
+  if (!material || records.some((record) => record.materialNo?.trim().toUpperCase() !== material)) {
+    ElMessage.warning('请选择同一设备料号的待匹配文件。')
     return
   }
-  batchMatching.value = true
-  try {
-    const result = await qmsApi.batchMatchFlyingProbeByMaterial(records.map((record) => record.id))
-    const message = `已绑定 ${result.matched} 条，仍待匹配 ${result.remaining} 条，跳过 ${result.skipped} 条，失败 ${result.failed} 条`
-    if (result.remaining || result.skipped || result.failed) ElMessage.warning(message)
-    else ElMessage.success(message)
-    await Promise.all([refreshFilteredProbeRecords(), loadDeviceRecords(), loadMonitoringData(),
-      ...(retryableLoaded.value ? [loadRetryableProjections()] : [])])
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '批量绑定失败，请重试。')
-  } finally {
-    batchMatching.value = false
-  }
+  openBindingDialog(records[0], records)
 }
 
 function searchRecordFilters() {
@@ -701,8 +674,10 @@ async function searchBindingWorkOrders() {
   }
 }
 
-function openBindingDialog(record: FlyingProbeRetryableProjection | EquipmentTelemetryRecord) {
+function openBindingDialog(record: FlyingProbeRetryableProjection | EquipmentTelemetryRecord,
+                           batchRecords: FlyingProbeRetryableProjection[] = []) {
   bindingSearchVersion++
+  bindingBatchRecords.value = [...batchRecords]
   bindingRecord.value = {
     id: record.id, equipmentCode: record.equipmentCode, machineName: record.machineName,
     materialNo: record.materialNo, deviceTime: record.deviceTime, workOrderNo: record.workOrderNo,
@@ -721,9 +696,10 @@ async function submitBinding() {
   const record = bindingRecord.value
   const selected = bindingWorkOrders.value.find((order) => order.workOrderNo === bindingWorkOrderNo.value)
   if (!record || !selected || bindingSaving.value) return
+  const batchRecords = bindingBatchRecords.value
   try {
     await ElMessageBox.confirm(
-      `将这条设备记录关联到生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。${record.eventType === 'ZHONGBO_TEST_REPORT' ? '已审核的处置单不允许更正关联。' : '已处理的飞针文件将整体改绑；已审核或逐条创建处置单时不能更正。'}确定继续吗？`,
+      `${batchRecords.length ? `将当前页勾选的 ${batchRecords.length} 份设备料号 ${record.materialNo} 的飞针文件` : '将这条设备记录'}关联到生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。${batchRecords.length ? '状态已变化的文件会跳过。' : record.eventType === 'ZHONGBO_TEST_REPORT' ? '已审核的处置单不允许更正关联。' : '已处理的飞针文件将整体改绑；已审核或逐条创建处置单时不能更正。'}确定继续吗？`,
       '确认手动绑定',
       { confirmButtonText: '确认绑定', cancelButtonText: '取消', type: 'warning' }
     )
@@ -732,13 +708,18 @@ async function submitBinding() {
   }
   bindingSaving.value = true
   try {
-    if (record.eventType === 'ZHONGBO_TEST_REPORT') {
+    if (batchRecords.length) {
+      const result = await qmsApi.batchBindFlyingProbeWorkOrder(batchRecords.map((item) => item.id), selected.workOrderNo)
+      const message = `已绑定 ${result.bound} 份，跳过 ${result.skipped} 份，失败 ${result.failed} 份`
+      if (result.skipped || result.failed) ElMessage.warning(message)
+      else ElMessage.success(message)
+    } else if (record.eventType === 'ZHONGBO_TEST_REPORT') {
       await qmsApi.bindZhongboWorkOrder(record.id, selected.workOrderNo)
     } else {
       await qmsApi.bindFlyingProbeWorkOrder(record.id, selected.workOrderNo)
     }
     bindingDialog.value = false
-    ElMessage.success('生产指令已绑定')
+    if (!batchRecords.length) ElMessage.success('生产指令已绑定')
     await Promise.all([
       refreshFilteredProbeRecords(),
       refreshFilteredZhongboReports(),
@@ -1035,8 +1016,7 @@ onBeforeUnmount(() => {
           <el-button :type="zhongboUnmatchedOnly ? 'default' : 'primary'" :disabled="recordPanelLoading" @click="showRecordSource('zhongbo')">全部记录</el-button>
           <el-button :type="zhongboUnmatchedOnly ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showUnmatchedZhongbo">未匹配</el-button>
         </div>
-        <el-button v-if="recordSource !== 'retryable'" :type="recordEmptyWorkOrderOnly ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="toggleEmptyWorkOrderRecords">生产指令为空</el-button>
-        <el-input v-model="recordWorkOrderNo" clearable :disabled="recordEmptyWorkOrderOnly" placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchRecordFilters" />
+        <el-input v-model="recordWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchRecordFilters" />
         <el-input v-model="recordMaterialNo" clearable :placeholder="recordMaterialPrompt" :aria-label="recordMaterialPrompt" @keyup.enter="searchRecordFilters" />
         <el-input v-model="recordFactoryInternalNo" clearable placeholder="搜索厂内编号" aria-label="搜索厂内编号" @keyup.enter="searchRecordFilters" />
         <el-button type="primary" :disabled="recordPanelLoading" @click="searchRecordFilters">查询</el-button>
@@ -1046,8 +1026,6 @@ onBeforeUnmount(() => {
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar">
           <span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span>
-          <el-button v-if="recordEmptyWorkOrderOnly && canBindFlyingProbe" type="primary" :loading="batchMatching" :disabled="recordPanelLoading || !appliedRecordSearch.internalProductNo || recordMaterialNo.trim() !== appliedRecordSearch.internalProductNo || !batchMatchCandidates.length" @click="batchMatchByMaterial">按料号批量绑定（{{ batchMatchCandidates.length }}）</el-button>
-          <span v-if="recordEmptyWorkOrderOnly && !appliedRecordSearch.internalProductNo">先输入设备料号并查询，再批量绑定当前已加载记录</span>
         </div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
           <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
@@ -1129,9 +1107,13 @@ onBeforeUnmount(() => {
       <template v-else-if="recordSource === 'retryable' && canBindFlyingProbe">
         <p class="summary-footnote">按飞针文件汇总待匹配快照；原始采集记录过期后，仍可在这里绑定或重试。</p>
         <el-alert v-if="retryableError" type="error" :closable="false" :title="retryableError" style="margin-top: 12px" />
-        <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar"><span>共 {{ retryableTotal }} 份待匹配飞针文件</span></div>
+        <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar">
+          <span>共 {{ retryableTotal }} 份待匹配飞针文件</span>
+          <el-button type="primary" :disabled="!selectedRetryableRecords.length || retryableLoading" @click="openBatchBindingDialog">手动批量绑定（{{ selectedRetryableRecords.length }}）</el-button>
+        </div>
         <div v-if="retryableLoaded || retryableLoading" class="finished-records-table-wrap finished-records-table-wrap--retryable">
-          <el-table v-loading="retryableLoading" :data="retryableRecords" size="small" empty-text="暂无待匹配飞针文件">
+          <el-table v-loading="retryableLoading" :data="retryableRecords" size="small" empty-text="暂无待匹配飞针文件" @selection-change="updateRetryableSelection">
+            <el-table-column type="selection" width="55" :selectable="canSelectRetryableRecord" />
             <el-table-column label="设备检测时间" width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
             <el-table-column label="检测设备" width="135" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
             <el-table-column label="生产指令" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
@@ -1224,8 +1206,9 @@ onBeforeUnmount(() => {
       </paged-table>
     </el-card>
 
-    <el-dialog v-model="bindingDialog" title="手动绑定生产指令" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
-      <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
+    <el-dialog v-model="bindingDialog" :title="bindingBatchRecords.length ? '手动批量绑定生产指令' : '手动绑定生产指令'" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
+      <p v-if="bindingRecord && bindingBatchRecords.length">当前页已选 {{ bindingBatchRecords.length }} 份飞针文件 · 设备料号 {{ bindingRecord.materialNo }}</p>
+      <p v-else-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
       <el-alert type="warning" :closable="false" :title="bindingRecord?.eventType === 'ZHONGBO_TEST_REPORT' ? '可更正未审核设备记录的生产指令；已审核处置单的来源关联不可更改。' : '同一飞针文件统一关联生产指令；已有已审核或逐条创建的处置单时不能更正。'" />
       <el-alert v-if="bindingRecord?.workOrderNo && bindingRecord.eventType !== 'ZHONGBO_TEST_REPORT'" type="info" :closable="false" :title="`该文件当前绑定工单 ${bindingRecord.workOrderNo}；更正将调整同文件记录。`" style="margin-top: 10px" />
       <div class="binding-order-search">
@@ -1240,7 +1223,7 @@ onBeforeUnmount(() => {
         <el-table-column label="下达日期" min-width="130"><template #default="{ row }">{{ formatDate(row.releasedAt) }}</template></el-table-column>
       </el-table>
       <p class="summary-footnote">最多显示前 50 条；如未看到目标工单，请输入更完整的工单号查询。</p>
-      <template #footer><el-button :disabled="bindingSaving" @click="bindingDialog = false">取消</el-button><el-button type="primary" :loading="bindingSaving" :disabled="!bindingWorkOrderNo" @click="submitBinding">{{ bindingRecord?.workOrderNo ? (bindingRecord.workOrderNo === bindingWorkOrderNo ? '重试处理' : '更正关联') : '确认绑定' }}</el-button></template>
+      <template #footer><el-button :disabled="bindingSaving" @click="bindingDialog = false">取消</el-button><el-button type="primary" :loading="bindingSaving" :disabled="!bindingWorkOrderNo" @click="submitBinding">{{ bindingBatchRecords.length ? '确认批量绑定' : bindingRecord?.workOrderNo ? (bindingRecord.workOrderNo === bindingWorkOrderNo ? '重试处理' : '更正关联') : '确认绑定' }}</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="recordDialog" class="inspection-record-dialog" title="提交检验记录" width="min(920px, 94vw)" :close-on-click-modal="false">

@@ -366,9 +366,9 @@ export const qmsApi = {
     return data.data
   },
 
-  async batchMatchFlyingProbeByMaterial(telemetryIds: string[]) {
-    const { data } = await http.post<ApiResponse<{ matched: number; remaining: number; skipped: number; failed: number }>>(
-      '/api/v1/inspection/flying-probe-projections/batch-match-by-material', { telemetryIds }
+  async batchBindFlyingProbeWorkOrder(telemetryIds: string[], workOrderNo: string) {
+    const { data } = await http.post<ApiResponse<{ bound: number; skipped: number; failed: number }>>(
+      '/api/v1/inspection/flying-probe-projections/batch-bind-work-order', { telemetryIds, workOrderNo }
     )
     return data.data
   },

@@ -86,27 +86,6 @@ public class FlyingProbeInspectionProjectionService {
         }
     }
 
-    @Transactional
-    public boolean retryUnboundNow(String telemetryId) {
-        accessScopeService.requireSupervisorOrAdministrator();
-        String tenantCode = TenantContext.tenantCode();
-        FlyingProbeProjection projection = projectionMapper.lockProjection(telemetryId);
-        if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
-            throw new IllegalArgumentException("当前租户不存在此飞针记录");
-        }
-        if (!"RETRYABLE".equals(projection.getStatus()) || StringUtils.hasText(projection.getWorkOrderNo())) {
-            throw new IllegalArgumentException("该飞针记录已处理或已有生产指令");
-        }
-        String actor = TenantContext.actor();
-        try {
-            TenantContext.set(tenantCode, ADMIN);
-            process(projection);
-        } finally {
-            TenantContext.set(tenantCode, actor);
-        }
-        return StringUtils.hasText(projection.getWorkOrderNo());
-    }
-
     public FlyingProbeRetryablePageResponse listRetryable(
         Integer requestedPage, Integer requestedPageSize, String requestedWorkOrderNo, String requestedInternalProductNo,
         String requestedFactoryInternalNo,
@@ -129,6 +108,25 @@ public class FlyingProbeInspectionProjectionService {
                 factoryInternalNo, fromTime, toTime)
             : List.of();
         return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
+    }
+
+    @Transactional
+    public String bindRetryableUnboundManually(String telemetryId, String workOrderNo) {
+        accessScopeService.requireSupervisorOrAdministrator();
+        FlyingProbeProjection projection = projectionMapper.lockProjection(telemetryId);
+        if (projection == null || !TenantContext.tenantCode().equals(projection.getTenantCode())) {
+            throw new IllegalArgumentException("当前租户不存在此飞针记录");
+        }
+        if (!"RETRYABLE".equals(projection.getStatus()) || StringUtils.hasText(projection.getWorkOrderNo())) {
+            throw new IllegalArgumentException("仅生产指令为空的待匹配文件可批量绑定");
+        }
+        if (StringUtils.hasText(projection.getRunKey())) {
+            FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
+            if (run != null && StringUtils.hasText(run.getWorkOrderNo())) {
+                throw new IllegalArgumentException("该飞针文件已有生产指令");
+            }
+        }
+        return bindManually(telemetryId, workOrderNo);
     }
 
     @Transactional

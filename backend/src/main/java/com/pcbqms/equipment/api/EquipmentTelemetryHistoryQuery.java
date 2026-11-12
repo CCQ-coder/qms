@@ -13,8 +13,7 @@ public record EquipmentTelemetryHistoryQuery(
     String workOrderNo,
     String internalProductNo,
     String factoryInternalNo,
-    Boolean unmatchedOnly,
-    Boolean workOrderEmptyOnly
+    Boolean unmatchedOnly
 ) {
     public int resolvedLimit() {
         int requested = limit == null ? 100 : limit;

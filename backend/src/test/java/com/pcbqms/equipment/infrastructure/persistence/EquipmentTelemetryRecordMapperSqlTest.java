@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.List;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
 
@@ -42,27 +41,6 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
-    void emptyWorkOrderFilterChecksTheEffectiveFlyingProbeRunBinding() {
-        String sql = historySql("FLYING_PROBE_TEST_COUNTERS", null, null, false, true);
-
-        assertThat(sql).contains("qms_flying_probe_run run", "NULLIF(TRIM(run.work_order_no), '')",
-            "NULLIF(TRIM(projection.work_order_no), '')", "NULLIF(TRIM(qms_equipment_telemetry.work_order_no), '')");
-    }
-
-    @Test
-    void projectionStatusShowsTheFileLevelBinding() {
-        Configuration configuration = new Configuration();
-        configuration.addMapper(EquipmentTelemetryRecordMapper.class);
-        String sql = configuration.getMappedStatement(EquipmentTelemetryRecordMapper.class.getName()
-            + ".selectProjectionStatuses")
-            .getBoundSql(Map.of("tenantCode", "customer-b", "telemetryIds", List.of("probe-1")))
-            .getSql().replaceAll("\\s+", " ");
-
-        assertThat(sql).contains("LEFT JOIN qms_flying_probe_run run",
-            "COALESCE(NULLIF(TRIM(run.work_order_no), ''), NULLIF(TRIM(projection.work_order_no), '')) AS work_order_no");
-    }
-
-    @Test
     void finishedTestDateFilterUsesDeviceDetectionTimeWhileOtherTelemetryUsesReceiptTime() {
         assertThat(historySql("FINISHED_TEST", null, null, true))
             .contains("device_time >= ?", "device_time <= ?")
@@ -82,11 +60,6 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     private String historySql(String eventType, String workOrderNo, String internalProductNo, boolean withDates) {
-        return historySql(eventType, workOrderNo, internalProductNo, withDates, false);
-    }
-
-    private String historySql(String eventType, String workOrderNo, String internalProductNo,
-                              boolean withDates, boolean workOrderEmptyOnly) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
@@ -94,7 +67,6 @@ class EquipmentTelemetryRecordMapperSqlTest {
         parameters.put("eventType", eventType);
         parameters.put("workOrderNo", workOrderNo);
         parameters.put("internalProductNo", internalProductNo);
-        parameters.put("workOrderEmptyOnly", workOrderEmptyOnly);
         if (withDates) {
             parameters.put("fromTime", LocalDateTime.of(2026, 11, 1, 0, 0));
             parameters.put("toTime", LocalDateTime.of(2026, 11, 9, 23, 59));

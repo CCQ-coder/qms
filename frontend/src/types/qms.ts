@@ -517,7 +517,6 @@ export type EquipmentTelemetryHistoryQuery = {
   internalProductNo?: string
   factoryInternalNo?: string
   unmatchedOnly?: boolean
-  workOrderEmptyOnly?: boolean
   fromTime?: string
   toTime?: string
   cursor?: string

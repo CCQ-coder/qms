@@ -95,18 +95,6 @@ public interface EquipmentTelemetryRecordMapper {
                   AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.work_order_no COLLATE utf8mb4_0900_ai_ci
             )
         </if>
-        <if test="workOrderEmptyOnly">
-            AND COALESCE(
-                (SELECT COALESCE(NULLIF(TRIM(run.work_order_no), ''), NULLIF(TRIM(projection.work_order_no), ''))
-                 FROM qms_flying_probe_projection projection
-                 LEFT JOIN qms_flying_probe_run run
-                   ON run.run_key = projection.run_key AND run.tenant_code = projection.tenant_code
-                 WHERE projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci
-                   AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
-                 LIMIT 1),
-                NULLIF(TRIM(qms_equipment_telemetry.work_order_no), '')
-            ) IS NULL
-        </if>
         <if test="equipmentId != null and equipmentId != ''">
             AND equipment_id = #{equipmentId}
         </if>
@@ -172,20 +160,15 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("workOrderNo") String workOrderNo,
         @Param("internalProductNo") String internalProductNo,
         @Param("factoryInternalNo") String factoryInternalNo,
-        @Param("unmatchedOnly") boolean unmatchedOnly,
-        @Param("workOrderEmptyOnly") boolean workOrderEmptyOnly
+        @Param("unmatchedOnly") boolean unmatchedOnly
     );
 
     @Select("""
         <script>
-        SELECT projection.telemetry_id, projection.status, projection.reason, projection.inspection_record_id,
-               projection.delta_tested,
-               COALESCE(NULLIF(TRIM(run.work_order_no), ''), NULLIF(TRIM(projection.work_order_no), '')) AS work_order_no
-        FROM qms_flying_probe_projection projection
-        LEFT JOIN qms_flying_probe_run run
-          ON run.run_key = projection.run_key AND run.tenant_code = projection.tenant_code
-        WHERE projection.tenant_code = #{tenantCode}
-          AND projection.telemetry_id IN
+        SELECT telemetry_id, status, reason, inspection_record_id, delta_tested, work_order_no
+        FROM qms_flying_probe_projection
+        WHERE tenant_code = #{tenantCode}
+          AND telemetry_id IN
           <foreach collection="telemetryIds" item="telemetryId" open="(" separator="," close=")">
             #{telemetryId}
           </foreach>
