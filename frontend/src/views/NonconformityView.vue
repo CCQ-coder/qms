@@ -59,10 +59,12 @@ function canEditDetail(line?: NonconformityDetail) {
 const detailEditable = computed(() => canEditDetail(selectedLine.value))
 const calculatedScrapArea = computed(() => selectedLine.value?.singlePcsArea == null || !Number.isInteger(detailForm.scrapQuantity)
   ? '—' : Number((selectedLine.value.singlePcsArea * detailForm.scrapQuantity).toFixed(6)))
-const newDetail = () => ({ workOrderNo: '', internalProductNo: '', materialNo: '', layerCount: undefined as number | undefined,
-  unit: 'PCS', singlePcsArea: undefined as number | undefined, scrapQuantity: 1,
-  scrapArea: undefined as number | undefined, scrapReason: '', remark: '' })
-const manualForm = reactive<ManualNonconformityInput>({
+type ManualLineDraft = Omit<ManualNonconformityInput['details'][number], 'layerCount' | 'singlePcsArea' | 'scrapArea'> & {
+  layerCount: string; singlePcsArea: string; scrapArea: string
+}
+const newDetail = (): ManualLineDraft => ({ workOrderNo: '', internalProductNo: '', materialNo: '', layerCount: '',
+  unit: 'PCS', singlePcsArea: '', scrapQuantity: 1, scrapArea: '', scrapReason: '', remark: '' })
+const manualForm = reactive<Omit<ManualNonconformityInput, 'details'> & { details: ManualLineDraft[] }>({
   detectionDate: formatDate(new Date()), shiftName: '', processCode: '', processName: '',
   responsibleDepartment: '测试', remark: '', dispositionMethod: 'SCRAP', details: [newDetail()]
 })
@@ -105,13 +107,13 @@ function selectProcess(code: string) {
   manualForm.responsibleDepartment = responsibleDepartmentForProcess(process, code)
 }
 
-function selectManualWorkOrder(line: ManualNonconformityInput['details'][number]) {
+function selectManualWorkOrder(line: ManualLineDraft) {
   const order = workOrderOptions.value.find(item => item.workOrderNo === line.workOrderNo)
   if (!order) return
   line.internalProductNo = order.internalProductNo || line.internalProductNo
   line.materialNo = order.materialNo || line.materialNo
-  line.layerCount = order.layerCount ?? line.layerCount
-  line.singlePcsArea = order.singlePcsArea ?? line.singlePcsArea
+  line.layerCount = order.layerCount == null ? line.layerCount : String(order.layerCount)
+  line.singlePcsArea = order.singlePcsArea == null ? line.singlePcsArea : String(order.singlePcsArea)
 }
 
 function openManualDialog() {
@@ -187,6 +189,11 @@ async function createManualNcr() {
     ElMessage.warning('每条明细都需要生产指令或厂内编号，以及大于 0 的报废数量')
     return
   }
+  if (manualForm.details.some((line) => line.layerCount && (!Number.isInteger(Number(line.layerCount)) || Number(line.layerCount) < 1)
+    || [line.singlePcsArea, line.scrapArea].some(value => value && (!Number.isFinite(Number(value)) || Number(value) < 0)))) {
+    ElMessage.warning('层数须为正整数，面积不能为负数')
+    return
+  }
   manualSaving.value = true
   try {
     const created = await qmsApi.createManualNonconformity({
@@ -194,7 +201,10 @@ async function createManualNcr() {
       processCode: manualForm.processCode.trim(),
       processName: manualForm.processName.trim(),
       details: manualForm.details.map((line) => ({ ...line, workOrderNo: line.workOrderNo.trim(),
-        internalProductNo: line.internalProductNo.trim(), materialNo: line.materialNo.trim() }))
+        internalProductNo: line.internalProductNo.trim(), materialNo: line.materialNo.trim(),
+        layerCount: line.layerCount ? Number(line.layerCount) : undefined,
+        singlePcsArea: line.singlePcsArea ? Number(line.singlePcsArea) : undefined,
+        scrapArea: line.scrapArea ? Number(line.scrapArea) : undefined }))
     })
     manualDialog.value = false
     selectedDetailNcrId.value = created.id
@@ -319,11 +329,11 @@ onMounted(async () => {
             <el-select v-model="line.workOrderNo" filterable remote clearable :remote-method="searchWorkOrders" placeholder="可选生产指令" @change="selectManualWorkOrder(line)"><el-option v-for="order in workOrderOptions" :key="order.id" :label="`${order.workOrderNo} · ${order.internalProductNo || '无厂内编号'}`" :value="order.workOrderNo" /></el-select>
             <el-input v-model="line.internalProductNo" placeholder="厂内编号" />
             <el-input v-model="line.materialNo" placeholder="料号" />
-            <el-input-number v-model="line.layerCount" :min="1" :precision="0" placeholder="层数" />
+            <el-input v-model="line.layerCount" type="number" min="1" step="1" placeholder="层数" />
             <el-input v-model="line.unit" placeholder="单位" />
-            <el-input-number v-model="line.singlePcsArea" :min="0" :precision="6" placeholder="单 PCS 面积" />
+            <el-input v-model="line.singlePcsArea" type="number" min="0" step="any" placeholder="单 PCS 面积" />
             <el-input-number v-model="line.scrapQuantity" :min="1" class="full-width" />
-            <el-input-number v-model="line.scrapArea" :min="0" :precision="6" placeholder="自动计算" />
+            <el-input v-model="line.scrapArea" type="number" min="0" step="any" placeholder="自动计算" />
             <el-select v-model="line.scrapReason" filterable clearable placeholder="选择报废原因"><el-option v-for="reason in scrapReasons" :key="reason" :label="reason" :value="reason" /></el-select>
             <el-input v-model="line.remark" placeholder="备注" />
             <el-button link type="danger" :disabled="manualForm.details.length === 1" @click="manualForm.details.splice(index, 1)">移除</el-button>
