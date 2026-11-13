@@ -7,6 +7,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -44,6 +45,18 @@ public class NonconformityController {
         @PathVariable String ncrId, @RequestParam int expectedBadCount
     ) {
         return ApiResponse.of(service.approveDeviceDisposition(ncrId, expectedBadCount));
+    }
+
+    @PutMapping("/nonconformities/{ncrId}")
+    public ApiResponse<NonconformityResponse> updateNonconformity(@PathVariable String ncrId,
+                                                                  @Valid @RequestBody CreateManualNonconformityRequest request) {
+        return ApiResponse.of(service.updateNonconformity(ncrId, request));
+    }
+
+    @DeleteMapping("/nonconformities/{ncrId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteNonconformity(@PathVariable String ncrId) {
+        service.deleteNonconformity(ncrId);
     }
 
     @PutMapping("/nonconformities/{ncrId}/details/{detailId}")

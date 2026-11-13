@@ -2,6 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { qmsApi } from '@/api/qms'
+import { localSession } from '@/auth/local-session'
+import { authenticatedSubject } from '@/auth/oidc'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
 import { moveColumn } from './nonconformityColumns'
@@ -17,8 +19,10 @@ const departments = ref<string[]>([])
 const scrapReasons = ref<string[]>([])
 const workOrderOptions = ref<WorkOrder[]>([])
 let workOrderSearchVersion = 0
-const canReview = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? ''))
+const canReview = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? '')
+  && (localSession()?.actor ?? authenticatedSubject()) === '宋少帅')
 const manualDialog = ref(false)
+const editingNcrId = ref('')
 const manualSaving = ref(false)
 const selectedDetailNcrId = ref('')
 const detailListDialog = ref(false)
@@ -46,10 +50,10 @@ const ncrColumns = ref([
   { key: 'dispositionMethod', label: '处置方式', width: 110 },
   { key: 'sourceType', label: '创建来源', width: 130 },
   { key: 'createdAt', label: '创建日期', width: 170 },
-  { key: 'reviewedBy', label: '审核人', width: 110 },
+  { key: 'reviewedBy', label: '一级审核人', width: 140 },
   { key: 'reviewedAt', label: '审核时间', width: 170 },
   { key: 'status', label: '状态', width: 110 },
-  { key: 'operation', label: '操作', width: 175 }
+  { key: 'operation', label: '操作', width: 300 }
 ])
 const selectedDetailNcr = computed(() => ncrs.value.find((ncr) => ncr.id === selectedDetailNcrId.value))
 function canEditDetail(line?: NonconformityDetail) {
@@ -117,10 +121,33 @@ function selectManualWorkOrder(line: ManualLineDraft) {
 }
 
 function openManualDialog() {
+  editingNcrId.value = ''
   const fqc = finishedTestProcess(processes.value)
   Object.assign(manualForm, {
     detectionDate: formatDate(new Date()), shiftName: '', processCode: fqc?.processCode ?? '', processName: fqc?.processName ?? '',
     responsibleDepartment: responsibleDepartmentForProcess(fqc, fqc?.processCode ?? ''), remark: '', dispositionMethod: 'SCRAP', details: [newDetail()]
+  })
+  manualDialog.value = true
+  void searchWorkOrders('')
+  void loadDepartments()
+  void loadScrapReasons()
+}
+
+function openEditDialog(ncr: Nonconformity) {
+  editingNcrId.value = ncr.id
+  Object.assign(manualForm, {
+    detectionDate: ncr.detectionDate || formatDate(new Date()), shiftName: ncr.shiftName || '',
+    processCode: ncr.processCode || '', processName: ncr.processName || '',
+    responsibleDepartment: ncr.responsibleDepartment || '', remark: ncr.remark || '',
+    dispositionMethod: ncr.dispositionMethod || 'SCRAP', batchNo: ncr.batchNo || '',
+    details: ncr.details.map(line => ({
+      workOrderNo: line.workOrderNo === '已删除工单' ? '' : line.workOrderNo || '',
+      internalProductNo: line.internalProductNo || '', materialNo: line.materialNo || '',
+      layerCount: line.layerCount == null ? '' : String(line.layerCount), unit: line.unit || 'PCS',
+      singlePcsArea: line.singlePcsArea == null ? '' : String(line.singlePcsArea),
+      scrapQuantity: line.scrapQuantity, scrapArea: line.scrapArea == null ? '' : String(line.scrapArea),
+      scrapReason: line.scrapReason || '', remark: line.remark || ''
+    }))
   })
   manualDialog.value = true
   void searchWorkOrders('')
@@ -196,7 +223,7 @@ async function createManualNcr() {
   }
   manualSaving.value = true
   try {
-    const created = await qmsApi.createManualNonconformity({
+    const payload: ManualNonconformityInput = {
       ...manualForm,
       processCode: manualForm.processCode.trim(),
       processName: manualForm.processName.trim(),
@@ -205,16 +232,41 @@ async function createManualNcr() {
         layerCount: line.layerCount ? Number(line.layerCount) : undefined,
         singlePcsArea: line.singlePcsArea ? Number(line.singlePcsArea) : undefined,
         scrapArea: line.scrapArea ? Number(line.scrapArea) : undefined }))
-    })
+    }
+    const created = editingNcrId.value
+      ? await qmsApi.updateNonconformity(editingNcrId.value, payload)
+      : await qmsApi.createManualNonconformity(payload)
     manualDialog.value = false
     selectedDetailNcrId.value = created.id
     await load()
-    ElMessage.success(`已创建 ${created.ncrNo}`)
+    ElMessage.success(`${created.ncrNo} 已保存`)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '手工新建不良品处置单失败')
   } finally {
     manualSaving.value = false
   }
+}
+
+async function deleteNcr(ncr: Nonconformity) {
+  try {
+    await ElMessageBox.confirm(`删除 ${ncr.ncrNo} 及其全部明细？此操作无法撤销。`, '删除不良品处置单', {
+      confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch { return }
+  saving.value = true
+  try {
+    await qmsApi.deleteNonconformity(ncr.id)
+    await load()
+    ElMessage.success('处置单已删除')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '处置单删除失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+function ncrStatusText(status: string) {
+  return ['OPEN', 'PENDING_REVIEW'].includes(status) ? '未审核' : statusText(status)
 }
 
 async function approve(ncr: Nonconformity) {
@@ -259,7 +311,7 @@ onMounted(async () => {
         <el-button type="primary" @click="appliedFilters = { ...filters, dateRange: [...filters.dateRange] }">查询</el-button>
         <el-button @click="Object.assign(filters, { ncrNo: '', dateRange: [], processName: '', department: '' }); appliedFilters = { ...filters, dateRange: [] }">重置</el-button>
       </div>
-      <el-table :key="ncrColumns.map(column => column.key).join(',')" :data="filteredNcrs" empty-text="暂无不良品处置单" border max-height="600" @header-dragend="resizeColumn">
+      <paged-table :key="JSON.stringify(appliedFilters) + ncrColumns.map(column => column.key).join(',')" :data="filteredNcrs" empty-text="暂无不良品处置单" border max-height="600" @header-dragend="resizeColumn">
         <el-table-column v-for="column in ncrColumns" :key="column.key" :label="column.label" :width="column.width" :fixed="column.key === 'operation' ? 'right' : undefined" :show-overflow-tooltip="['remark', 'responsibleDepartment'].includes(column.key)">
           <template #header><span :draggable="column.key !== 'operation'" :title="column.key === 'operation' ? '' : '拖动表头调整顺序，拖动列边缘调整宽度'" @dragstart="draggedColumn = column.key" @dragover.prevent @drop.prevent="reorderColumn(column.key)" @dragend="draggedColumn = ''">{{ column.label }}</span></template>
           <template #default="scope">
@@ -272,13 +324,13 @@ onMounted(async () => {
             <template v-else-if="column.key === 'dispositionMethod'">{{ dispositionText(scope.row.dispositionMethod) }}</template>
             <template v-else-if="column.key === 'sourceType'">{{ scope.row.sourceType === 'DEVICE' ? '系统自动生成' : (scope.row.initiatedBy || '—') }}</template>
             <template v-else-if="column.key === 'createdAt'">{{ formatDateTime(scope.row.createdAt) }}</template>
-            <template v-else-if="column.key === 'reviewedBy'">{{ scope.row.reviewedBy || '—' }}</template>
+            <template v-else-if="column.key === 'reviewedBy'">{{ scope.row.reviewedBy || (['OPEN', 'PENDING_REVIEW'].includes(scope.row.status) ? '宋少帅（待审核）' : '—') }}</template>
             <template v-else-if="column.key === 'reviewedAt'">{{ formatDateTime(scope.row.reviewedAt) }}</template>
-            <el-tag v-else-if="column.key === 'status'" :type="['APPROVED', 'CLOSED'].includes(scope.row.status) ? 'success' : 'warning'">{{ statusText(scope.row.status) }}</el-tag>
-            <template v-else-if="column.key === 'operation'"><el-button type="primary" link @click="openDetailList(scope.row)">查看明细</el-button><el-button v-if="canReview && scope.row.status === 'PENDING_REVIEW'" type="primary" link :disabled="saving" @click="approve(scope.row)">审核</el-button></template>
+            <el-tag v-else-if="column.key === 'status'" :type="['APPROVED', 'CLOSED'].includes(scope.row.status) ? 'success' : 'warning'">{{ ncrStatusText(scope.row.status) }}</el-tag>
+            <template v-else-if="column.key === 'operation'"><el-button type="primary" link @click="openDetailList(scope.row)">查看明细</el-button><el-button v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" type="primary" link :disabled="saving" @click="openEditDialog(scope.row)">编辑</el-button><el-button v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" type="danger" link :disabled="saving" @click="deleteNcr(scope.row)">删除</el-button><span v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" :title="canReview ? '' : '仅宋少帅可审核'"><el-button type="primary" link :disabled="!canReview || saving" @click="approve(scope.row)">审核</el-button></span></template>
           </template>
         </el-table-column>
-      </el-table>
+      </paged-table>
     </el-card>
 
     <el-dialog v-model="detailListDialog" :title="`不良品明细 · ${selectedDetailNcr?.ncrNo || ''}`" width="min(1300px, 96vw)">
@@ -312,7 +364,7 @@ onMounted(async () => {
       <template v-if="detailEditable" #footer><el-button @click="detailDialog = false">取消</el-button><el-button type="primary" :loading="detailSaving" @click="saveDetail">保存</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="manualDialog" title="新增不良品处置单" width="min(1120px, 94vw)" top="5vh" destroy-on-close>
+    <el-dialog v-model="manualDialog" :title="editingNcrId ? '编辑不良品处置单' : '新增不良品处置单'" width="min(1120px, 94vw)" top="5vh" destroy-on-close>
       <el-form :model="manualForm" label-position="top">
         <div class="form-grid">
           <el-form-item label="检测日期" required><el-date-picker v-model="manualForm.detectionDate" type="date" value-format="YYYY-MM-DD" class="full-width" /></el-form-item>

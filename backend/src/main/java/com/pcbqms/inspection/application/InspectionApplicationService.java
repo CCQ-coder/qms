@@ -408,9 +408,13 @@ public class InspectionApplicationService {
     }
 
     private String createNonconformity(InspectionTask task, InspectionRecord record, LocalDateTime now) {
-        long sequence = nonconformityMapper.selectCount(Wrappers.lambdaQuery(Nonconformity.class)
-            .eq(Nonconformity::getTenantCode, task.getTenantCode())) + 1;
-        String ncrNo = "NCR-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + "-" + String.format("%04d", sequence);
+        String prefix = "NCR-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + "-";
+        List<Nonconformity> latest = nonconformityMapper.selectList(Wrappers.lambdaQuery(Nonconformity.class)
+            .eq(Nonconformity::getTenantCode, task.getTenantCode())
+            .likeRight(Nonconformity::getNcrNo, prefix)
+            .orderByDesc(Nonconformity::getNcrNo).last("LIMIT 1"));
+        long sequence = latest.isEmpty() ? 1 : Long.parseLong(latest.getFirst().getNcrNo().substring(prefix.length())) + 1;
+        String ncrNo = prefix + String.format("%04d", sequence);
         Nonconformity ncr = new Nonconformity();
         ncr.setId(UUID.randomUUID().toString());
         ncr.setTenantCode(task.getTenantCode());

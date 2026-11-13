@@ -35,6 +35,7 @@ import java.util.List;
 import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.Set;
+import org.springframework.security.access.AccessDeniedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,7 +68,6 @@ class NonconformityApplicationServiceTest {
         order.setWorkOrderNo("WO-1");
         when(workOrderMapper.selectOne(any())).thenReturn(order);
         when(nonconformityMapper.selectList(any())).thenReturn(List.of());
-        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
         var summary = new FinishedTestDeviceSummaryService.Summary(LocalDate.of(2026, 11, 3),
             "WO-1", "42379", "42379", 10, 7, 3, 70);
 
@@ -122,6 +122,113 @@ class NonconformityApplicationServiceTest {
 
         assertThatThrownBy(() -> service().approveDeviceDisposition("ncr-1", 3))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("数量已变化");
+        verify(nonconformityMapper, never()).updateById(any(Nonconformity.class));
+    }
+
+    @Test
+    void excelApprovalIsLimitedToSongShaoshuaiAndKeepsImportIdentity() {
+        TenantContext.set("customer-b", "other-supervisor");
+        assertThatThrownBy(() -> service().approveDeviceDisposition("ncr-1", 3))
+            .isInstanceOf(AccessDeniedException.class).hasMessageContaining("宋少帅");
+        TenantContext.set("customer-b", "宋少帅");
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId("ncr-1");
+        ncr.setTenantCode("customer-b");
+        ncr.setStatus("OPEN");
+        ncr.setSourceType("EXCEL");
+        ncr.setSourceGroupKey("scrap:document-1:2");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setScrapQuantity(3);
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
+
+        service().approveDeviceDisposition("ncr-1", 3);
+
+        assertThat(ncr.getStatus()).isEqualTo("APPROVED");
+        assertThat(ncr.getReviewedBy()).isEqualTo("宋少帅");
+        assertThat(ncr.getSourceGroupKey()).isEqualTo("scrap:document-1:2");
+        verify(inspectionAccessScopeService, org.mockito.Mockito.times(2)).requireSupervisorOrAdministrator();
+        verify(nonconformityDetailMapper).update(any(), any());
+    }
+
+    @Test
+    void unreviewedExcelCanBeEditedAndDeletedButReviewedCannot() {
+        TenantContext.set("customer-b", "operator");
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId("ncr-1");
+        ncr.setTenantCode("customer-b");
+        ncr.setStatus("OPEN");
+        ncr.setSourceType("EXCEL");
+        ncr.setProcessCode("FQC");
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 11, 9), "", "FQC", "测试",
+            "阻焊", "修改", "SCRAP", null, List.of(
+                new CreateNonconformityDetailRequest(null, "PCS", 2, "擦花", "", "31281", null, 4, null, null)));
+
+        var edited = service().updateNonconformity("ncr-1", request);
+        assertThat(edited.details()).hasSize(1);
+        assertThat(edited.details().getFirst().scrapQuantity()).isEqualTo(2);
+        assertThat(ncr.getRemark()).isEqualTo("修改");
+        verify(nonconformityDetailMapper).delete(any());
+        verify(nonconformityDetailMapper).insert(any(NonconformityDetail.class));
+
+        service().deleteNonconformity("ncr-1");
+        verify(nonconformityMapper).deleteById("ncr-1");
+
+        ncr.setStatus("APPROVED");
+        assertThatThrownBy(() -> service().deleteNonconformity("ncr-1"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("已审核");
+    }
+
+    @Test
+    void linkedCapaBlocksDeletionAndNumberingUsesHighestRemainingNumber() {
+        TenantContext.set("customer-a", "operator");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setStatus("OPEN");
+        ncr.setProcessCode("FQC");
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(capaMapper.selectCount(any())).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().deleteNonconformity("ncr-1"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("CAPA");
+        verify(nonconformityMapper, never()).deleteById("ncr-1");
+
+        Nonconformity latest = new Nonconformity();
+        latest.setNcrNo("NCR-" + LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-0185");
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of(latest));
+        var request = new CreateManualNonconformityRequest(LocalDate.now(), "", "FQC", "测试",
+            "阻焊", "", "SCRAP", null, List.of(
+                new CreateNonconformityDetailRequest(null, "PCS", 1, "擦花", "", "31281", null, null, null, null)));
+
+        assertThat(service().createManualNonconformity(request).ncrNo()).endsWith("-0186");
+    }
+
+    @Test
+    void editingImportedScrapCannotAttachLaterOrDifferentWorkOrder() {
+        TenantContext.set("customer-a", "operator");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setStatus("OPEN");
+        ncr.setSourceType("EXCEL");
+        ncr.setProcessCode("FQC");
+        WorkOrder order = new WorkOrder();
+        order.setTenantCode("customer-a");
+        order.setWorkOrderNo("WO-1");
+        order.setInternalProductNo("31281");
+        order.setInputDate(LocalDate.of(2026, 11, 10));
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(workOrderMapper.selectOne(any())).thenReturn(order);
+        var detail = new CreateNonconformityDetailRequest("WO-1", "PCS", 2, "擦花", "", "31281", null, null, null, null);
+        var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 11, 9), "", "FQC", "测试",
+            "阻焊", "", "SCRAP", null, List.of(detail));
+
+        assertThatThrownBy(() -> service().updateNonconformity("ncr-1", request))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("输入时间");
+        order.setInputDate(LocalDate.of(2026, 11, 8));
+        var wrongNumber = new CreateManualNonconformityRequest(LocalDate.of(2026, 11, 9), "", "FQC", "测试",
+            "阻焊", "", "SCRAP", null, List.of(
+                new CreateNonconformityDetailRequest("WO-1", "PCS", 2, "擦花", "", "99999", null, null, null, null)));
+        assertThatThrownBy(() -> service().updateNonconformity("ncr-1", wrongNumber))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("厂内编号");
         verify(nonconformityMapper, never()).updateById(any(Nonconformity.class));
     }
 
@@ -228,7 +335,7 @@ class NonconformityApplicationServiceTest {
         when(inspectionRecordMapper.selectById("record-1")).thenReturn(record);
         when(inspectionTaskMapper.selectById("task-1")).thenReturn(task);
         when(nonconformityMapper.selectOne(any())).thenReturn(null);
-        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of());
         when(workOrderMapper.selectById("work-order-1")).thenReturn(workOrder);
         when(productionBatchMapper.selectById("batch-1")).thenReturn(batch);
         NonconformityApplicationService service = new NonconformityApplicationService(
@@ -295,7 +402,7 @@ class NonconformityApplicationServiceTest {
         workOrder.setLayerCount(4);
         workOrder.setSinglePcsArea(new BigDecimal("0.25"));
         when(workOrderMapper.selectOne(any())).thenReturn(workOrder);
-        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of());
         var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 10, 20), "白班", "FQC", "成品测试",
             "品质部", "手工登记", "SCRAP", "BATCH-001", List.of(
                 new CreateNonconformityDetailRequest("WO-001", "PCS", 4, "板边破损", "复核后报废",
@@ -318,7 +425,7 @@ class NonconformityApplicationServiceTest {
     @Test
     void createsManualScrapFromEnteredFactoryNumberWithoutWorkOrder() {
         TenantContext.set("customer-a", "tester.a");
-        when(nonconformityMapper.selectCount(any())).thenReturn(0L);
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of());
         var request = new CreateManualNonconformityRequest(LocalDate.of(2026, 11, 3), "", "FQC", "成品测试",
             "阻焊", null, "SCRAP", null, List.of(
                 new CreateNonconformityDetailRequest(null, "PCS", 8, "擦花", "", "12893", "12893a", 2,
@@ -336,6 +443,7 @@ class NonconformityApplicationServiceTest {
     @Test
     void importsUnmatchedExcelRowWithoutLosingTheOriginalScrapValues() {
         TenantContext.set("customer-a", "admin");
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of());
         var row = new ScrapExcelImportParser.ScrapRow(2, LocalDate.of(2026, 10, 14), 4, "31281", 55,
             new BigDecimal("0.02907"), "锣坏机器故障", "成型", new BigDecimal("1.59885"), "来料", "备注");
 

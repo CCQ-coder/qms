@@ -211,6 +211,15 @@ export const qmsApi = {
     return data.data
   },
 
+  async updateNonconformity(ncrId: string, payload: ManualNonconformityInput) {
+    const { data } = await http.put<ApiResponse<Nonconformity>>(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}`, payload)
+    return data.data
+  },
+
+  async deleteNonconformity(ncrId: string) {
+    await http.delete(`/api/v1/nonconformities/${encodeURIComponent(ncrId)}`)
+  },
+
   async uploadInspectionAttachment(image: File) {
     const form = new FormData()
     form.append('image', image)

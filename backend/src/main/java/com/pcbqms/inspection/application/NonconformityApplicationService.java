@@ -35,6 +35,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.security.access.AccessDeniedException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -132,9 +133,13 @@ public class NonconformityApplicationService {
     @Transactional
     public NonconformityResponse approveDeviceDisposition(String id, int expectedBadCount) {
         inspectionAccessScopeService.requireSupervisorOrAdministrator();
+        if ("customer-b".equals(TenantContext.tenantCode()) && !"宋少帅".equals(TenantContext.actor())) {
+            throw new AccessDeniedException("一级审核仅宋少帅可操作");
+        }
         Nonconformity ncr = requireNcr(id);
-        if (!"DEVICE".equals(ncr.getSourceType()) || !"PENDING_REVIEW".equals(ncr.getStatus())) {
-            throw new IllegalArgumentException("仅待审核的设备不良品处置单可以审核");
+        requireNonconformityProcessAccess(ncr);
+        if (!isUnreviewed(ncr)) {
+            throw new IllegalArgumentException("仅未审核的不良品处置单可以审核");
         }
         int currentBadCount = nonconformityDetailMapper.selectList(Wrappers.lambdaQuery(NonconformityDetail.class)
             .eq(NonconformityDetail::getTenantCode, TenantContext.tenantCode())
@@ -144,13 +149,73 @@ public class NonconformityApplicationService {
             throw new IllegalArgumentException("处置单不良品数量已变化，请刷新后重新审核");
         }
         ncr.setStatus("APPROVED");
-        ncr.setSourceGroupKey(null);
+        if ("DEVICE".equals(ncr.getSourceType())) ncr.setSourceGroupKey(null);
         ncr.setReviewedBy(TenantContext.actor());
         ncr.setReviewedAt(LocalDateTime.now());
         nonconformityMapper.updateById(ncr);
-        clearSourceGroupKey(ncr);
+        if ("DEVICE".equals(ncr.getSourceType())) clearSourceGroupKey(ncr);
         updateDetailStatus(ncr, "APPROVED");
         return toNonconformityResponse(ncr);
+    }
+
+    @Transactional
+    public NonconformityResponse updateNonconformity(String id, CreateManualNonconformityRequest request) {
+        Nonconformity ncr = requireNcr(id);
+        requireNonconformityProcessAccess(ncr);
+        requireUnreviewed(ncr);
+        inspectionAccessScopeService.requireProcessAccess(request.processCode().trim());
+        List<WorkOrder> workOrders = resolveManualWorkOrders(request);
+        if ("EXCEL".equals(ncr.getSourceType())) {
+            for (int index = 0; index < workOrders.size(); index++) {
+                WorkOrder order = workOrders.get(index);
+                if (order == null) continue;
+                if (!ScrapWorkOrderMatcher.matches(request.details().get(index).internalProductNo(), order.getInternalProductNo())) {
+                    throw new IllegalArgumentException("生产指令厂内编号与 Excel 明细不一致");
+                }
+                if (order.getInputDate() == null || order.getInputDate().isAfter(request.detectionDate())) {
+                    throw new IllegalArgumentException("生产指令输入时间缺失或晚于 Excel 表格时间");
+                }
+            }
+        }
+        ncr.setWorkOrderId(workOrders.getFirst() == null ? null : workOrders.getFirst().getId());
+        ncr.setDetectionDate(request.detectionDate());
+        ncr.setShiftName(request.shiftName());
+        ncr.setProcessCode(request.processCode().trim());
+        ncr.setProcessName(request.processName().trim());
+        ncr.setResponsibleDepartment(request.responsibleDepartment());
+        ncr.setRemark(request.remark());
+        ncr.setDispositionMethod(StringUtils.hasText(request.dispositionMethod()) ? request.dispositionMethod().trim() : "SCRAP");
+        ncr.setBatchNo(request.batchNo());
+        nonconformityMapper.updateById(ncr);
+        nonconformityDetailMapper.delete(Wrappers.lambdaQuery(NonconformityDetail.class)
+            .eq(NonconformityDetail::getTenantCode, TenantContext.tenantCode())
+            .eq(NonconformityDetail::getNonconformityId, id));
+        return NonconformityResponse.from(ncr, workOrders.getFirst() == null ? null : workOrders.getFirst().getWorkOrderNo(),
+            ncr.getBatchNo(), saveManualDetails(ncr, request, workOrders));
+    }
+
+    @Transactional
+    public void deleteNonconformity(String id) {
+        Nonconformity ncr = requireNcr(id);
+        requireNonconformityProcessAccess(ncr);
+        requireUnreviewed(ncr);
+        if (capaMapper.selectCount(Wrappers.lambdaQuery(Capa.class)
+            .eq(Capa::getTenantCode, TenantContext.tenantCode())
+            .eq(Capa::getNonconformityId, id)) > 0) {
+            throw new IllegalArgumentException("处置单已关联 CAPA，不能删除");
+        }
+        nonconformityDetailMapper.delete(Wrappers.lambdaQuery(NonconformityDetail.class)
+            .eq(NonconformityDetail::getTenantCode, TenantContext.tenantCode())
+            .eq(NonconformityDetail::getNonconformityId, id));
+        nonconformityMapper.deleteById(id);
+    }
+
+    private boolean isUnreviewed(Nonconformity ncr) {
+        return "OPEN".equals(ncr.getStatus()) || "PENDING_REVIEW".equals(ncr.getStatus());
+    }
+
+    private void requireUnreviewed(Nonconformity ncr) {
+        if (!isUnreviewed(ncr)) throw new IllegalArgumentException("处置单已审核或关闭，不能编辑或删除");
     }
 
     @Transactional
@@ -265,6 +330,30 @@ public class NonconformityApplicationService {
     @Transactional
     public NonconformityResponse createManualNonconformity(CreateManualNonconformityRequest request) {
         inspectionAccessScopeService.requireProcessAccess(request.processCode().trim());
+        List<WorkOrder> workOrders = resolveManualWorkOrders(request);
+        String tenantCode = TenantContext.tenantCode();
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId(UUID.randomUUID().toString());
+        ncr.setTenantCode(tenantCode);
+        ncr.setNcrNo(nextNcrNo());
+        ncr.setWorkOrderId(workOrders.getFirst() == null ? null : workOrders.getFirst().getId());
+        ncr.setDetectionDate(request.detectionDate());
+        ncr.setShiftName(request.shiftName());
+        ncr.setProcessCode(request.processCode().trim());
+        ncr.setProcessName(request.processName().trim());
+        ncr.setResponsibleDepartment(request.responsibleDepartment());
+        ncr.setRemark(request.remark());
+        ncr.setDispositionMethod(StringUtils.hasText(request.dispositionMethod()) ? request.dispositionMethod().trim() : "SCRAP");
+        ncr.setBatchNo(request.batchNo());
+        ncr.setStatus("OPEN");
+        ncr.setInitiatedBy(TenantContext.actor());
+        ncr.setCreatedAt(LocalDateTime.now());
+        nonconformityMapper.insert(ncr);
+        return NonconformityResponse.from(ncr, workOrders.getFirst() == null ? null : workOrders.getFirst().getWorkOrderNo(),
+            request.batchNo(), saveManualDetails(ncr, request, workOrders));
+    }
+
+    private List<WorkOrder> resolveManualWorkOrders(CreateManualNonconformityRequest request) {
         String tenantCode = TenantContext.tenantCode();
         List<WorkOrder> workOrders = new ArrayList<>();
         for (var line : request.details()) {
@@ -286,23 +375,11 @@ public class NonconformityApplicationService {
             }
             workOrders.add(workOrder);
         }
-        Nonconformity ncr = new Nonconformity();
-        ncr.setId(UUID.randomUUID().toString());
-        ncr.setTenantCode(tenantCode);
-        ncr.setNcrNo(nextNcrNo());
-        ncr.setWorkOrderId(workOrders.getFirst() == null ? null : workOrders.getFirst().getId());
-        ncr.setDetectionDate(request.detectionDate());
-        ncr.setShiftName(request.shiftName());
-        ncr.setProcessCode(request.processCode().trim());
-        ncr.setProcessName(request.processName().trim());
-        ncr.setResponsibleDepartment(request.responsibleDepartment());
-        ncr.setRemark(request.remark());
-        ncr.setDispositionMethod(StringUtils.hasText(request.dispositionMethod()) ? request.dispositionMethod().trim() : "SCRAP");
-        ncr.setBatchNo(request.batchNo());
-        ncr.setStatus("OPEN");
-        ncr.setInitiatedBy(TenantContext.actor());
-        ncr.setCreatedAt(LocalDateTime.now());
-        nonconformityMapper.insert(ncr);
+        return workOrders;
+    }
+
+    private List<NonconformityDetailResponse> saveManualDetails(Nonconformity ncr, CreateManualNonconformityRequest request,
+                                                                 List<WorkOrder> workOrders) {
         List<NonconformityDetailResponse> responses = new ArrayList<>();
         for (int index = 0; index < request.details().size(); index++) {
             var line = request.details().get(index);
@@ -319,10 +396,12 @@ public class NonconformityApplicationService {
             detail.setScrapArea(line.scrapArea() != null ? line.scrapArea()
                 : detail.getSinglePcsArea() == null ? null
                     : detail.getSinglePcsArea().multiply(BigDecimal.valueOf(line.scrapQuantity())));
+            detail.setStatus(ncr.getStatus());
+            detail.setManuallyAdjusted(true);
             nonconformityDetailMapper.insert(detail);
             responses.add(NonconformityDetailResponse.from(detail, workOrder));
         }
-        return NonconformityResponse.from(ncr, workOrders.getFirst() == null ? null : workOrders.getFirst().getWorkOrderNo(), request.batchNo(), responses);
+        return responses;
     }
 
     @Transactional
@@ -560,8 +639,12 @@ public class NonconformityApplicationService {
     }
 
     private String nextNcrNo() {
-        long sequence = nonconformityMapper.selectCount(Wrappers.lambdaQuery(Nonconformity.class)
-            .eq(Nonconformity::getTenantCode, TenantContext.tenantCode())) + 1;
-        return "NCR-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + "-" + String.format("%04d", sequence);
+        String prefix = "NCR-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + "-";
+        List<Nonconformity> latest = nonconformityMapper.selectList(Wrappers.lambdaQuery(Nonconformity.class)
+            .eq(Nonconformity::getTenantCode, TenantContext.tenantCode())
+            .likeRight(Nonconformity::getNcrNo, prefix)
+            .orderByDesc(Nonconformity::getNcrNo).last("LIMIT 1"));
+        long sequence = latest.isEmpty() ? 1 : Long.parseLong(latest.getFirst().getNcrNo().substring(prefix.length())) + 1;
+        return prefix + String.format("%04d", sequence);
     }
 }
