@@ -311,7 +311,9 @@ public class FinishedTestDeviceSummaryService {
             """, (rs, row) -> new Sample(rs.getString("id"), rs.getString("equipment_id"),
                 rs.getString("material_no"), rs.getString("work_order_no"),
                 rs.getTimestamp("device_time").toLocalDateTime(), rs.getLong("tested"), rs.getLong("bad"), true), tenant));
-        return samples;
+        return "customer-b".equals(tenant) ? samples.stream()
+            .filter(sample -> sample.cumulative() || !sample.deviceTime().isBefore(LocalDate.of(2025, 10, 15).atStartOfDay()))
+            .toList() : samples;
     }
 
     static List<Summary> aggregate(List<Sample> samples, List<WorkOrder> orders) {

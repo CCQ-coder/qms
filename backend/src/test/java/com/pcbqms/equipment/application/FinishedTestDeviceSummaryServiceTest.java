@@ -31,6 +31,30 @@ class FinishedTestDeviceSummaryServiceTest {
     void clearTenant() { TenantContext.clear(); }
 
     @Test
+    void gySummaryIgnoresOldProbeSamplesButKeepsZhongboAndCutoffDay() {
+        TenantContext.set("customer-b", "admin");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        WorkOrderMapper orders = mock(WorkOrderMapper.class);
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        when(orders.selectList(any())).thenReturn(List.of(order));
+        when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Sample>>any(),
+            eq("customer-b"))).thenReturn(List.of(
+                new FinishedTestDeviceSummaryService.Sample("old-probe", "WTD-1", "PCB-1", "WO-1",
+                    LocalDateTime.of(2025, 10, 14, 9, 0), 9, 1, false),
+                new FinishedTestDeviceSummaryService.Sample("cutoff-probe", "WTD-1", "PCB-1", "WO-1",
+                    LocalDateTime.of(2025, 10, 15, 0, 0), 3, 0, false)
+            ), List.of(new FinishedTestDeviceSummaryService.Sample("old-zhongbo", "ZBX-1", "PCB-1", "WO-1",
+                LocalDateTime.of(2025, 10, 14, 10, 0), 2, 0, true)));
+
+        var summaries = new FinishedTestDeviceSummaryService(jdbc, orders,
+            mock(InspectionAccessScopeService.class)).listSummary();
+
+        assertThat(summaries).extracting(summary -> summary.inspectionDate() + ":" + summary.totalCount())
+            .containsExactly("2025-10-15:3", "2025-10-14:2");
+    }
+
+    @Test
     void settlesOnlyAfterTwelveHoursWithoutNewBoardsAcrossDevices() {
         WorkOrder order = new WorkOrder();
         order.setWorkOrderNo("WO-1");

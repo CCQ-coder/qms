@@ -41,6 +41,21 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
+    void gyHistoryAndRecentListsExcludeOnlyPreCutoffFlyingProbeRecordsBeforePaging() {
+        String condition = "tenant_code <> 'customer-b' OR event_type <> 'FLYING_PROBE_TEST_COUNTERS' "
+            + "OR device_time >= '2025-10-15'";
+        assertThat(historySql("FINISHED_TEST")).contains(condition);
+
+        Configuration configuration = new Configuration();
+        configuration.addMapper(EquipmentTelemetryRecordMapper.class);
+        String recentSql = configuration.getMappedStatement(
+            EquipmentTelemetryRecordMapper.class.getName() + ".selectRecentByTenant")
+            .getBoundSql(Map.of("tenantCode", "customer-b", "limit", 100))
+            .getSql().replaceAll("\\s+", " ");
+        assertThat(recentSql).contains(condition);
+    }
+
+    @Test
     void finishedTestDateFilterUsesDeviceDetectionTimeWhileOtherTelemetryUsesReceiptTime() {
         assertThat(historySql("FINISHED_TEST", null, null, true))
             .contains("device_time >= ?", "device_time <= ?")

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +58,23 @@ class FlyingProbeInspectionProjectionServiceTest {
     @AfterEach
     void clearTenant() {
         TenantContext.clear();
+    }
+
+    @Test
+    void gyOldProbeDataCannotBeProjectedOrManuallyMatched() {
+        TenantContext.set("customer-b", "admin");
+        var old = event("old-probe", LocalDateTime.of(2025, 10, 14, 8, 0),
+            LocalDateTime.of(2025, 10, 14, 9, 0), 3, 2, 1);
+        old.setTenantCode("customer-b");
+        service().projectNew(old);
+        verifyNoInteractions(projectionMapper);
+
+        var projection = projection(old);
+        projection.setStatus("RETRYABLE");
+        when(projectionMapper.lockProjection("old-probe")).thenReturn(projection);
+        assertThatThrownBy(() -> service().bindManually("old-probe", "WO-1"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("有效范围");
+        verify(workOrderMapper, never()).selectOne(any());
     }
 
     @Test

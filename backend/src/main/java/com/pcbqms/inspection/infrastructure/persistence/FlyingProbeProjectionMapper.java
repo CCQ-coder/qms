@@ -26,6 +26,7 @@ public interface FlyingProbeProjectionMapper {
                    MAX(device_time) OVER (PARTITION BY COALESCE(run_key, telemetry_id)) AS latest_device_time
             FROM qms_flying_probe_projection
             WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+              AND (tenant_code &lt;&gt; 'customer-b' OR device_time >= '2025-10-15')
         )
         SELECT p.telemetry_id AS id, e.asset_no AS equipment_code, p.machine_name, p.material_no,
                p.device_time, p.source_file, p.source_start_time, p.reason,
@@ -68,6 +69,7 @@ public interface FlyingProbeProjectionMapper {
                        ORDER BY device_time, received_at, telemetry_id) AS row_no
             FROM qms_flying_probe_projection
             WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
+              AND (tenant_code &lt;&gt; 'customer-b' OR device_time >= '2025-10-15')
         )
         SELECT COUNT(*) FROM ranked p
         LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
@@ -102,6 +104,7 @@ public interface FlyingProbeProjectionMapper {
         WHERE telemetry.tenant_code = #{tenantCode}
           AND telemetry.event_type = 'FLYING_PROBE_TEST_COUNTERS'
           AND telemetry.device_time >= #{cutoff}
+          AND (telemetry.tenant_code <> 'customer-b' OR telemetry.device_time >= '2025-10-15')
           AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(telemetry.raw_payload, '$.attributes.startTime')), '')
               >= DATE_FORMAT(#{cutoff}, '%Y-%m-%dT%H:%i:%s')
           AND NOT EXISTS (
@@ -124,6 +127,7 @@ public interface FlyingProbeProjectionMapper {
           AND (telemetry.device_time < #{cutoff}
                OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(telemetry.raw_payload, '$.attributes.startTime')), '')
                   < DATE_FORMAT(#{cutoff}, '%Y-%m-%dT%H:%i:%s'))
+          AND (telemetry.tenant_code <> 'customer-b' OR telemetry.device_time >= '2025-10-15')
           AND NOT EXISTS (
               SELECT 1 FROM qms_flying_probe_projection projection
               WHERE projection.telemetry_id = telemetry.id
@@ -138,6 +142,7 @@ public interface FlyingProbeProjectionMapper {
         SELECT * FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE' AND retry_after <= #{now}
           AND source_start_time >= #{cutoff}
+          AND (tenant_code <> 'customer-b' OR device_time >= '2025-10-15')
         ORDER BY device_time, received_at, telemetry_id
         LIMIT #{limit}
         """)
@@ -149,6 +154,7 @@ public interface FlyingProbeProjectionMapper {
         SELECT * FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE' AND retry_after <= #{now}
           AND (source_start_time < #{cutoff} OR source_start_time IS NULL)
+          AND (tenant_code <> 'customer-b' OR device_time >= '2025-10-15')
         ORDER BY device_time, received_at, telemetry_id
         LIMIT #{limit}
         """)
