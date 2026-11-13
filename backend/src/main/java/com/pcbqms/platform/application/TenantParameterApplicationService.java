@@ -31,6 +31,9 @@ public class TenantParameterApplicationService {
         if (normalizedValue.isEmpty() && !FLYING_PROBE_PATTERN_KEY.equals(key)) {
             throw new IllegalArgumentException("参数值不能为空");
         }
+        if (("ui.browser-title".equals(key) || "ui.sidebar-title".equals(key)) && normalizedValue.length() > 40) {
+            throw new IllegalArgumentException("标题不能超过 40 个字符");
+        }
         if (FLYING_PROBE_PATTERN_KEY.equals(key) && !normalizedValue.isEmpty()) {
             try {
                 if (Pattern.compile(normalizedValue).matcher("").groupCount() != 1) {

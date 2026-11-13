@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   DataAnalysis,
@@ -9,9 +9,11 @@ import {
   SetUp
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { qmsApi } from '@/api/qms'
 import { authenticatedSubject, isOidcEnabled, logout, startLogin } from '@/auth/oidc'
 import { localSession, signOutLocal } from '@/auth/local-session'
 import { isMenuGroupVisible, isMenuVisible, menuAccess, menuLabel, refreshMenuAccess } from '@/navigation/menu'
+import { appBrand, BROWSER_TITLE_KEY, resetAppBrand, setBrowserTitle, setSidebarTitle, SIDEBAR_TITLE_KEY } from './appBrand'
 import {
   desktopApiBaseUrl,
   isDesktopApplication,
@@ -80,10 +82,25 @@ async function saveDesktopServerAddress() {
   }
 }
 
+let brandActive = false
 onMounted(() => {
+  brandActive = true
+  resetAppBrand()
   // AppShell is remounted after a local account switch. Always reload instead of
   // reusing the previous account's in-memory menu permissions.
   void refreshMenuAccess()
+  void Promise.all([
+    qmsApi.getTenantParameter(BROWSER_TITLE_KEY),
+    qmsApi.getTenantParameter(SIDEBAR_TITLE_KEY)
+  ]).then(([browser, sidebar]) => {
+    if (!brandActive) return
+    setBrowserTitle(browser.value)
+    setSidebarTitle(sidebar.value)
+  }).catch(() => {})
+})
+onUnmounted(() => {
+  brandActive = false
+  resetAppBrand()
 })
 </script>
 
@@ -92,7 +109,7 @@ onMounted(() => {
     <el-aside :width="asideCollapsed ? '72px' : '244px'" class="app-aside">
       <div class="brand">
         <div class="brand-mark">Q</div>
-        <span v-show="!asideCollapsed">PCB QMS</span>
+        <span v-show="!asideCollapsed" class="brand-name" :title="appBrand.sidebarTitle">{{ appBrand.sidebarTitle }}</span>
       </div>
       <el-menu :collapse="asideCollapsed" :default-active="route.path" :default-openeds="['overview', 'quality', 'trace', 'equipment', 'system']" router class="main-menu grouped-menu">
         <el-sub-menu v-if="isMenuGroupVisible('OVERVIEW')" index="overview">

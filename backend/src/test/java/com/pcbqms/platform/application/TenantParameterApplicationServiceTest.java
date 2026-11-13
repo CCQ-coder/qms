@@ -95,6 +95,18 @@ class TenantParameterApplicationServiceTest {
     }
 
     @Test
+    void rejectsBrandTitlesLongerThanFortyCharacters() {
+        TenantContext.set("customer-b", "admin");
+        var service = new TenantParameterApplicationService(systemParameterMapper, inspectionAccessScopeService);
+
+        assertThatThrownBy(() -> service.update("ui.browser-title", "A".repeat(41)))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("40");
+        assertThatThrownBy(() -> service.update("ui.sidebar-title", "A".repeat(41)))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("40");
+        verify(systemParameterMapper, never()).insert(any(SystemParameter.class));
+    }
+
+    @Test
     void blankRuleCanPassRequestValidation() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             assertThat(factory.getValidator().validate(new UpdateTenantParameterRequest(""))).isEmpty();

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { qmsApi } from '@/api/qms'
+import { BROWSER_TITLE_KEY, DEFAULT_APP_TITLE, setBrowserTitle, setSidebarTitle, SIDEBAR_TITLE_KEY } from '@/layout/appBrand'
 
 const AUTO_NCR_KEY = 'quality.auto-create-ncr'
 const PRODUCT_CODE_VALIDATION_KEY = 'master-data.product-code.validation-enabled'
@@ -13,6 +14,9 @@ const loading = ref(false)
 const savingProductRule = ref(false)
 const savingFlyingProbeRule = ref(false)
 const savingAutoNcr = ref(false)
+const savingBrand = ref<'browser' | 'sidebar' | ''>('')
+const browserTitle = ref(DEFAULT_APP_TITLE)
+const sidebarTitle = ref(DEFAULT_APP_TITLE)
 const productCodeValidationEnabled = ref(false)
 const productCodePattern = ref(DEFAULT_PRODUCT_CODE_PATTERN)
 const productCodeExample = ref('PCB-4L-001')
@@ -44,20 +48,48 @@ const flyingProbeExtracted = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const [autoNcrParameter, validationParameter, patternParameter, flyingProbeParameter] = await Promise.all([
+    const [autoNcrParameter, validationParameter, patternParameter, flyingProbeParameter, browserParameter, sidebarParameter] = await Promise.all([
       qmsApi.getTenantParameter(AUTO_NCR_KEY),
       qmsApi.getTenantParameter(PRODUCT_CODE_VALIDATION_KEY),
       qmsApi.getTenantParameter(PRODUCT_CODE_PATTERN_KEY),
-      qmsApi.getTenantParameter(FLYING_PROBE_PATTERN_KEY)
+      qmsApi.getTenantParameter(FLYING_PROBE_PATTERN_KEY),
+      qmsApi.getTenantParameter(BROWSER_TITLE_KEY),
+      qmsApi.getTenantParameter(SIDEBAR_TITLE_KEY)
     ])
     autoCreateNcr.value = autoNcrParameter.value === 'true'
     productCodeValidationEnabled.value = validationParameter.value === 'true'
     productCodePattern.value = patternParameter.value || DEFAULT_PRODUCT_CODE_PATTERN
     flyingProbePattern.value = flyingProbeParameter.value || ''
+    browserTitle.value = browserParameter.value || DEFAULT_APP_TITLE
+    sidebarTitle.value = sidebarParameter.value || DEFAULT_APP_TITLE
   } catch {
     ElMessage.error('系统参数读取失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function saveBrandTitle(kind: 'browser' | 'sidebar') {
+  const title = (kind === 'browser' ? browserTitle.value : sidebarTitle.value).trim()
+  if (!title) {
+    ElMessage.warning('标题不能为空')
+    return
+  }
+  savingBrand.value = kind
+  try {
+    await qmsApi.updateTenantParameter(kind === 'browser' ? BROWSER_TITLE_KEY : SIDEBAR_TITLE_KEY, title)
+    if (kind === 'browser') {
+      browserTitle.value = title
+      setBrowserTitle(title)
+    } else {
+      sidebarTitle.value = title
+      setSidebarTitle(title)
+    }
+    ElMessage.success('标题已保存')
+  } catch {
+    ElMessage.error('标题保存失败；请确认当前账号具有租户管理员权限')
+  } finally {
+    savingBrand.value = ''
   }
 }
 
@@ -133,6 +165,20 @@ onMounted(load)
         <p>参数仅影响当前租户。修改料号规则后，新建产品资料会立即按新规则校验。</p>
       </div>
     </div>
+
+    <el-card shadow="never" class="content-card compact-card">
+      <template #header><div class="card-header"><span>系统标题</span></div></template>
+      <el-form label-position="top" class="system-parameter-form">
+        <el-form-item label="浏览器标签标题">
+          <el-input v-model="browserTitle" maxlength="40" show-word-limit placeholder="PCB QMS" />
+        </el-form-item>
+        <el-button type="primary" :loading="savingBrand === 'browser'" @click="saveBrandTitle('browser')">保存浏览器标题</el-button>
+        <el-form-item label="左侧栏标题" style="margin-top: 18px">
+          <el-input v-model="sidebarTitle" maxlength="40" show-word-limit placeholder="PCB QMS" />
+        </el-form-item>
+        <el-button type="primary" :loading="savingBrand === 'sidebar'" @click="saveBrandTitle('sidebar')">保存左侧栏标题</el-button>
+      </el-form>
+    </el-card>
 
     <el-card shadow="never" class="content-card">
       <template #header><div class="card-header"><span>料号规则</span><span class="helper-text">替代独立的料号规则配置页面</span></div></template>
