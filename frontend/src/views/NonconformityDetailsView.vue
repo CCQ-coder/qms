@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
+import { factoryNo, materialNo } from './nonconformityDetailDisplay'
 import type { Nonconformity, NonconformityDetail, WorkOrder } from '@/types/qms'
 import ScrapImportPanel from './ScrapImportPanel.vue'
 
@@ -14,10 +15,6 @@ const rows = computed(() => nonconformities.value.flatMap((ncr) =>
 const filters = reactive({ ncrNo: '', dateRange: [] as string[], process: '', department: '',
   workOrderNo: '', internalNo: '', materialNo: '' })
 const appliedFilters = ref({ ...filters, dateRange: [] as string[] })
-const factoryNo = (ncr: Nonconformity, detail: NonconformityDetail) => ncr.sourceType === 'EXCEL'
-  ? detail.workOrderInternalProductNo : detail.internalProductNo
-const materialNo = (ncr: Nonconformity, detail: NonconformityDetail) => ncr.sourceType === 'EXCEL'
-  ? (/^\d{5}$/.test(detail.internalProductNo ?? '') ? detail.internalProductNo : detail.materialNo) : detail.materialNo
 const filteredRows = computed(() => rows.value.filter(({ ncr, detail }) => {
   const filter = appliedFilters.value
   return (!filter.ncrNo || ncr.ncrNo.toLowerCase().includes(filter.ncrNo.toLowerCase()))
@@ -139,6 +136,7 @@ onMounted(() => { void load() })
       <el-table-column label="生产指令" min-width="150"><template #default="{ row }">{{ row.detail.workOrderNo || '待关联' }}</template></el-table-column>
       <el-table-column label="厂内编号" min-width="165"><template #default="{ row }">{{ factoryNo(row.ncr, row.detail) || '—' }}</template></el-table-column>
       <el-table-column label="料号" min-width="125"><template #default="{ row }">{{ materialNo(row.ncr, row.detail) || '—' }}</template></el-table-column>
+      <el-table-column label="层数" min-width="75"><template #default="{ row }">{{ row.detail.layerCount ?? '—' }}</template></el-table-column>
       <el-table-column label="单位" min-width="75"><template #default="{ row }">{{ row.detail.unit }}</template></el-table-column>
       <el-table-column label="单 PCS 面积" min-width="125" align="right"><template #default="{ row }">{{ row.detail.singlePcsArea ?? '—' }}</template></el-table-column>
       <el-table-column label="报废数量" min-width="105" align="right"><template #default="{ row }">{{ row.detail.scrapQuantity }}</template></el-table-column>

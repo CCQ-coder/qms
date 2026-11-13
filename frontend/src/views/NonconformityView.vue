@@ -8,6 +8,7 @@ import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
 import { moveColumn } from './nonconformityColumns'
 import { finishedTestProcess, responsibleDepartmentForProcess } from './nonconformityForm'
+import { factoryNo, materialNo } from './nonconformityDetailDisplay'
 import ScrapImportPanel from './ScrapImportPanel.vue'
 import type { ManualNonconformityInput, Nonconformity, NonconformityDetail, ProcessMaster, WorkOrder } from '@/types/qms'
 
@@ -336,7 +337,9 @@ onMounted(async () => {
     <el-dialog v-model="detailListDialog" :title="`不良品明细 · ${selectedDetailNcr?.ncrNo || ''}`" width="min(1300px, 96vw)">
       <paged-table :key="selectedDetailNcrId" :data="selectedDetailNcr?.details ?? []" empty-text="暂无不良品明细">
         <el-table-column prop="workOrderNo" label="生产指令" min-width="155" />
-        <el-table-column prop="internalProductNo" label="厂内编号" min-width="135"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
+        <el-table-column label="厂内编号" min-width="165"><template #default="scope">{{ factoryNo(selectedDetailNcr, scope.row) || '—' }}</template></el-table-column>
+        <el-table-column label="料号" min-width="125"><template #default="scope">{{ materialNo(selectedDetailNcr, scope.row) || '—' }}</template></el-table-column>
+        <el-table-column label="层数" min-width="75"><template #default="scope">{{ scope.row.layerCount ?? '—' }}</template></el-table-column>
         <el-table-column prop="processName" label="工序" min-width="125" />
         <el-table-column prop="unit" label="单位" min-width="75" />
         <el-table-column prop="singlePcsArea" label="单 PCS 面积" min-width="125"><template #default="scope">{{ scope.row.singlePcsArea ?? '—' }}</template></el-table-column>
@@ -352,7 +355,9 @@ onMounted(async () => {
     <el-dialog v-model="detailDialog" title="不良品明细" width="min(650px, 94vw)" @closed="detailListDialog = true">
       <el-descriptions v-if="selectedLine" :column="2" border>
         <el-descriptions-item label="生产指令">{{ selectedLine.workOrderNo }}</el-descriptions-item>
-        <el-descriptions-item label="厂内编号">{{ selectedLine.internalProductNo || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="厂内编号">{{ factoryNo(selectedDetailNcr, selectedLine) || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="料号">{{ materialNo(selectedDetailNcr, selectedLine) || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="层数">{{ selectedLine.layerCount ?? '—' }}</el-descriptions-item>
         <el-descriptions-item label="工序">{{ selectedLine.processName }}</el-descriptions-item>
         <el-descriptions-item label="单位">{{ selectedLine.unit }}</el-descriptions-item>
         <el-descriptions-item label="单 PCS 面积">{{ selectedLine.singlePcsArea ?? '—' }}</el-descriptions-item>
