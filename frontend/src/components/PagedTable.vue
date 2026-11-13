@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { clampPage, paginateRows } from '@/utils/pagination'
+import { clampPage, paginateRows, shouldPrefetchNextPage } from '@/utils/pagination'
 
 defineOptions({ inheritAttrs: false })
 
@@ -9,7 +9,7 @@ const emit = defineEmits<{ 'load-more': [] }>()
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = computed(() => props.data.length)
-const paginationTotal = computed(() => Math.max(total.value, 1) + (props.hasMore ? pageSize.value : 0))
+const paginationTotal = computed(() => Math.max(total.value, 1))
 const rows = computed(() => paginateRows(props.data, currentPage.value, pageSize.value))
 const pageStart = computed(() => total.value ? (currentPage.value - 1) * pageSize.value + 1 : 0)
 const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, total.value))
@@ -22,12 +22,13 @@ watch(paginationTotal, (count) => {
 })
 
 function changePage(page: number) {
-  if (props.hasMore && page * pageSize.value >= total.value) emit('load-more')
+  if (!props.loadError && shouldPrefetchNextPage(page, total.value, pageSize.value, !!props.hasMore)) emit('load-more')
 }
 
 function changePageSize(size: number) {
   pageSize.value = size
   currentPage.value = 1
+  if (!props.loadError && shouldPrefetchNextPage(1, total.value, size, !!props.hasMore)) emit('load-more')
 }
 </script>
 
@@ -47,7 +48,7 @@ function changePageSize(size: number) {
         @current-change="changePage"
         @size-change="changePageSize"
       />
-      <el-button v-if="hasMore && loadError" link type="primary" @click="emit('load-more')">重试读取</el-button>
+      <el-button v-if="hasMore" link type="primary" @click="emit('load-more')">{{ loadError ? '重试读取' : '加载下一批记录' }}</el-button>
     </div>
   </div>
 </template>
