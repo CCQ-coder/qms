@@ -278,6 +278,22 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void zhongboPcbMaterialWithSuffixMatchesByLeadingFiveDigits() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("26100891");
+        order.setInternalProductNo("02PC14814C01");
+        order.setReleasedAt(LocalDate.of(2026, 10, 31));
+        var sample = new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "14814C+", null,
+            LocalDateTime.of(2026, 11, 13, 6, 34), 138, 2, true);
+
+        assertThat(FinishedTestDeviceSummaryService.aggregate(List.of(sample), List.of(order)))
+            .singleElement().satisfies(row -> {
+                assertThat(row.workOrderNo()).isEqualTo("26100891");
+                assertThat(row.pcbMaterialNo()).isEqualTo("14814C+");
+            });
+    }
+
+    @Test
     void fuzzyZhongboMatchStillSkipsOrdersWithTheSameLatestReleaseDate() {
         WorkOrder first = new WorkOrder();
         first.setWorkOrderNo("26110009");
