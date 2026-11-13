@@ -311,7 +311,7 @@ onBeforeUnmount(() => {
       <div v-if="visibleFlowRecords.length" class="live-flow-grid" :style="{ gridTemplateColumns: `repeat(${config.displayColumns}, minmax(0, 1fr))` }">
         <button v-for="record in visibleFlowRecords" :key="record.id" class="live-flow-record" type="button" @click="inspectRecord(record)"><div class="live-flow-record-head"><strong>{{ record.machineName || '未命名设备' }}</strong><el-tag size="small" :type="statusType(record.status)">{{ telemetryStatusText(record) }}</el-tag></div><div class="live-flow-route"><span>{{ record.sourceUsername || '现场监控' }}</span><b>→</b><span>{{ record.equipmentCode }} · {{ record.equipmentName }}</span><b>→</b><span>QMS</span></div><dl><div><dt>设备时间</dt><dd>{{ formatDateTime(record.deviceTime) }}</dd></div><div><dt>程序 / 工单</dt><dd>{{ record.programNo || '—' }}</dd></div><div><dt>进度 / 完成数</dt><dd>{{ record.progressPercent == null ? '—' : `${record.progressPercent}%` }} / {{ record.machiningCount ?? '—' }}</dd></div></dl><span class="inspect-hint">点击查看原始报文与解析结果</span></button>
       </div>
-      <div v-if="flowRecords.length" class="monitor-pagination"><el-pagination v-model:current-page="flowPage" :page-size="flowPageSize" :total="flowRecords.length" background layout="total, prev, pager, next" /></div>
+      <div v-if="flowRecords.length" class="monitor-pagination"><el-pagination :pager-count="11" v-model:current-page="flowPage" :page-size="flowPageSize" :total="flowRecords.length" background layout="total, prev, pager, next, jumper" /></div>
       <el-empty v-else description="暂无已入库现场数据；请先添加设备映射并确认旧监控软件正在上报" :image-size="72" />
     </el-card>
 

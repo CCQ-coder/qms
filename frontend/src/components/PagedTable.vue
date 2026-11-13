@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { clampPage, paginateRows, shouldPrefetchNextPage } from '@/utils/pagination'
+import { clampPage, paginateRows } from '@/utils/pagination'
 
 defineOptions({ inheritAttrs: false })
 
@@ -21,14 +21,9 @@ watch(paginationTotal, (count) => {
   currentPage.value = clampPage(currentPage.value, count, pageSize.value)
 })
 
-function changePage(page: number) {
-  if (!props.loadError && shouldPrefetchNextPage(page, total.value, pageSize.value, !!props.hasMore)) emit('load-more')
-}
-
 function changePageSize(size: number) {
   pageSize.value = size
   currentPage.value = 1
-  if (!props.loadError && shouldPrefetchNextPage(1, total.value, size, !!props.hasMore)) emit('load-more')
 }
 </script>
 
@@ -43,12 +38,12 @@ function changePageSize(size: number) {
         :page-size="pageSize"
         :page-sizes="[10, 20, 50, 100]"
         :total="paginationTotal"
+        :pager-count="11"
         background
         layout="sizes, prev, pager, next, jumper"
-        @current-change="changePage"
         @size-change="changePageSize"
       />
-      <el-button v-if="hasMore" link type="primary" @click="emit('load-more')">{{ loadError ? '重试读取' : '加载下一批记录' }}</el-button>
+      <el-button v-if="hasMore && loadError" link type="primary" @click="emit('load-more')">重试读取</el-button>
     </div>
   </div>
 </template>

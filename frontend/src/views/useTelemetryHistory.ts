@@ -25,11 +25,15 @@ export function useTelemetryHistory(
     loading.value = true
     error.value = ''
     try {
-      const page = await fetchPage({ eventType, limit: 100, ...search, ...(cursor ? { cursor } : {}) })
-      records.value = cursor ? [...records.value, ...page.items] : page.items
-      nextCursor.value = page.nextCursor
-      loaded.value = true
-      if (!cursor) updatedAt.value = new Date()
+      let next = cursor
+      do {
+        const page = await fetchPage({ eventType, limit: 200, ...search, ...(next ? { cursor: next } : {}) })
+        records.value = next ? [...records.value, ...page.items] : page.items
+        nextCursor.value = page.nextCursor
+        loaded.value = true
+        if (!next) updatedAt.value = new Date()
+        next = page.nextCursor
+      } while (next)
     } catch {
       error.value = `${label}读取失败，请重试。`
     } finally {

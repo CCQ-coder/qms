@@ -431,7 +431,7 @@ onMounted(() => { void loadTasks() })
 
       <div class="process-pagination">
         <span>显示第 {{ pageStart }}–{{ pageEnd }} 条，共 {{ totalRows }} 条</span>
-        <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :page-sizes="[10, 20, 50, 100]" :total="totalRows" background layout="sizes, prev, pager, next, jumper" @size-change="handlePageSizeChange" />
+        <el-pagination :pager-count="11" v-model:current-page="currentPage" :page-size="pageSize" :page-sizes="[10, 20, 50, 100]" :total="totalRows" background layout="sizes, prev, pager, next, jumper" @size-change="handlePageSizeChange" />
       </div>
     </el-card>
 

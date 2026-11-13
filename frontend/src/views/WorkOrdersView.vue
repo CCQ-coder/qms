@@ -219,7 +219,7 @@ onMounted(() => { void load() })
 
       <div class="work-order-pagination">
         <span>显示第 {{ pageStart }}–{{ pageEnd }} 条，共 {{ total }} 条</span>
-        <el-pagination :current-page="currentPage" :page-size="pageSize" :page-sizes="[10, 20, 50, 100]" :total="total" background layout="sizes, prev, pager, next, jumper" @current-change="load" @size-change="handlePageSizeChange" />
+        <el-pagination :pager-count="11" :current-page="currentPage" :page-size="pageSize" :page-sizes="[10, 20, 50, 100]" :total="total" background layout="sizes, prev, pager, next, jumper" @current-change="load" @size-change="handlePageSizeChange" />
       </div>
     </el-card>
 

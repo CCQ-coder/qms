@@ -25,23 +25,28 @@ test('shows pass rate only when both tested and good counts are available', () =
   assert.equal(flyingProbePassRate({ ...record('c'), goodBoardCount: undefined }), '—')
 })
 
-test('loads only flying-probe history and exposes its next cursor', async () => {
+test('loads every flying-probe history page before showing pagination', async () => {
   const queries: unknown[] = []
   const history = useTelemetryHistory(async (query) => {
     queries.push(query)
-    return { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
+    return query.cursor
+      ? { items: [record('older')], pageSize: 100 }
+      : { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
   }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh()
 
-  assert.deepEqual(queries, [{ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100 }])
-  assert.deepEqual(history.records.value.map((item) => item.id), ['newest'])
-  assert.equal(history.nextCursor.value, 'older-page')
+  assert.deepEqual(queries, [
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200 },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, cursor: 'older-page' }
+  ])
+  assert.deepEqual(history.records.value.map((item) => item.id), ['newest', 'older'])
+  assert.equal(history.nextCursor.value, undefined)
   assert.equal(history.loaded.value, true)
   assert.equal(history.error.value, '')
 })
 
-test('keeps detection date filters while loading the next page', async () => {
+test('keeps detection date filters while automatically loading every page', async () => {
   const queries: unknown[] = []
   const history = useTelemetryHistory(async (query) => {
     queries.push(query)
@@ -49,15 +54,14 @@ test('keeps detection date filters while loading the next page', async () => {
   }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh({ fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59' })
-  await history.loadMore()
 
   assert.deepEqual(queries, [
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59' },
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59', cursor: 'older-page' }
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59' },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, fromTime: '2026-11-01T00:00:00', toTime: '2026-11-09T23:59:59', cursor: 'older-page' }
   ])
 })
 
-test('appends the next page once and stops when there is no cursor', async () => {
+test('stops after the last page', async () => {
   const queries: unknown[] = []
   const history = useTelemetryHistory(async (query) => {
     queries.push(query)
@@ -69,18 +73,17 @@ test('appends the next page once and stops when there is no cursor', async () =>
   await history.refresh()
   const newestPageRefreshedAt = history.updatedAt.value
   await history.loadMore()
-  await history.loadMore()
 
   assert.deepEqual(history.records.value.map((item) => item.id), ['newest', 'older'])
   assert.deepEqual(queries, [
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100 },
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, cursor: 'older-page' }
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200 },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, cursor: 'older-page' }
   ])
   assert.equal(history.nextCursor.value, undefined)
   assert.strictEqual(history.updatedAt.value, newestPageRefreshedAt)
 })
 
-test('reports failed page loads without replacing previously loaded records', async () => {
+test('keeps loaded pages and permits retry after a later page fails', async () => {
   let failNextPage = true
   const history = useTelemetryHistory(async (query) => {
     if (query.cursor && failNextPage) throw new Error('HTTP 500')
@@ -90,8 +93,6 @@ test('reports failed page loads without replacing previously loaded records', as
   }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh()
-  await history.loadMore()
-
   assert.deepEqual(history.records.value.map((item) => item.id), ['newest'])
   assert.equal(history.nextCursor.value, 'older-page')
   assert.match(history.error.value, /读取失败/)
@@ -111,10 +112,10 @@ test('loads Zhongbo reports using their own event type', async () => {
 
   await history.refresh()
 
-  assert.deepEqual(queries, [{ eventType: 'ZHONGBO_TEST_REPORT', limit: 100 }])
+  assert.deepEqual(queries, [{ eventType: 'ZHONGBO_TEST_REPORT', limit: 200 }])
 })
 
-test('keeps production order, device material and factory number filters across pages', async () => {
+test('keeps production order, device material and factory number filters across automatically loaded pages', async () => {
   const queries: unknown[] = []
   const history = useTelemetryHistory(async (query) => {
     queries.push(query)
@@ -124,10 +125,9 @@ test('keeps production order, device material and factory number filters across 
   }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
   await history.refresh({ workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' })
-  await history.loadMore()
 
   assert.deepEqual(queries, [
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' },
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01', cursor: 'older-page' }
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01', cursor: 'older-page' }
   ])
 })

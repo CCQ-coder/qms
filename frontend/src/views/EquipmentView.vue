@@ -276,7 +276,7 @@ onMounted(load)
         <el-table-column label="状态" min-width="100"><template #default="scope"><el-tag :type="equipmentStatusTagType(scope.row.status)">{{ statusText(scope.row.status) }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="145" fixed="right"><template #default="scope"><el-button type="primary" link @click="openEditEquipment(scope.row)">编辑</el-button><el-button type="danger" link :loading="deletingEquipmentId === scope.row.id" @click="deleteEquipment(scope.row)">删除</el-button></template></el-table-column>
       </el-table>
-      <div class="equipment-pagination"><span>显示第 {{ equipmentPageStart }}–{{ equipmentPageEnd }} 条，共 {{ equipmentTotal }} 条</span><el-pagination :current-page="equipmentCurrentPage" :page-size="equipmentPageSize" :page-sizes="[10, 20, 50, 100]" :total="equipmentTotal" background layout="sizes, prev, pager, next, jumper" @current-change="(page: number) => { equipmentCurrentPage = page; load() }" @size-change="changeEquipmentPageSize" /></div>
+      <div class="equipment-pagination"><span>显示第 {{ equipmentPageStart }}–{{ equipmentPageEnd }} 条，共 {{ equipmentTotal }} 条</span><el-pagination :pager-count="11" :current-page="equipmentCurrentPage" :page-size="equipmentPageSize" :page-sizes="[10, 20, 50, 100]" :total="equipmentTotal" background layout="sizes, prev, pager, next, jumper" @current-change="(page: number) => { equipmentCurrentPage = page; load() }" @size-change="changeEquipmentPageSize" /></div>
     </el-card>
 
     <el-dialog v-model="equipmentDialog" :title="editingEquipmentId ? '编辑设备' : '新增设备'" width="min(640px, 94vw)">
