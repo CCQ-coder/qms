@@ -7,14 +7,17 @@ import { authenticatedSubject } from '@/auth/oidc'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
 import { moveColumn } from './nonconformityColumns'
+import { reviewCandidates } from './nonconformityBatchReview'
 import { finishedTestProcess, responsibleDepartmentForProcess } from './nonconformityForm'
-import { factoryNo, materialNo } from './nonconformityDetailDisplay'
+import { excelEditIdentifiers, factoryNo, materialNo } from './nonconformityDetailDisplay'
 import ScrapImportPanel from './ScrapImportPanel.vue'
 import type { ManualNonconformityInput, Nonconformity, NonconformityDetail, ProcessMaster, WorkOrder } from '@/types/qms'
 
 const loading = ref(false)
 const ncrs = ref<Nonconformity[]>([])
 const saving = ref(false)
+const selectedNcrs = ref<Nonconformity[]>([])
+const tableVersion = ref(0)
 const processes = ref<ProcessMaster[]>([])
 const departments = ref<string[]>([])
 const scrapReasons = ref<string[]>([])
@@ -24,6 +27,7 @@ const canReview = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'
   && (localSession()?.actor ?? authenticatedSubject()) === '宋少帅')
 const manualDialog = ref(false)
 const editingNcrId = ref('')
+const editingSourceType = ref('')
 const manualSaving = ref(false)
 const selectedDetailNcrId = ref('')
 const detailListDialog = ref(false)
@@ -65,7 +69,7 @@ const detailEditable = computed(() => canEditDetail(selectedLine.value))
 const calculatedScrapArea = computed(() => selectedLine.value?.singlePcsArea == null || !Number.isInteger(detailForm.scrapQuantity)
   ? '—' : Number((selectedLine.value.singlePcsArea * detailForm.scrapQuantity).toFixed(6)))
 type ManualLineDraft = Omit<ManualNonconformityInput['details'][number], 'layerCount' | 'singlePcsArea' | 'scrapArea'> & {
-  layerCount: string; singlePcsArea: string; scrapArea: string
+  layerCount: string; singlePcsArea: string; scrapArea: string; displayFactoryNo?: string; displayMaterialNo?: string
 }
 const newDetail = (): ManualLineDraft => ({ workOrderNo: '', internalProductNo: '', materialNo: '', layerCount: '',
   unit: 'PCS', singlePcsArea: '', scrapQuantity: 1, scrapArea: '', scrapReason: '', remark: '' })
@@ -78,6 +82,8 @@ async function load() {
   try {
     const ncrData = await qmsApi.listNonconformities()
     ncrs.value = ncrData
+    selectedNcrs.value = []
+    tableVersion.value++
     if (!ncrData.some((ncr) => ncr.id === selectedDetailNcrId.value)) selectedDetailNcrId.value = ncrData[0]?.id ?? ''
   } catch {
     ElMessage.error('不良品处置单读取失败')
@@ -106,6 +112,17 @@ async function loadScrapReasons() {
   catch { ElMessage.warning('报废原因选项读取失败') }
 }
 
+function applyFilters() {
+  selectedNcrs.value = []
+  tableVersion.value++
+  appliedFilters.value = { ...filters, dateRange: [...filters.dateRange] }
+}
+
+function resetFilters() {
+  Object.assign(filters, { ncrNo: '', dateRange: [], processName: '', department: '' })
+  applyFilters()
+}
+
 function selectProcess(code: string) {
   const process = processes.value.find((item) => item.processCode === code)
   manualForm.processName = process?.processName ?? ''
@@ -114,15 +131,19 @@ function selectProcess(code: string) {
 
 function selectManualWorkOrder(line: ManualLineDraft) {
   const order = workOrderOptions.value.find(item => item.workOrderNo === line.workOrderNo)
+  if (editingSourceType.value === 'EXCEL') line.displayFactoryNo = order?.internalProductNo || ''
   if (!order) return
-  line.internalProductNo = order.internalProductNo || line.internalProductNo
-  line.materialNo = order.materialNo || line.materialNo
+  if (editingSourceType.value !== 'EXCEL') {
+    line.internalProductNo = order.internalProductNo || line.internalProductNo
+    line.materialNo = order.materialNo || line.materialNo
+  }
   line.layerCount = order.layerCount == null ? line.layerCount : String(order.layerCount)
   line.singlePcsArea = order.singlePcsArea == null ? line.singlePcsArea : String(order.singlePcsArea)
 }
 
 function openManualDialog() {
   editingNcrId.value = ''
+  editingSourceType.value = ''
   const fqc = finishedTestProcess(processes.value)
   Object.assign(manualForm, {
     detectionDate: formatDate(new Date()), shiftName: '', processCode: fqc?.processCode ?? '', processName: fqc?.processName ?? '',
@@ -136,6 +157,7 @@ function openManualDialog() {
 
 function openEditDialog(ncr: Nonconformity) {
   editingNcrId.value = ncr.id
+  editingSourceType.value = ncr.sourceType ?? ''
   Object.assign(manualForm, {
     detectionDate: ncr.detectionDate || formatDate(new Date()), shiftName: ncr.shiftName || '',
     processCode: ncr.processCode || '', processName: ncr.processName || '',
@@ -144,6 +166,7 @@ function openEditDialog(ncr: Nonconformity) {
     details: ncr.details.map(line => ({
       workOrderNo: line.workOrderNo === '已删除工单' ? '' : line.workOrderNo || '',
       internalProductNo: line.internalProductNo || '', materialNo: line.materialNo || '',
+      displayFactoryNo: factoryNo(ncr, line) || '', displayMaterialNo: materialNo(ncr, line) || '',
       layerCount: line.layerCount == null ? '' : String(line.layerCount), unit: line.unit || 'PCS',
       singlePcsArea: line.singlePcsArea == null ? '' : String(line.singlePcsArea),
       scrapQuantity: line.scrapQuantity, scrapArea: line.scrapArea == null ? '' : String(line.scrapArea),
@@ -213,8 +236,12 @@ async function createManualNcr() {
     return
   }
   if (!manualForm.details.length || manualForm.details.some((line) =>
-    (!line.workOrderNo.trim() && !line.internalProductNo.trim()) || !Number.isInteger(line.scrapQuantity) || line.scrapQuantity < 1)) {
-    ElMessage.warning('每条明细都需要生产指令或厂内编号，以及大于 0 的报废数量')
+    (editingSourceType.value === 'EXCEL' ? !line.displayMaterialNo?.trim()
+      : !line.workOrderNo.trim() && !line.internalProductNo.trim())
+      || !Number.isInteger(line.scrapQuantity) || line.scrapQuantity < 1)) {
+    ElMessage.warning(editingSourceType.value === 'EXCEL'
+      ? '每条明细都需要料号和大于 0 的报废数量'
+      : '每条明细都需要生产指令或厂内编号，以及大于 0 的报废数量')
     return
   }
   if (manualForm.details.some((line) => line.layerCount && (!Number.isInteger(Number(line.layerCount)) || Number(line.layerCount) < 1)
@@ -228,8 +255,11 @@ async function createManualNcr() {
       ...manualForm,
       processCode: manualForm.processCode.trim(),
       processName: manualForm.processName.trim(),
-      details: manualForm.details.map((line) => ({ ...line, workOrderNo: line.workOrderNo.trim(),
-        internalProductNo: line.internalProductNo.trim(), materialNo: line.materialNo.trim(),
+      details: manualForm.details.map(({ displayFactoryNo: _displayFactoryNo, displayMaterialNo, ...line }) => ({ ...line,
+        workOrderNo: line.workOrderNo.trim(),
+        ...(editingSourceType.value === 'EXCEL'
+          ? excelEditIdentifiers(line.internalProductNo, displayMaterialNo || '')
+          : { internalProductNo: line.internalProductNo.trim(), materialNo: line.materialNo.trim() }),
         layerCount: line.layerCount ? Number(line.layerCount) : undefined,
         singlePcsArea: line.singlePcsArea ? Number(line.singlePcsArea) : undefined,
         scrapArea: line.scrapArea ? Number(line.scrapArea) : undefined }))
@@ -290,6 +320,27 @@ async function approve(ncr: Nonconformity) {
   }
 }
 
+async function approveSelected() {
+  const candidates = reviewCandidates(selectedNcrs.value)
+  if (!canReview.value || !candidates.length) return
+  try {
+    await ElMessageBox.confirm(`确认审核所选 ${candidates.length} 张报废单、共 ${candidates.reduce((sum, ncr) => sum + ncr.badCount, 0)} 件不良品？`, '批量审核报废单', {
+      confirmButtonText: '确认审核', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch { return }
+  saving.value = true
+  try {
+    const results = await Promise.allSettled(candidates.map(ncr => qmsApi.approveDeviceDisposition(ncr.id, ncr.badCount)))
+    const failures = results.flatMap((result, index) => result.status === 'rejected'
+      ? [`${candidates[index].ncrNo}：${result.reason instanceof Error ? result.reason.message : '审核失败'}`] : [])
+    await load()
+    if (failures.length) ElMessage.error(`成功 ${candidates.length - failures.length} 张，失败 ${failures.length} 张。${failures.slice(0, 3).join('；')}${failures.length > 3 ? '；其余失败请刷新后重试' : ''}`)
+    else ElMessage.success(`已审核 ${candidates.length} 张报废单`)
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(async () => {
   void loadMenuAccess()
   await load()
@@ -303,16 +354,17 @@ onMounted(async () => {
 <template>
   <section class="page-stack">
     <el-card shadow="never" class="content-card" v-loading="loading">
-      <template #header><div class="card-header"><span>不良品处置单</span><div class="ncr-card-actions"><el-button type="primary" @click="openManualDialog">新增</el-button><ScrapImportPanel @imported="load" /><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
+      <template #header><div class="card-header"><span>不良品处置单</span><div class="ncr-card-actions"><el-button type="primary" @click="openManualDialog">新增</el-button><ScrapImportPanel @imported="load" /><el-button v-if="canReview" type="primary" :disabled="!selectedNcrs.length || saving" :loading="saving" @click="approveSelected">批量审核{{ selectedNcrs.length ? `（${selectedNcrs.length}）` : '' }}</el-button><el-button link type="primary" @click="load">刷新</el-button></div></div></template>
       <div class="report-filter ncr-list-filter">
         <el-input v-model="filters.ncrNo" clearable placeholder="单据编号" aria-label="单据编号" />
         <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
         <el-input v-model="filters.processName" clearable placeholder="检验工序" aria-label="检验工序" />
         <el-input v-model="filters.department" clearable placeholder="责任部门" aria-label="责任部门" />
-        <el-button type="primary" @click="appliedFilters = { ...filters, dateRange: [...filters.dateRange] }">查询</el-button>
-        <el-button @click="Object.assign(filters, { ncrNo: '', dateRange: [], processName: '', department: '' }); appliedFilters = { ...filters, dateRange: [] }">重置</el-button>
+        <el-button type="primary" @click="applyFilters">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
       </div>
-      <paged-table :key="JSON.stringify(appliedFilters) + ncrColumns.map(column => column.key).join(',')" :data="filteredNcrs" empty-text="暂无不良品处置单" border max-height="600" @header-dragend="resizeColumn">
+      <paged-table :key="JSON.stringify(appliedFilters) + ncrColumns.map(column => column.key).join(',') + tableVersion" :data="filteredNcrs" empty-text="暂无不良品处置单" border max-height="600" @header-dragend="resizeColumn" @selection-change="selectedNcrs = $event">
+        <el-table-column v-if="canReview" type="selection" width="55" :selectable="(row: Nonconformity) => ['OPEN', 'PENDING_REVIEW'].includes(row.status)" />
         <el-table-column v-for="column in ncrColumns" :key="column.key" :label="column.label" :width="column.width" :fixed="column.key === 'operation' ? 'right' : undefined" :show-overflow-tooltip="['remark', 'responsibleDepartment'].includes(column.key)">
           <template #header><span :draggable="column.key !== 'operation'" :title="column.key === 'operation' ? '' : '拖动表头调整顺序，拖动列边缘调整宽度'" @dragstart="draggedColumn = column.key" @dragover.prevent @drop.prevent="reorderColumn(column.key)" @dragend="draggedColumn = ''">{{ column.label }}</span></template>
           <template #default="scope">
@@ -381,11 +433,13 @@ onMounted(async () => {
         </div>
         <div class="item-editor-header"><strong>明细行</strong><el-button link type="primary" @click="manualForm.details.push(newDetail())">+ 添加明细</el-button></div>
         <div class="ncr-detail-editor-scroll">
-          <div class="ncr-detail-editor ncr-detail-editor-header"><span>生产指令</span><span>厂内编号 *</span><span>料号</span><span>层数</span><span>单位</span><span>单 PCS 面积</span><span>报废数量 *</span><span>报废总面积</span><span>报废原因</span><span>备注</span><span>操作</span></div>
+          <div class="ncr-detail-editor ncr-detail-editor-header"><span>生产指令</span><span>厂内编号{{ editingSourceType === 'EXCEL' ? '' : ' *' }}</span><span>料号{{ editingSourceType === 'EXCEL' ? ' *' : '' }}</span><span>层数</span><span>单位</span><span>单 PCS 面积</span><span>报废数量 *</span><span>报废总面积</span><span>报废原因</span><span>备注</span><span>操作</span></div>
           <div v-for="(line, index) in manualForm.details" :key="index" class="ncr-detail-editor">
             <el-select v-model="line.workOrderNo" filterable remote clearable :remote-method="searchWorkOrders" placeholder="可选生产指令" @change="selectManualWorkOrder(line)"><el-option v-for="order in workOrderOptions" :key="order.id" :label="`${order.workOrderNo} · ${order.internalProductNo || '无厂内编号'}`" :value="order.workOrderNo" /></el-select>
-            <el-input v-model="line.internalProductNo" placeholder="厂内编号" />
-            <el-input v-model="line.materialNo" placeholder="料号" />
+            <el-input v-if="editingSourceType === 'EXCEL'" :model-value="line.displayFactoryNo" disabled placeholder="未关联生产指令" />
+            <el-input v-else v-model="line.internalProductNo" placeholder="厂内编号" />
+            <el-input v-if="editingSourceType === 'EXCEL'" v-model="line.displayMaterialNo" placeholder="料号" />
+            <el-input v-else v-model="line.materialNo" placeholder="料号" />
             <el-input v-model="line.layerCount" type="number" min="1" step="1" placeholder="层数" />
             <el-input v-model="line.unit" placeholder="单位" />
             <el-input v-model="line.singlePcsArea" type="number" min="0" step="any" placeholder="单 PCS 面积" />
@@ -396,7 +450,7 @@ onMounted(async () => {
             <el-button link type="danger" :disabled="manualForm.details.length === 1" @click="manualForm.details.splice(index, 1)">移除</el-button>
           </div>
         </div>
-        <p class="helper-text">生产指令可选；未选择时填写厂内编号。未填写报废总面积时按单 PCS 面积 × 报废数量计算。</p>
+        <p class="helper-text">{{ editingSourceType === 'EXCEL' ? '厂内编号随关联的生产指令带入，料号取导入数据。' : '生产指令可选；未选择时填写厂内编号。' }}未填写报废总面积时按单 PCS 面积 × 报废数量计算。</p>
       </el-form>
       <template #footer><el-button @click="manualDialog = false">取消</el-button><el-button type="primary" :loading="manualSaving" @click="createManualNcr">保存处置单</el-button></template>
     </el-dialog>

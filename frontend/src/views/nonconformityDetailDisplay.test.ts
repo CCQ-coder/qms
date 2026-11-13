@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { factoryNo, materialNo } from './nonconformityDetailDisplay.ts'
+import { excelEditIdentifiers, factoryNo, materialNo } from './nonconformityDetailDisplay.ts'
 import type { Nonconformity, NonconformityDetail } from '../types/qms.ts'
 
 test('imported scrap shows the linked full factory number and five-digit material number', () => {
@@ -17,4 +17,12 @@ test('regular scrap keeps its own factory and material numbers', () => {
   const detail = { internalProductNo: '02PT43605A01', materialNo: 'BC-SM00284' } as NonconformityDetail
   assert.equal(factoryNo(ncr, detail), '02PT43605A01')
   assert.equal(materialNo(ncr, detail), 'BC-SM00284')
+})
+
+test('editing imported scrap keeps the original matching key while correcting the material number', () => {
+  assert.deepEqual(excelEditIdentifiers('43605', '43606'), { internalProductNo: '43606', materialNo: '43606' })
+  assert.deepEqual(excelEditIdentifiers('02PT43605A01', '43605'), {
+    internalProductNo: '02PT43605A01', materialNo: '43605'
+  })
+  assert.deepEqual(excelEditIdentifiers('', '43605'), { internalProductNo: '43605', materialNo: '43605' })
 })
