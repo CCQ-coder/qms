@@ -134,7 +134,10 @@ public class NonconformityApplicationService {
     public NonconformityResponse approveDeviceDisposition(String id, int expectedBadCount) {
         inspectionAccessScopeService.requireSupervisorOrAdministrator();
         if ("customer-b".equals(TenantContext.tenantCode()) && !"宋少帅".equals(TenantContext.actor())) {
-            throw new AccessDeniedException("一级审核仅宋少帅可操作");
+            String roleCode = inspectionAccessScopeService.currentAccess().roleCode();
+            if (!"PLATFORM_ADMIN".equals(roleCode) && !"TENANT_ADMIN".equals(roleCode)) {
+                throw new AccessDeniedException("一级审核仅管理员或宋少帅可操作");
+            }
         }
         Nonconformity ncr = requireNcr(id);
         requireNonconformityProcessAccess(ncr);

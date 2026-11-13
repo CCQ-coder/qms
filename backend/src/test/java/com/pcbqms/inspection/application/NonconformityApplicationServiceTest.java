@@ -127,8 +127,10 @@ class NonconformityApplicationServiceTest {
     }
 
     @Test
-    void excelApprovalIsLimitedToSongShaoshuaiAndKeepsImportIdentity() {
+    void gySupervisorApprovalIsLimitedToSongShaoshuaiAndKeepsImportIdentity() {
         TenantContext.set("customer-b", "other-supervisor");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("other-supervisor", "SUPERVISOR", true, Set.of()));
         assertThatThrownBy(() -> service().approveDeviceDisposition("ncr-1", 3))
             .isInstanceOf(AccessDeniedException.class).hasMessageContaining("宋少帅");
         TenantContext.set("customer-b", "宋少帅");
@@ -150,6 +152,27 @@ class NonconformityApplicationServiceTest {
         assertThat(ncr.getSourceGroupKey()).isEqualTo("scrap:document-1:2");
         verify(inspectionAccessScopeService, org.mockito.Mockito.times(2)).requireSupervisorOrAdministrator();
         verify(nonconformityDetailMapper).update(any(), any());
+    }
+
+    @Test
+    void gyPlatformAdministratorCanApproveImportedScrap() {
+        TenantContext.set("customer-b", "admin");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "PLATFORM_ADMIN", true, Set.of()));
+        Nonconformity ncr = new Nonconformity();
+        ncr.setId("ncr-1");
+        ncr.setTenantCode("customer-b");
+        ncr.setStatus("OPEN");
+        ncr.setSourceType("EXCEL");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setScrapQuantity(3);
+        when(nonconformityMapper.selectById("ncr-1")).thenReturn(ncr);
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
+
+        service().approveDeviceDisposition("ncr-1", 3);
+
+        assertThat(ncr.getStatus()).isEqualTo("APPROVED");
+        assertThat(ncr.getReviewedBy()).isEqualTo("admin");
     }
 
     @Test

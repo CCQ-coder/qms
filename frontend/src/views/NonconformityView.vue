@@ -7,7 +7,7 @@ import { authenticatedSubject } from '@/auth/oidc'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
 import { formatDate, formatDateTime, statusText } from '@/utils/display-text'
 import { moveColumn } from './nonconformityColumns'
-import { reviewCandidates } from './nonconformityBatchReview'
+import { canReviewNonconformities, reviewCandidates } from './nonconformityBatchReview'
 import { finishedTestProcess, responsibleDepartmentForProcess } from './nonconformityForm'
 import { excelEditIdentifiers, factoryNo, materialNo } from './nonconformityDetailDisplay'
 import ScrapImportPanel from './ScrapImportPanel.vue'
@@ -23,8 +23,8 @@ const departments = ref<string[]>([])
 const scrapReasons = ref<string[]>([])
 const workOrderOptions = ref<WorkOrder[]>([])
 let workOrderSearchVersion = 0
-const canReview = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(menuAccess.value?.roleCode ?? '')
-  && (localSession()?.actor ?? authenticatedSubject()) === '宋少帅')
+const canReview = computed(() => canReviewNonconformities(
+  menuAccess.value?.roleCode ?? '', localSession()?.actor ?? authenticatedSubject() ?? ''))
 const manualDialog = ref(false)
 const editingNcrId = ref('')
 const editingSourceType = ref('')
@@ -377,10 +377,10 @@ onMounted(async () => {
             <template v-else-if="column.key === 'dispositionMethod'">{{ dispositionText(scope.row.dispositionMethod) }}</template>
             <template v-else-if="column.key === 'sourceType'">{{ scope.row.sourceType === 'DEVICE' ? '系统自动生成' : (scope.row.initiatedBy || '—') }}</template>
             <template v-else-if="column.key === 'createdAt'">{{ formatDateTime(scope.row.createdAt) }}</template>
-            <template v-else-if="column.key === 'reviewedBy'">{{ scope.row.reviewedBy || (['OPEN', 'PENDING_REVIEW'].includes(scope.row.status) ? '宋少帅（待审核）' : '—') }}</template>
+            <template v-else-if="column.key === 'reviewedBy'">{{ scope.row.reviewedBy || (['OPEN', 'PENDING_REVIEW'].includes(scope.row.status) ? '待审核' : '—') }}</template>
             <template v-else-if="column.key === 'reviewedAt'">{{ formatDateTime(scope.row.reviewedAt) }}</template>
             <el-tag v-else-if="column.key === 'status'" :type="['APPROVED', 'CLOSED'].includes(scope.row.status) ? 'success' : 'warning'">{{ ncrStatusText(scope.row.status) }}</el-tag>
-            <template v-else-if="column.key === 'operation'"><el-button type="primary" link @click="openDetailList(scope.row)">查看明细</el-button><el-button v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" type="primary" link :disabled="saving" @click="openEditDialog(scope.row)">编辑</el-button><el-button v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" type="danger" link :disabled="saving" @click="deleteNcr(scope.row)">删除</el-button><span v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" :title="canReview ? '' : '仅宋少帅可审核'"><el-button type="primary" link :disabled="!canReview || saving" @click="approve(scope.row)">审核</el-button></span></template>
+            <template v-else-if="column.key === 'operation'"><el-button type="primary" link @click="openDetailList(scope.row)">查看明细</el-button><el-button v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" type="primary" link :disabled="saving" @click="openEditDialog(scope.row)">编辑</el-button><el-button v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" type="danger" link :disabled="saving" @click="deleteNcr(scope.row)">删除</el-button><span v-if="['OPEN', 'PENDING_REVIEW'].includes(scope.row.status)" :title="canReview ? '' : '仅管理员或宋少帅可审核'"><el-button type="primary" link :disabled="!canReview || saving" @click="approve(scope.row)">审核</el-button></span></template>
           </template>
         </el-table-column>
       </paged-table>

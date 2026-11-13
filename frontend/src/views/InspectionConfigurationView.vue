@@ -40,6 +40,7 @@ const savingProduct = ref(false)
 const savingProcess = ref(false)
 const savingUser = ref(false)
 const platformAdministrator = computed(() => menuAccess.value?.roleCode === 'PLATFORM_ADMIN')
+const roleNames: Record<string, string> = { PLATFORM_ADMIN: '平台管理员', TENANT_ADMIN: '租户管理员', SUPERVISOR: '主管', INSPECTOR: '检验员' }
 
 const newItem = (sortOrder: number): EditableItem => ({
   sortOrder, itemCode: '', itemName: '', inputType: 'TEXT', required: true,
@@ -389,7 +390,7 @@ onMounted(async () => {
           <paged-table :data="users" empty-text="切换为租户管理员后可查看用户权限">
             <el-table-column prop="userName" label="用户标识" min-width="150" />
             <el-table-column prop="displayName" label="显示名称" min-width="130" />
-            <el-table-column prop="roleCode" label="角色" min-width="130" />
+            <el-table-column label="角色" min-width="130"><template #default="scope">{{ roleNames[scope.row.roleCode] || scope.row.roleCode }}</template></el-table-column>
             <el-table-column label="授权工序" min-width="190"><template #default="scope">{{ scope.row.processCodes.join('、') || '全部工序' }}</template></el-table-column>
             <el-table-column label="状态" width="100"><template #default="scope"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'">{{ statusText(scope.row.status) }}</el-tag></template></el-table-column>
             <el-table-column label="操作" width="90"><template #default="scope"><el-button link type="primary" @click="openUserDialog(scope.row)">编辑</el-button></template></el-table-column>

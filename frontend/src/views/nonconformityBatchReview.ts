@@ -1,5 +1,10 @@
 import type { Nonconformity } from '../types/qms'
 
+export function canReviewNonconformities(roleCode: string, actor: string) {
+  return ['PLATFORM_ADMIN', 'TENANT_ADMIN'].includes(roleCode)
+    || (roleCode === 'SUPERVISOR' && actor === '宋少帅')
+}
+
 export function reviewCandidates(selected: Nonconformity[]) {
   return selected.filter(ncr => ['OPEN', 'PENDING_REVIEW'].includes(ncr.status)).map(ncr => ({
     id: ncr.id,

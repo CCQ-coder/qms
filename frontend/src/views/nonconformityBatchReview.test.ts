@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { reviewCandidates } from './nonconformityBatchReview.ts'
+import { canReviewNonconformities, reviewCandidates } from './nonconformityBatchReview.ts'
 import type { Nonconformity } from '../types/qms.ts'
 
 test('batch review includes only unreviewed orders with their current detail totals', () => {
@@ -13,4 +13,12 @@ test('batch review includes only unreviewed orders with their current detail tot
     { id: 'a', ncrNo: 'NCR-1', badCount: 5 },
     { id: 'c', ncrNo: 'NCR-3', badCount: 1 }
   ])
+})
+
+test('gy administrators and the named supervisor can review scrap orders', () => {
+  assert.equal(canReviewNonconformities('PLATFORM_ADMIN', 'admin'), true)
+  assert.equal(canReviewNonconformities('TENANT_ADMIN', 'admin'), true)
+  assert.equal(canReviewNonconformities('SUPERVISOR', '宋少帅'), true)
+  assert.equal(canReviewNonconformities('SUPERVISOR', 'other'), false)
+  assert.equal(canReviewNonconformities('INSPECTOR', '宋少帅'), false)
 })
