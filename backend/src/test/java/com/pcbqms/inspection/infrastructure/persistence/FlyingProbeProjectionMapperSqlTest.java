@@ -22,6 +22,11 @@ class FlyingProbeProjectionMapperSqlTest {
             String sql = configuration.getMappedStatement(FlyingProbeProjectionMapper.class.getName() + "." + method)
                 .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
             assertThat(sql).as(method).contains("'customer-b'", "2025-10-15", "device_time >=");
+            if (method.contains("Retryable") || method.contains("retryable")) {
+                assertThat(sql).as(method).contains("source_start_time >= '2025-10-15'");
+            } else {
+                assertThat(sql).as(method).contains("$.attributes.startTime", "2025-10-15T00:00:00");
+            }
         }
     }
 

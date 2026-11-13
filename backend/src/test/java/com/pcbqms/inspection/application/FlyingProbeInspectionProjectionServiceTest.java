@@ -78,6 +78,26 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void gyFileStartedBeforeCutoffIsNotMatchedEvenWhenDeviceTimeIsNewer() {
+        TenantContext.set("customer-b", "admin");
+        var telemetry = event("old-file", LocalDateTime.of(2025, 10, 14, 8, 0),
+            LocalDateTime.of(2025, 10, 16, 9, 0), 3, 2, 1);
+        telemetry.setTenantCode("customer-b");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("old-file")).thenReturn(projection);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("SKIPPED");
+        verify(workOrderMapper, never()).selectList(any());
+        projection.setStatus("RETRYABLE");
+        projection.setSourceStartTime(LocalDateTime.of(2025, 10, 14, 8, 0));
+        assertThatThrownBy(() -> service().bindManually("old-file", "WO-1"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("有效范围");
+        verify(workOrderMapper, never()).selectOne(any());
+    }
+
+    @Test
     void batchManualBindingProjectsAFileWithNoNumericMaterialUnderTheChosenOrder() {
         TenantContext.set("tenant-a", "supervisor");
         var now = LocalDateTime.now();

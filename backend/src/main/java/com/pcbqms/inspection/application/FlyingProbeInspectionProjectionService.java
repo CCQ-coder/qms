@@ -69,7 +69,7 @@ public class FlyingProbeInspectionProjectionService {
 
     @Transactional
     public void projectNew(EquipmentTelemetryRecord telemetry) {
-        if (!EVENT_TYPE.equals(telemetry.getEventType()) || hiddenGyHistory(telemetry.getTenantCode(), telemetry.getDeviceTime())) {
+        if (!EVENT_TYPE.equals(telemetry.getEventType()) || hiddenGyHistory(telemetry.getTenantCode(), telemetry.getDeviceTime(), null)) {
             return;
         }
         projectionMapper.claim(telemetry);
@@ -81,7 +81,7 @@ public class FlyingProbeInspectionProjectionService {
 
     @Transactional
     public void retry(FlyingProbeProjection pending) {
-        if (hiddenGyHistory(pending.getTenantCode(), pending.getDeviceTime())) return;
+        if (hiddenGyHistory(pending.getTenantCode(), pending.getDeviceTime(), pending.getSourceStartTime())) return;
         FlyingProbeProjection projection = projectionMapper.lockProjection(pending.getTelemetryId());
         if (projection != null && "RETRYABLE".equals(projection.getStatus())
             && !projection.getRetryAfter().isAfter(LocalDateTime.now())) {
@@ -120,7 +120,7 @@ public class FlyingProbeInspectionProjectionService {
         if (projection == null || !TenantContext.tenantCode().equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
-        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime())) {
+        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime(), projection.getSourceStartTime())) {
             throw new IllegalArgumentException("飞针记录不在有效范围");
         }
         if (!"RETRYABLE".equals(projection.getStatus()) || StringUtils.hasText(projection.getWorkOrderNo())) {
@@ -146,7 +146,7 @@ public class FlyingProbeInspectionProjectionService {
         if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
-        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime())) {
+        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime(), projection.getSourceStartTime())) {
             throw new IllegalArgumentException("飞针记录不在有效范围");
         }
         if (!"RETRYABLE".equals(projection.getStatus()) && !"PROCESSED".equals(projection.getStatus())
@@ -164,6 +164,9 @@ public class FlyingProbeInspectionProjectionService {
             return rebindProcessedRun(projection, workOrder);
         }
         Snapshot snapshot = parse(projection);
+        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime(), snapshot.startTime())) {
+            throw new IllegalArgumentException("飞针记录不在有效范围");
+        }
         String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
         if (projection.getRunKey() != null && !runKey.equals(projection.getRunKey())) {
             throw new IllegalArgumentException("飞针文件身份已变化，无法手动绑定");
@@ -226,7 +229,7 @@ public class FlyingProbeInspectionProjectionService {
         if (projection == null || !tenant.equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
-        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime())) {
+        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime(), projection.getSourceStartTime())) {
             throw new IllegalArgumentException("飞针记录不在有效范围");
         }
         if (!StringUtils.hasText(projection.getWorkOrderNo())) return;
@@ -326,6 +329,10 @@ public class FlyingProbeInspectionProjectionService {
             snapshot = parse(projection);
         } catch (IllegalArgumentException exception) {
             skip(projection, exception.getMessage(), now);
+            return;
+        }
+        if (hiddenGyHistory(projection.getTenantCode(), projection.getDeviceTime(), snapshot.startTime())) {
+            skip(projection, "飞针记录不在有效范围", now);
             return;
         }
         projection.setSourceFile(snapshot.sourceFile());
@@ -557,8 +564,10 @@ public class FlyingProbeInspectionProjectionService {
         projectionMapper.updateProjection(projection);
     }
 
-    private boolean hiddenGyHistory(String tenantCode, LocalDateTime deviceTime) {
-        return "customer-b".equals(tenantCode) && deviceTime != null && deviceTime.isBefore(GY_WTD_FROM);
+    private boolean hiddenGyHistory(String tenantCode, LocalDateTime deviceTime, LocalDateTime sourceStartTime) {
+        return "customer-b".equals(tenantCode)
+            && ((deviceTime != null && deviceTime.isBefore(GY_WTD_FROM))
+                || (sourceStartTime != null && sourceStartTime.isBefore(GY_WTD_FROM)));
     }
 
     private void linkSource(FlyingProbeProjection projection) {
