@@ -36,14 +36,15 @@ const detailDialog = ref(false)
 const detailSaving = ref(false)
 const detailForm = reactive({ scrapQuantity: 1, scrapReason: '' })
 const draggedColumn = ref('')
-const filters = reactive({ ncrNo: '', dateRange: [] as string[], processName: '', department: '' })
-const appliedFilters = ref({ ncrNo: '', dateRange: [] as string[], processName: '', department: '' })
+const filters = reactive({ ncrNo: '', dateRange: [] as string[], processName: '', department: '', status: '' })
+const appliedFilters = ref({ ncrNo: '', dateRange: [] as string[], processName: '', department: '', status: '' })
 const filteredNcrs = computed(() => ncrs.value.filter((ncr) => {
   const filter = appliedFilters.value
   return (!filter.ncrNo || ncr.ncrNo.toLowerCase().includes(filter.ncrNo.toLowerCase()))
     && (!filter.dateRange.length || Boolean(ncr.detectionDate && ncr.detectionDate >= filter.dateRange[0] && ncr.detectionDate <= filter.dateRange[1]))
     && (!filter.processName || (ncr.processName ?? '').includes(filter.processName))
     && (!filter.department || (ncr.responsibleDepartment ?? '').includes(filter.department))
+    && (!filter.status || ncrStatusText(ncr.status) === filter.status)
 }))
 const ncrColumns = ref([
   { key: 'ncrNo', label: '单据编号', width: 180 },
@@ -119,7 +120,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  Object.assign(filters, { ncrNo: '', dateRange: [], processName: '', department: '' })
+  Object.assign(filters, { ncrNo: '', dateRange: [], processName: '', department: '', status: '' })
   applyFilters()
 }
 
@@ -360,6 +361,7 @@ onMounted(async () => {
         <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="检测开始日期" end-placeholder="检测结束日期" clearable />
         <el-input v-model="filters.processName" clearable placeholder="检验工序" aria-label="检验工序" />
         <el-input v-model="filters.department" clearable placeholder="责任部门" aria-label="责任部门" />
+        <el-select v-model="filters.status" clearable placeholder="状态" aria-label="状态"><el-option label="未审核" value="未审核" /><el-option label="已审核" value="已审核" /><el-option label="CAPA 处理中" value="CAPA 处理中" /><el-option label="已关闭" value="已关闭" /></el-select>
         <el-button type="primary" @click="applyFilters">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
       </div>
