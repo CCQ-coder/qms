@@ -291,6 +291,7 @@ export type NonconformityDetail = {
   workOrderNo?: string
   internalProductNo?: string
   materialNo?: string
+  workOrderInternalProductNo?: string
   layerCount?: number
   processName: string
   unit: string

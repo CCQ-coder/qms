@@ -10,6 +10,7 @@ public record NonconformityDetailResponse(
     String workOrderNo,
     String internalProductNo,
     String materialNo,
+    String workOrderInternalProductNo,
     Integer layerCount,
     String processName,
     String unit,
@@ -27,6 +28,7 @@ public record NonconformityDetailResponse(
                 : workOrder == null ? null : workOrder.getInternalProductNo(),
             detail.getMaterialNo() != null ? detail.getMaterialNo()
                 : workOrder == null ? null : workOrder.getMaterialNo(),
+            workOrder == null ? null : workOrder.getInternalProductNo(),
             detail.getLayerCount() != null ? detail.getLayerCount()
                 : workOrder == null ? null : workOrder.getLayerCount(),
             detail.getProcessName(), detail.getUnit(), detail.getSinglePcsArea(), detail.getScrapQuantity(),

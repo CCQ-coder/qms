@@ -14,6 +14,10 @@ const rows = computed(() => nonconformities.value.flatMap((ncr) =>
 const filters = reactive({ ncrNo: '', dateRange: [] as string[], process: '', department: '',
   workOrderNo: '', internalNo: '', materialNo: '' })
 const appliedFilters = ref({ ...filters, dateRange: [] as string[] })
+const factoryNo = (ncr: Nonconformity, detail: NonconformityDetail) => ncr.sourceType === 'EXCEL'
+  ? detail.workOrderInternalProductNo : detail.internalProductNo
+const materialNo = (ncr: Nonconformity, detail: NonconformityDetail) => ncr.sourceType === 'EXCEL'
+  ? (/^\d{5}$/.test(detail.internalProductNo ?? '') ? detail.internalProductNo : detail.materialNo) : detail.materialNo
 const filteredRows = computed(() => rows.value.filter(({ ncr, detail }) => {
   const filter = appliedFilters.value
   return (!filter.ncrNo || ncr.ncrNo.toLowerCase().includes(filter.ncrNo.toLowerCase()))
@@ -21,8 +25,8 @@ const filteredRows = computed(() => rows.value.filter(({ ncr, detail }) => {
     && (!filter.process || (ncr.processName ?? '').includes(filter.process) || (detail.processName ?? '').includes(filter.process))
     && (!filter.department || (ncr.responsibleDepartment ?? '').includes(filter.department))
     && (!filter.workOrderNo || (detail.workOrderNo ?? '').includes(filter.workOrderNo))
-    && (!filter.internalNo || (detail.internalProductNo ?? '').toLowerCase().includes(filter.internalNo.toLowerCase()))
-    && (!filter.materialNo || (detail.materialNo ?? '').toLowerCase().includes(filter.materialNo.toLowerCase()))
+    && (!filter.internalNo || (factoryNo(ncr, detail) ?? '').toLowerCase().includes(filter.internalNo.toLowerCase()))
+    && (!filter.materialNo || (materialNo(ncr, detail) ?? '').toLowerCase().includes(filter.materialNo.toLowerCase()))
 }))
 const bindingDialog = ref(false)
 const bindingRow = ref<{ ncr: Nonconformity; detail: NonconformityDetail }>()
@@ -125,7 +129,7 @@ onMounted(() => { void load() })
       <el-input v-model="filters.materialNo" clearable placeholder="料号" aria-label="料号" />
       <div class="ncr-details-filter-actions"><el-button type="primary" @click="appliedFilters = { ...filters, dateRange: [...filters.dateRange] }">查询</el-button><el-button @click="resetFilters">重置</el-button></div>
     </div>
-    <el-table v-loading="loading" :data="filteredRows" empty-text="暂无不良品明细" border>
+    <paged-table :key="JSON.stringify(appliedFilters)" v-loading="loading" :data="filteredRows" empty-text="暂无不良品明细" border>
       <el-table-column label="单据编号" min-width="180" fixed="left"><template #default="{ row }">{{ row.ncr.ncrNo }}</template></el-table-column>
       <el-table-column label="检测日期" min-width="120"><template #default="{ row }">{{ formatDate(row.ncr.detectionDate) }}</template></el-table-column>
       <el-table-column label="班次" min-width="90"><template #default="{ row }">{{ row.ncr.shiftName || '—' }}</template></el-table-column>
@@ -133,8 +137,8 @@ onMounted(() => { void load() })
       <el-table-column label="责任部门" min-width="130"><template #default="{ row }">{{ row.ncr.responsibleDepartment || '—' }}</template></el-table-column>
       <el-table-column label="处置方式" min-width="105"><template #default="{ row }">{{ dispositionText(row.ncr.dispositionMethod) }}</template></el-table-column>
       <el-table-column label="生产指令" min-width="150"><template #default="{ row }">{{ row.detail.workOrderNo || '待关联' }}</template></el-table-column>
-      <el-table-column label="厂内编号" min-width="135"><template #default="{ row }">{{ row.detail.internalProductNo || '—' }}</template></el-table-column>
-      <el-table-column label="料号" min-width="125"><template #default="{ row }">{{ row.detail.materialNo || '—' }}</template></el-table-column>
+      <el-table-column label="厂内编号" min-width="165"><template #default="{ row }">{{ factoryNo(row.ncr, row.detail) || '—' }}</template></el-table-column>
+      <el-table-column label="料号" min-width="125"><template #default="{ row }">{{ materialNo(row.ncr, row.detail) || '—' }}</template></el-table-column>
       <el-table-column label="单位" min-width="75"><template #default="{ row }">{{ row.detail.unit }}</template></el-table-column>
       <el-table-column label="单 PCS 面积" min-width="125" align="right"><template #default="{ row }">{{ row.detail.singlePcsArea ?? '—' }}</template></el-table-column>
       <el-table-column label="报废数量" min-width="105" align="right"><template #default="{ row }">{{ row.detail.scrapQuantity }}</template></el-table-column>
@@ -148,7 +152,7 @@ onMounted(() => { void load() })
       <el-table-column label="审核人" min-width="110"><template #default="{ row }">{{ row.ncr.reviewedBy || '—' }}</template></el-table-column>
       <el-table-column label="审核时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.ncr.reviewedAt) }}</template></el-table-column>
       <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><el-button v-if="row.ncr.sourceType === 'EXCEL' && !row.detail.workOrderNo" link type="primary" @click="openBinding(row.ncr, row.detail)">手工关联</el-button></template></el-table-column>
-    </el-table>
+    </paged-table>
   </el-card>
   <el-dialog v-model="bindingDialog" title="手工关联生产指令" width="min(760px, 94vw)">
     <p v-if="bindingRow">{{ bindingRow.ncr.ncrNo }} · 厂内编号 {{ bindingRow.detail.internalProductNo }} · Excel 时间 {{ formatDate(bindingRow.ncr.detectionDate) }}</p>

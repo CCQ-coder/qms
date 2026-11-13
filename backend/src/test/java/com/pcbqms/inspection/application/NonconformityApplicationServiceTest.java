@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.common.tenancy.TenantContext;
@@ -462,6 +463,32 @@ class NonconformityApplicationServiceTest {
         assertThat(detail.getValue().getLayerCount()).isEqualTo(4);
         assertThat(detail.getValue().getSinglePcsArea()).isEqualByComparingTo("0.02907");
         assertThat(detail.getValue().getScrapArea()).isEqualByComparingTo("1.59885");
+    }
+
+    @Test
+    void listsImportedScrapWithLinkedFactoryNumberWithoutChangingOriginalExcelCode() {
+        TenantContext.set("customer-a", "admin");
+        Nonconformity ncr = nonconformity("ncr-1", null);
+        ncr.setSourceType("EXCEL");
+        ncr.setWorkOrderId("order-1");
+        NonconformityDetail detail = new NonconformityDetail();
+        detail.setWorkOrderId("order-1");
+        detail.setInternalProductNo("43605");
+        WorkOrder order = new WorkOrder();
+        order.setId("order-1");
+        order.setInternalProductNo("02PT43605A01");
+        order.setMaterialNo("FR-4");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of(ncr));
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
+        when(workOrderMapper.selectById("order-1")).thenReturn(order);
+
+        var line = service().listNonconformities(null).getFirst().details().getFirst();
+
+        assertThat(line.internalProductNo()).isEqualTo("43605");
+        assertThat(new ObjectMapper().valueToTree(line).path("workOrderInternalProductNo").asText())
+            .isEqualTo("02PT43605A01");
     }
 
     @Test
