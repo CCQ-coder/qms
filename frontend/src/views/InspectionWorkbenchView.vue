@@ -1175,7 +1175,7 @@ onBeforeUnmount(() => {
             <el-button :disabled="!selectedAllRecords.some((record) => record.workOrderNo)" @click="cancelSelectedRecordBindings">批量取消关联</el-button>
           </div>
         </div>
-        <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
+        <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap finished-records-table-wrap--all">
           <paged-table :key="`${recordKeyword}:${finishedRecordsUpdatedAt?.getTime() ?? 0}`" v-loading="finishedRecordsLoading" :data="filteredFinishedTestRecords" :has-more="!!finishedRecordsNextCursor" :load-error="finishedRecordsError" row-key="id" size="small" empty-text="暂无设备检测记录" @load-more="loadDeviceRecords(finishedRecordsNextCursor)" @selection-change="selectedAllRecords = $event">
             <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => row.eventType === 'ZHONGBO_TEST_REPORT' || ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')" />
             <el-table-column label="检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
