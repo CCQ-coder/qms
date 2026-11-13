@@ -470,7 +470,7 @@ public class FinishedTestDeviceSummaryService {
 
     private static WorkOrder resolveOrder(Sample sample, List<WorkOrder> orders) {
         if (!StringUtils.hasText(sample.materialNo())) return null;
-        String key = materialKey(sample.materialNo()).replaceFirst("^([0-9]{5})[^0-9].*", "$1");
+        String key = materialKey(sample.materialNo()).replaceFirst("^([0-9]{5}).*", "$1");
         List<WorkOrder> candidates = orders.stream()
             .filter(order -> {
                 String internal = materialKey(order.getInternalProductNo());

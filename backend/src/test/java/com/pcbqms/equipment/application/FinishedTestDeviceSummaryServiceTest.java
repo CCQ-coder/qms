@@ -294,6 +294,19 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void zhongboPcbMaterialWithSixDigitsAlsoUsesLeadingFiveDigits() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-14814");
+        order.setInternalProductNo("02PC14814C01");
+        order.setReleasedAt(LocalDate.of(2026, 10, 31));
+        var sample = new FinishedTestDeviceSummaryService.Sample("z1", "ZBX", "148146", null,
+            LocalDateTime.of(2026, 11, 13, 6, 34), 1, 0, true);
+
+        assertThat(FinishedTestDeviceSummaryService.aggregate(List.of(sample), List.of(order)))
+            .singleElement().satisfies(row -> assertThat(row.workOrderNo()).isEqualTo("WO-14814"));
+    }
+
+    @Test
     void fuzzyZhongboMatchStillSkipsOrdersWithTheSameLatestReleaseDate() {
         WorkOrder first = new WorkOrder();
         first.setWorkOrderNo("26110009");
