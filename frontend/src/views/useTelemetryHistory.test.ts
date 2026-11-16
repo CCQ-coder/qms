@@ -115,7 +115,7 @@ test('loads Zhongbo reports using their own event type', async () => {
   assert.deepEqual(queries, [{ eventType: 'ZHONGBO_TEST_REPORT', limit: 200 }])
 })
 
-test('keeps production order, device material and factory number filters across requested pages', async () => {
+test('keeps order and material filters across requested pages', async () => {
   const queries: unknown[] = []
   const history = useTelemetryHistory(async (query) => {
     queries.push(query)
@@ -124,12 +124,12 @@ test('keeps production order, device material and factory number filters across 
       : { items: [record('newest')], nextCursor: 'older-page', pageSize: 100 }
   }, 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 
-  await history.refresh({ workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' })
+  await history.refresh({ workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' })
   assert.equal(queries.length, 1)
   await history.loadMore()
 
   assert.deepEqual(queries, [
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' },
-    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, workOrderNo: 'WO-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01', cursor: 'older-page' }
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01' },
+    { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 200, workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1', internalProductNo: 'DEVICE-1', factoryInternalNo: '02PT42777A01', cursor: 'older-page' }
   ])
 })

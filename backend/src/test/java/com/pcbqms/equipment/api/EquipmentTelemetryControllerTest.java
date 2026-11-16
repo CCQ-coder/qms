@@ -145,6 +145,7 @@ class EquipmentTelemetryControllerTest {
         mvc.perform(get("/api/v1/equipment/telemetry/history")
                 .param("eventType", "FLYING_PROBE_TEST_COUNTERS")
                 .param("workOrderNo", "WO-1")
+                .param("customerOrderNo", "ORDER-1")
                 .param("internalProductNo", "02PT42777A01"))
             .andExpect(status().isOk());
 
@@ -153,6 +154,7 @@ class EquipmentTelemetryControllerTest {
         var json = new ObjectMapper().findAndRegisterModules().valueToTree(query.getValue());
         assertThat(json.path("eventType").asText()).isEqualTo("FLYING_PROBE_TEST_COUNTERS");
         assertThat(json.path("workOrderNo").asText()).isEqualTo("WO-1");
+        assertThat(json.path("customerOrderNo").asText()).isEqualTo("ORDER-1");
         assertThat(json.path("internalProductNo").asText()).isEqualTo("02PT42777A01");
     }
 }

@@ -11,6 +11,7 @@ public record EquipmentTelemetryHistoryQuery(
     Integer limit,
     String eventType,
     String workOrderNo,
+    String customerOrderNo,
     String internalProductNo,
     String factoryInternalNo,
     Boolean unmatchedOnly

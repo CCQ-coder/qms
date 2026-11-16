@@ -72,9 +72,10 @@ const selectedAllRecords = ref<EquipmentTelemetryRecord[]>([])
 const selectedDeviceRecords = computed(() => recordSource.value === 'probe' ? selectedProbeRecords.value
   : recordSource.value === 'zhongbo' ? selectedZhongboRecords.value : selectedAllRecords.value)
 const recordWorkOrderNo = ref('')
+const recordCustomerOrderNo = ref('')
 const recordMaterialNo = ref('')
 const recordFactoryInternalNo = ref('')
-const appliedRecordSearch = ref<{ workOrderNo?: string; internalProductNo?: string; factoryInternalNo?: string }>({})
+const appliedRecordSearch = ref<{ workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string; factoryInternalNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection & { eventType?: string }>()
 const bindingBatchRecords = ref<Array<FlyingProbeRetryableProjection | EquipmentTelemetryRecord>>([])
@@ -225,7 +226,7 @@ const filteredFinishedTestRecords = computed(() => {
   const keyword = recordKeyword.value.trim().toLowerCase()
   if (!keyword) return finishedTestRecords.value
   return finishedTestRecords.value.filter((record) => [
-    record.equipmentCode, record.workOrderNo, record.materialNo, record.internalProductNo,
+    record.equipmentCode, record.workOrderNo, record.customerOrderNo, record.materialNo, record.internalProductNo,
     record.sourceRecordNo, record.machineName
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
@@ -628,10 +629,12 @@ async function cancelSelectedRecordBindings() {
 function searchRecordFilters() {
   if (recordPanelLoading.value) return
   const workOrderNo = recordWorkOrderNo.value.trim()
+  const customerOrderNo = recordCustomerOrderNo.value.trim()
   const internalProductNo = recordMaterialNo.value.trim()
   const factoryInternalNo = recordFactoryInternalNo.value.trim()
   appliedRecordSearch.value = {
     ...(workOrderNo ? { workOrderNo } : {}),
+    ...(customerOrderNo ? { customerOrderNo } : {}),
     ...(internalProductNo ? { internalProductNo } : {}),
     ...(factoryInternalNo ? { factoryInternalNo } : {})
   }
@@ -1039,6 +1042,7 @@ onBeforeUnmount(() => {
           <el-button :type="zhongboUnmatchedOnly ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showUnmatchedZhongbo">未匹配</el-button>
         </div>
         <el-input v-model="recordWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchRecordFilters" />
+        <el-input v-if="recordSource !== 'retryable'" v-model="recordCustomerOrderNo" clearable placeholder="搜索订单编号" aria-label="搜索订单编号" @keyup.enter="searchRecordFilters" />
         <el-input v-model="recordMaterialNo" clearable :placeholder="recordMaterialPrompt" :aria-label="recordMaterialPrompt" @keyup.enter="searchRecordFilters" />
         <el-input v-model="recordFactoryInternalNo" clearable placeholder="搜索厂内编号" aria-label="搜索厂内编号" @keyup.enter="searchRecordFilters" />
         <el-button type="primary" :disabled="recordPanelLoading" @click="searchRecordFilters">查询</el-button>
@@ -1164,7 +1168,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选记录：检测设备、生产指令、厂内编号或PCB料号" />
+          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：检测设备、生产指令、订单编号、厂内编号或PCB料号" />
           <span>{{ finishedRecordsLoading || finishedRecordsNextCursor ? '已加载' : '共' }} {{ finishedTestRecords.length }} 条{{ recordKeyword.trim() ? `，其中匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
           <div v-if="canBindFlyingProbe" class="task-queue-actions finished-record-batch-actions">
             <el-button :type="selectedAllRecords.length ? 'primary' : 'default'" :disabled="!selectedAllRecords.length" @click="openSelectedRecordBindingDialog">批量绑定/更正（{{ selectedAllRecords.length }}）</el-button>

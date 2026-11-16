@@ -77,6 +77,18 @@ public interface EquipmentTelemetryRecordMapper {
                        AND projection.work_order_no LIKE CONCAT('%', #{workOrderNo}, '%')
                  ))
         </if>
+        <if test="customerOrderNo != null">
+            AND EXISTS (
+                SELECT 1 FROM qms_work_order work_order
+                WHERE work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.customer_order_no LIKE CONCAT('%', #{customerOrderNo}, '%')
+                  AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = COALESCE(
+                      (SELECT projection.work_order_no FROM qms_flying_probe_projection projection
+                       WHERE projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci
+                         AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                       LIMIT 1), qms_equipment_telemetry.work_order_no) COLLATE utf8mb4_0900_ai_ci
+            )
+        </if>
         <if test="internalProductNo != null">
             AND material_no LIKE CONCAT('%', #{internalProductNo}, '%')
         </if>
@@ -162,6 +174,7 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("limit") int limit,
         @Param("eventType") String eventType,
         @Param("workOrderNo") String workOrderNo,
+        @Param("customerOrderNo") String customerOrderNo,
         @Param("internalProductNo") String internalProductNo,
         @Param("factoryInternalNo") String factoryInternalNo,
         @Param("unmatchedOnly") boolean unmatchedOnly

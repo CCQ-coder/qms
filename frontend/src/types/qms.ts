@@ -536,6 +536,7 @@ export type EquipmentTelemetryHistoryQuery = {
   equipmentId?: string
   eventType?: string
   workOrderNo?: string
+  customerOrderNo?: string
   internalProductNo?: string
   factoryInternalNo?: string
   unmatchedOnly?: boolean

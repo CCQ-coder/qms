@@ -33,6 +33,14 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
+    void historyFiltersCustomerOrderThroughTheLinkedProductionOrder() {
+        String sql = historySql("FINISHED_TEST", null, null, false, "PI10102871");
+
+        assertThat(sql).contains("work_order.customer_order_no LIKE CONCAT('%', ?, '%')",
+            "FROM qms_flying_probe_projection projection", "qms_equipment_telemetry.work_order_no");
+    }
+
+    @Test
     void combinedFinishedTestHistorySelectsBothDeviceFeeds() {
         String sql = historySql("FINISHED_TEST");
 
@@ -75,6 +83,11 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     private String historySql(String eventType, String workOrderNo, String internalProductNo, boolean withDates) {
+        return historySql(eventType, workOrderNo, internalProductNo, withDates, null);
+    }
+
+    private String historySql(String eventType, String workOrderNo, String internalProductNo,
+                              boolean withDates, String customerOrderNo) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
@@ -82,6 +95,7 @@ class EquipmentTelemetryRecordMapperSqlTest {
         parameters.put("eventType", eventType);
         parameters.put("workOrderNo", workOrderNo);
         parameters.put("internalProductNo", internalProductNo);
+        parameters.put("customerOrderNo", customerOrderNo);
         if (withDates) {
             parameters.put("fromTime", LocalDateTime.of(2026, 11, 1, 0, 0));
             parameters.put("toTime", LocalDateTime.of(2026, 11, 9, 23, 59));

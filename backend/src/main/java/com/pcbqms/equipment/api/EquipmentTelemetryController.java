@@ -142,13 +142,14 @@ public class EquipmentTelemetryController {
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) String eventType,
         @RequestParam(required = false) String workOrderNo,
+        @RequestParam(required = false) String customerOrderNo,
         @RequestParam(required = false) String internalProductNo,
         @RequestParam(required = false) String factoryInternalNo,
         @RequestParam(required = false) Boolean unmatchedOnly
     ) {
         return ApiResponse.of(telemetryQueryApplicationService.pageHistory(
             new EquipmentTelemetryHistoryQuery(equipmentId, fromTime, toTime, cursor, limit, eventType,
-                workOrderNo, internalProductNo, factoryInternalNo, unmatchedOnly)
+                workOrderNo, customerOrderNo, internalProductNo, factoryInternalNo, unmatchedOnly)
         ));
     }
 
