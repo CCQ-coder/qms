@@ -37,12 +37,15 @@ public class EquipmentTelemetryController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toTime,
         @RequestParam(required = false) String cursor,
         @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) Integer page,
+        @RequestParam(required = false) Boolean includeTotal,
         @RequestParam(required = false) String eventType,
         @RequestParam(required = false) String workOrderNo,
         @RequestParam(required = false) String internalProductNo
     ) {
         return ApiResponse.of(telemetryQueryApplicationService.pageHistory(
-            new EquipmentTelemetryHistoryQuery(equipmentId, fromTime, toTime, cursor, limit, eventType, workOrderNo, internalProductNo)
+            new EquipmentTelemetryHistoryQuery(equipmentId, fromTime, toTime, cursor, limit, eventType,
+                workOrderNo, internalProductNo, page, includeTotal)
         ));
     }
 

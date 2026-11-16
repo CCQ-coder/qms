@@ -56,8 +56,12 @@ public interface EquipmentTelemetryRecordMapper {
                event_type, equipment_status, program_no, program_version, material_no, work_order_no, batch_no,
                operator_name, progress_percent, spindle_status, alarm_code, alarm_message, machining_count,
                source_record_no, deduplication_key, raw_payload, created_at
+        <if test="includeTotal">, COUNT(*) OVER() AS total_count</if>
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
+          AND EXISTS (SELECT 1 FROM qms_equipment equipment
+                      WHERE equipment.id = qms_equipment_telemetry.equipment_id
+                        AND equipment.tenant_code = qms_equipment_telemetry.tenant_code)
         <if test="eventType != null">
             AND event_type = #{eventType}
         </if>
@@ -105,7 +109,10 @@ public interface EquipmentTelemetryRecordMapper {
                 ORDER BY received_at DESC, id DESC
             </otherwise>
         </choose>
-        LIMIT #{limit}
+        <choose>
+            <when test="offset != null">LIMIT #{limit} OFFSET #{offset}</when>
+            <otherwise>LIMIT #{limit}</otherwise>
+        </choose>
         </script>
         """)
     List<EquipmentTelemetryRecord> selectHistory(
@@ -119,7 +126,9 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("limit") int limit,
         @Param("eventType") String eventType,
         @Param("workOrderNo") String workOrderNo,
-        @Param("internalProductNo") String internalProductNo
+        @Param("internalProductNo") String internalProductNo,
+        @Param("offset") Long offset,
+        @Param("includeTotal") boolean includeTotal
     );
 
     @Select("""

@@ -63,10 +63,12 @@ public class EquipmentTelemetryQueryApplicationService {
             .collect(Collectors.toMap(Equipment::getId, equipment -> equipment));
         String selectedEquipmentId = StringUtils.hasText(query.equipmentId()) ? query.equipmentId().trim() : null;
         if (selectedEquipmentId != null && !accessibleEquipment.containsKey(selectedEquipmentId)) {
-            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit());
+            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit(),
+                query.page() == null || Boolean.FALSE.equals(query.includeTotal()) ? null : 0L);
         }
         if (selectedEquipmentId == null && accessibleEquipment.isEmpty()) {
-            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit());
+            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit(),
+                query.page() == null || Boolean.FALSE.equals(query.includeTotal()) ? null : 0L);
         }
         LocalDateTime toTime = query.toTime() == null ? LocalDateTime.now() : query.toTime();
         LocalDateTime fromTime = query.fromTime() == null ? toTime.minusDays(Math.max(rawRetentionDays, 1)) : query.fromTime();
@@ -78,8 +80,11 @@ public class EquipmentTelemetryQueryApplicationService {
         if (sortByDeviceTime && fromTime.isBefore(FinishedTestDataWindow.START)) {
             fromTime = FinishedTestDataWindow.START;
         }
-        Cursor cursor = decodeCursor(query.cursor());
+        Cursor cursor = query.page() == null ? decodeCursor(query.cursor()) : null;
         int pageSize = query.resolvedLimit();
+        // shortcut: offset pages may shift as telemetry arrives; add a snapshot boundary if stable exports are needed.
+        Long offset = query.page() == null ? null : (Math.max(query.page(), 1) - 1L) * pageSize;
+        boolean includeTotal = offset != null && !Boolean.FALSE.equals(query.includeTotal());
         List<EquipmentTelemetryRecord> rows = telemetryRecordMapper.selectHistory(
             tenantCode,
             selectedEquipmentId,
@@ -88,12 +93,14 @@ public class EquipmentTelemetryQueryApplicationService {
             toTime,
             cursor == null ? null : cursor.time(),
             cursor == null ? null : cursor.id(),
-            pageSize + 1,
+            offset == null ? pageSize + 1 : pageSize,
             eventType,
             StringUtils.hasText(query.workOrderNo()) ? query.workOrderNo().trim() : null,
-            StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null
+            StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null,
+            offset,
+            includeTotal
         );
-        boolean hasMore = rows.size() > pageSize;
+        boolean hasMore = offset == null && rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
         List<String> flyingProbeIds = pageRows.stream()
             .filter(record -> "FLYING_PROBE_TEST_COUNTERS".equals(record.getEventType()))
@@ -109,7 +116,8 @@ public class EquipmentTelemetryQueryApplicationService {
             .filter(Objects::nonNull)
             .toList();
         String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast(), sortByDeviceTime) : null;
-        return new EquipmentTelemetryHistoryPageResponse(items, nextCursor, pageSize);
+        Long total = includeTotal ? (rows.isEmpty() ? 0L : rows.getFirst().getTotalCount()) : null;
+        return new EquipmentTelemetryHistoryPageResponse(items, nextCursor, pageSize, total);
     }
 
     private EquipmentTelemetryRecordResponse toResponse(

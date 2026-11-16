@@ -32,11 +32,26 @@ class EquipmentTelemetryRecordMapperSqlTest {
         assertThat(sql.indexOf("work_order_no LIKE")).isLessThan(sql.indexOf("ORDER BY device_time"));
     }
 
+    @Test
+    void numberedHistoryCountsMatchingRowsBeforeLimitingTheSelectedPage() {
+        String firstPageSql = historySql("FLYING_PROBE_TEST_COUNTERS", null, "P2L018680B", 0L, true);
+        String laterPageSql = historySql("FLYING_PROBE_TEST_COUNTERS", null, null, 20L, false);
+
+        assertThat(firstPageSql).contains("COUNT(*) OVER()", "LIMIT ? OFFSET ?");
+        assertThat(firstPageSql.indexOf("material_no LIKE")).isLessThan(firstPageSql.indexOf("ORDER BY device_time"));
+        assertThat(laterPageSql).contains("LIMIT ? OFFSET ?").doesNotContain("COUNT(*) OVER()");
+    }
+
     private String historySql(String eventType) {
         return historySql(eventType, null, null);
     }
 
     private String historySql(String eventType, String workOrderNo, String internalProductNo) {
+        return historySql(eventType, workOrderNo, internalProductNo, null, false);
+    }
+
+    private String historySql(String eventType, String workOrderNo, String internalProductNo,
+                              Long offset, boolean includeTotal) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
@@ -47,6 +62,8 @@ class EquipmentTelemetryRecordMapperSqlTest {
         parameters.put("cursorTime", LocalDateTime.of(2026, 11, 1, 9, 0));
         parameters.put("cursorId", "probe-1");
         parameters.put("limit", 100);
+        parameters.put("offset", offset);
+        parameters.put("includeTotal", includeTotal);
         return configuration.getMappedStatement(EquipmentTelemetryRecordMapper.class.getName() + ".selectHistory")
             .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
     }

@@ -2,7 +2,7 @@ import { http } from '@/api/http'
 import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary, FinishedTestAnalysis,
-  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
+  ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationAuditLogPage, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
   , MenuAccess, GatewayHostStatus
 } from '@/types/qms'
 
@@ -177,6 +177,12 @@ export const qmsApi = {
 
   async listAdministrationAuditLogs(module?: string) {
     const { data } = await http.get<ApiResponse<AdministrationAuditLog[]>>('/api/v1/administration/audit-logs', { params: { module, limit: 200 } })
+    return data.data
+  },
+
+  async pageAdministrationAuditLogs(module: string | undefined, page: number, pageSize: number, includeTotal: boolean) {
+    const { data } = await http.get<ApiResponse<AdministrationAuditLogPage>>('/api/v1/administration/audit-logs/page',
+      { params: { module, page, pageSize, includeTotal } })
     return data.data
   },
 

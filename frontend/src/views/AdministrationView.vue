@@ -88,6 +88,10 @@ const menuItems = ref<AdministrationItem[]>([])
 const auditLogs = ref<AdministrationAuditLog[]>([])
 const auditUsers = ref<UserAccess[]>([])
 const auditModule = ref('')
+const appliedAuditModule = ref('')
+const auditPage = ref(1)
+const auditPageSize = ref(10)
+const auditTotal = ref(0)
 const roleMenuCodes = ref<string[]>([])
 const form = reactive({
   itemCode: '', itemName: '', parentCode: '', description: '', status: 'ACTIVE', sortOrder: 100,
@@ -167,11 +171,14 @@ async function load() {
   loading.value = true
   try {
     if (isAuditLog.value) {
+      appliedAuditModule.value = auditModule.value
       const [logs, users] = await Promise.all([
-        qmsApi.listAdministrationAuditLogs(auditModule.value || undefined),
+        qmsApi.pageAdministrationAuditLogs(appliedAuditModule.value || undefined, 1, auditPageSize.value, true),
         qmsApi.listUserAccesses(),
       ])
-      auditLogs.value = logs
+      auditLogs.value = logs.items
+      auditTotal.value = logs.total ?? 0
+      auditPage.value = 1
       auditUsers.value = users
     } else {
       const [configurationItems, availableMenus] = await Promise.all([
@@ -183,6 +190,21 @@ async function load() {
     }
   } catch {
     ElMessage.error('管理配置读取失败，请确认当前账号为租户管理员')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadAuditPage(page: number, pageSize: number) {
+  if (loading.value) return
+  loading.value = true
+  try {
+    const result = await qmsApi.pageAdministrationAuditLogs(appliedAuditModule.value || undefined, page, pageSize, false)
+    auditLogs.value = result.items
+    auditPage.value = page
+    auditPageSize.value = pageSize
+  } catch {
+    ElMessage.error('操作日志读取失败，请重试')
   } finally {
     loading.value = false
   }
@@ -257,6 +279,9 @@ async function changeStatus(item: AdministrationItem, active: boolean) {
 
 watch(() => route.fullPath, () => {
   auditModule.value = ''
+  appliedAuditModule.value = ''
+  auditTotal.value = 0
+  auditPage.value = 1
   items.value = []
   auditLogs.value = []
   auditUsers.value = []
@@ -274,7 +299,7 @@ onMounted(load)
       </div>
       <el-card shadow="never" class="content-card">
         <div class="toolbar"><el-select v-model="auditModule" clearable placeholder="全部模块" style="width: 220px"><el-option v-for="item in Object.values(configurations)" :key="item.type" :label="item.title" :value="item.type" /></el-select><el-button type="primary" @click="load">查询</el-button></div>
-        <paged-table :key="auditModule" :data="auditLogs" empty-text="暂无操作日志"><el-table-column label="操作时间" min-width="185"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column><el-table-column label="模块" min-width="145"><template #default="scope">{{ auditModuleText(scope.row.moduleCode) }}</template></el-table-column><el-table-column label="操作" min-width="100"><template #default="scope">{{ auditOperationText(scope.row.operation) }}</template></el-table-column><el-table-column label="操作人" min-width="140"><template #default="scope">{{ auditActorText(scope.row.actor) }}</template></el-table-column><el-table-column prop="summary" label="操作说明" min-width="260" show-overflow-tooltip /></paged-table>
+        <paged-table :data="auditLogs" :total="auditTotal" :page="auditPage" :page-size="auditPageSize" empty-text="暂无操作日志" @page-change="loadAuditPage"><el-table-column label="操作时间" min-width="185"><template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template></el-table-column><el-table-column label="模块" min-width="145"><template #default="scope">{{ auditModuleText(scope.row.moduleCode) }}</template></el-table-column><el-table-column label="操作" min-width="100"><template #default="scope">{{ auditOperationText(scope.row.operation) }}</template></el-table-column><el-table-column label="操作人" min-width="140"><template #default="scope">{{ auditActorText(scope.row.actor) }}</template></el-table-column><el-table-column prop="summary" label="操作说明" min-width="260" show-overflow-tooltip /></paged-table>
       </el-card>
     </template>
 

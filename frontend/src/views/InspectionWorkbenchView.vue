@@ -71,13 +71,15 @@ const bindingError = ref('')
 let bindingSearchVersion = 0
 const {
   records: flyingProbeRecords,
-  nextCursor: flyingProbeNextCursor,
+  page: flyingProbePage,
+  pageSize: flyingProbePageSize,
+  total: flyingProbeTotal,
   loading: flyingProbeLoading,
   loaded: flyingProbeLoaded,
   error: flyingProbeError,
   updatedAt: flyingProbeUpdatedAt,
   refresh: refreshFlyingProbeRecords,
-  loadMore: loadMoreFlyingProbeRecords
+  changePage: changeFlyingProbePage
 } = useFlyingProbeHistory((query) => qmsApi.listEquipmentTelemetryHistory(query))
 const recordPanelUpdatedAt = computed(() => recordSource.value === 'probe' ? flyingProbeUpdatedAt.value
   : recordSource.value === 'retryable' ? retryableUpdatedAt.value : finishedRecordsUpdatedAt.value)
@@ -852,9 +854,9 @@ onBeforeUnmount(() => {
       </div>
       <template v-if="recordSource === 'probe'">
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
-        <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>已加载 {{ flyingProbeRecords.length }} 条飞针机采集记录</span></div>
+        <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>共 {{ flyingProbeTotal }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
-          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" size="small" empty-text="暂无飞针机采集记录">
+          <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" :total="flyingProbeTotal" :page="flyingProbePage" :page-size="flyingProbePageSize" size="small" empty-text="暂无飞针机采集记录" @page-change="changeFlyingProbePage">
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
@@ -865,7 +867,6 @@ onBeforeUnmount(() => {
             <el-table-column label="实时合格率" min-width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
           </paged-table>
         </div>
-        <div v-if="flyingProbeNextCursor" class="task-queue-toolbar"><span>还有更早的记录</span><el-button :loading="flyingProbeLoading" @click="loadMoreFlyingProbeRecords">加载更多</el-button></div>
       </template>
       <template v-else-if="recordSource === 'retryable' && canBindFlyingProbe">
         <el-alert v-if="retryableError" type="error" :closable="false" :title="retryableError" style="margin-top: 12px" />

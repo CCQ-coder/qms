@@ -2,10 +2,14 @@ package com.pcbqms.equipment.api;
 
 import java.util.List;
 
-/** A seek page: callers pass nextCursor to read older records without deep SQL offsets. */
+/** History page with an optional cursor or total count for numbered pagination. */
 public record EquipmentTelemetryHistoryPageResponse(
     List<EquipmentTelemetryRecordResponse> items,
     String nextCursor,
-    int pageSize
+    int pageSize,
+    Long total
 ) {
+    public EquipmentTelemetryHistoryPageResponse(List<EquipmentTelemetryRecordResponse> items, String nextCursor, int pageSize) {
+        this(items, nextCursor, pageSize, null);
+    }
 }

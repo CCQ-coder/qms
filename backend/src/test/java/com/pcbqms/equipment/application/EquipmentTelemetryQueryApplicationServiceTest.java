@@ -3,7 +3,10 @@ package com.pcbqms.equipment.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.when;
 
@@ -133,6 +136,37 @@ class EquipmentTelemetryQueryApplicationServiceTest {
     }
 
     @Test
+    void numberedHistoryReadsOnlySelectedRowsAndReturnsTotalOnRequest() {
+        TenantContext.set("customer-b", "admin");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        EquipmentTelemetryRecord record = new EquipmentTelemetryRecord();
+        record.setId("page-three-record");
+        record.setEquipmentId("equipment-1");
+        record.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        record.setTotalCount(43L);
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
+        when(telemetryRecordMapper.selectHistory(eq("customer-b"), isNull(), isNull(), any(), any(),
+            isNull(), isNull(), eq(10), eq("FLYING_PROBE_TEST_COUNTERS"), isNull(), isNull(), eq(20L), eq(true)))
+            .thenReturn(List.of(record));
+
+        var service = new EquipmentTelemetryQueryApplicationService(telemetryRecordMapper, equipmentMapper,
+            inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules());
+        var result = service.pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 10,
+            "FLYING_PROBE_TEST_COUNTERS", null, null, 3, true));
+
+        assertThat(result.total()).isEqualTo(43L);
+        assertThat(result.pageSize()).isEqualTo(10);
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.items()).extracting(item -> item.id()).containsExactly("page-three-record");
+        verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), any(), any(),
+            isNull(), isNull(), eq(10), eq("FLYING_PROBE_TEST_COUNTERS"), isNull(), isNull(), eq(20L), eq(true));
+    }
+
+    @Test
     void flyingProbeHistoryCursorUsesDeviceDetectionTime() {
         TenantContext.set("customer-b", "admin");
         Equipment equipment = new Equipment();
@@ -154,7 +188,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any())).thenReturn(List.of(latest, older));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), anyBoolean())).thenReturn(List.of(latest, older));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-latest")))
             .thenReturn(List.of());
 
@@ -206,7 +240,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any())).thenReturn(List.of(record));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), anyBoolean())).thenReturn(List.of(record));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("telemetry-1")))
             .thenReturn(List.of(projection));
 

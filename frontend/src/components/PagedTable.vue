@@ -4,21 +4,35 @@ import { clampPage, paginateRows } from '@/utils/pagination'
 
 defineOptions({ inheritAttrs: false })
 
-const props = defineProps<{ data: unknown[] }>()
+const props = defineProps<{ data: unknown[]; total?: number; page?: number; pageSize?: number }>()
+const emit = defineEmits<{ 'page-change': [page: number, pageSize: number] }>()
 const currentPage = ref(1)
 const pageSize = ref(10)
-const total = computed(() => props.data.length)
-const rows = computed(() => paginateRows(props.data, currentPage.value, pageSize.value))
-const pageStart = computed(() => total.value ? (currentPage.value - 1) * pageSize.value + 1 : 0)
-const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, total.value))
+const serverPaged = computed(() => props.total !== undefined)
+const selectedPage = computed(() => serverPaged.value ? (props.page ?? 1) : currentPage.value)
+const selectedSize = computed(() => serverPaged.value ? (props.pageSize ?? 10) : pageSize.value)
+const total = computed(() => props.total ?? props.data.length)
+const rows = computed(() => serverPaged.value ? props.data : paginateRows(props.data, currentPage.value, pageSize.value))
+const pageStart = computed(() => total.value ? (selectedPage.value - 1) * selectedSize.value + 1 : 0)
+const pageEnd = computed(() => rows.value.length ? Math.min(pageStart.value + rows.value.length - 1, total.value) : 0)
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / selectedSize.value)))
 
 watch(total, (count) => {
   currentPage.value = clampPage(currentPage.value, count, pageSize.value)
 })
 
 function changePageSize(size: number) {
+  if (serverPaged.value) {
+    emit('page-change', 1, size)
+    return
+  }
   pageSize.value = size
   currentPage.value = 1
+}
+
+function changePage(page: number) {
+  if (serverPaged.value) emit('page-change', page, selectedSize.value)
+  else currentPage.value = page
 }
 </script>
 
@@ -26,15 +40,17 @@ function changePageSize(size: number) {
   <div class="paged-table">
     <el-table v-bind="$attrs" :data="rows"><slot /></el-table>
     <div class="paged-table__footer">
-      <span>显示第 {{ pageStart }}–{{ pageEnd }} 条，共 {{ total }} 条</span>
+      <span v-if="serverPaged">第 {{ selectedPage }}/{{ pageCount }} 页，本页显示 {{ rows.length }} 条，共 {{ total }} 条</span>
+      <span v-else>显示第 {{ pageStart }}–{{ pageEnd }} 条，共 {{ total }} 条</span>
       <el-pagination
-        v-model:current-page="currentPage"
-        :page-size="pageSize"
+        :current-page="selectedPage"
+        :page-size="selectedSize"
         :page-sizes="[10, 20, 50, 100]"
         :total="total"
         background
         layout="sizes, prev, pager, next, jumper"
         @size-change="changePageSize"
+        @current-change="changePage"
       />
     </div>
   </div>

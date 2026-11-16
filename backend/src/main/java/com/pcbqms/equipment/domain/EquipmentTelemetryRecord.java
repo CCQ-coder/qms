@@ -33,4 +33,5 @@ public class EquipmentTelemetryRecord {
     private String deduplicationKey;
     private String rawPayload;
     private LocalDateTime createdAt;
+    private Long totalCount;
 }

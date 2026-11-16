@@ -11,23 +11,28 @@ export function useFlyingProbeHistory(
   fetchPage: (query: EquipmentTelemetryHistoryQuery) => Promise<EquipmentTelemetryHistoryPage>
 ) {
   const records = ref<EquipmentTelemetryRecord[]>([])
-  const nextCursor = ref<string>()
+  const page = ref(1)
+  const pageSize = ref(10)
+  const total = ref(0)
   const loading = ref(false)
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
   let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = {}
 
-  async function load(cursor?: string) {
+  async function load(selectedPage: number, selectedSize: number, includeTotal: boolean) {
     if (loading.value) return
     loading.value = true
     error.value = ''
     try {
-      const page = await fetchPage({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 100, ...search, ...(cursor ? { cursor } : {}) })
-      records.value = cursor ? [...records.value, ...page.items] : page.items
-      nextCursor.value = page.nextCursor
+      const result = await fetchPage({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: selectedSize,
+        page: selectedPage, includeTotal, ...search })
+      records.value = result.items
+      if (includeTotal) total.value = result.total ?? 0
+      page.value = selectedPage
+      pageSize.value = selectedSize
       loaded.value = true
-      if (!cursor) updatedAt.value = new Date()
+      if (includeTotal) updatedAt.value = new Date()
     } catch {
       error.value = '飞针机采集记录读取失败，请重试。'
     } finally {
@@ -36,11 +41,12 @@ export function useFlyingProbeHistory(
   }
 
   return {
-    records, nextCursor, loading, loaded, error, updatedAt,
+    records, page, pageSize, total, loading, loaded, error, updatedAt,
     refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = search) => {
       search = filters
-      return load()
+      return load(1, pageSize.value, true)
     },
-    loadMore: () => nextCursor.value ? load(nextCursor.value) : Promise.resolve()
+    changePage: (selectedPage: number, selectedSize: number) =>
+      load(selectedPage, selectedSize, false)
   }
 }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.administration.api.AdministrationAuditLogResponse;
+import com.pcbqms.administration.api.AdministrationAuditLogPageResponse;
 import com.pcbqms.administration.api.AdministrationItemResponse;
 import com.pcbqms.administration.api.MenuAccessResponse;
 import com.pcbqms.administration.api.SaveAdministrationItemRequest;
@@ -177,6 +178,23 @@ public class AdministrationApplicationService {
         return administrationAuditLogMapper.selectList(query.orderByDesc(AdministrationAuditLog::getCreatedAt)
                 .last("LIMIT " + safeLimit))
             .stream().map(AdministrationAuditLogResponse::from).toList();
+    }
+
+    public AdministrationAuditLogPageResponse pageAuditLogs(String module, Integer page, Integer pageSize, Boolean includeTotal) {
+        inspectionAccessScopeService.requireTenantAdministrator();
+        int selectedPage = page == null ? 1 : Math.max(page, 1);
+        int selectedSize = pageSize == null ? 10 : Math.min(Math.max(pageSize, 1), 100);
+        var query = Wrappers.lambdaQuery(AdministrationAuditLog.class)
+            .eq(AdministrationAuditLog::getTenantCode, TenantContext.tenantCode());
+        if (StringUtils.hasText(module)) {
+            query.eq(AdministrationAuditLog::getModuleCode, module.trim().toUpperCase(Locale.ROOT));
+        }
+        Long total = Boolean.TRUE.equals(includeTotal) ? administrationAuditLogMapper.selectCount(query) : null;
+        long offset = (selectedPage - 1L) * selectedSize;
+        var items = administrationAuditLogMapper.selectList(query.orderByDesc(AdministrationAuditLog::getCreatedAt)
+                .orderByDesc(AdministrationAuditLog::getId).last("LIMIT " + selectedSize + " OFFSET " + offset))
+            .stream().map(AdministrationAuditLogResponse::from).toList();
+        return new AdministrationAuditLogPageResponse(items, total);
     }
 
     private void apply(AdministrationItem item, SaveAdministrationItemRequest request, LocalDateTime now) {
