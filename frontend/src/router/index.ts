@@ -69,7 +69,10 @@ router.onError((error, to) => {
     storage: window.sessionStorage,
     reload: () => window.location.reload()
   })
-  if (!recovered) console.error('路由加载失败', error)
+  if (!recovered) {
+    console.error('路由加载失败', error)
+    if (window.confirm('页面加载失败，是否刷新页面重试？')) window.location.reload()
+  }
 })
 
 router.afterEach((to, _from, failure) => {

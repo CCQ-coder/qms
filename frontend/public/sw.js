@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pcb-qms-shell-v2'
+const CACHE_NAME = 'pcb-qms-shell-v3'
 const APP_SHELL = ['/', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
@@ -16,6 +16,18 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url)
   if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin || requestUrl.pathname.startsWith('/api/') || requestUrl.pathname === '/runtime-config.js') return
+  if (requestUrl.pathname.startsWith('/assets/')) {
+    event.respondWith(caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(event.request)
+      if (cached) return cached
+      const response = await fetch(event.request)
+      if (response.ok && !response.headers.get('content-type')?.startsWith('text/html')) {
+        event.waitUntil(cache.put(event.request, response.clone()))
+      }
+      return response
+    }))
+    return
+  }
   event.respondWith(fetch(event.request)
     .then(async (response) => {
       if (response.ok) {
