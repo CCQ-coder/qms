@@ -409,24 +409,18 @@ async function loadDeviceRecords(cursor?: string) {
   if (finishedRecordsLoading.value) return false
   finishedRecordsLoading.value = true
   finishedRecordsError.value = ''
-  let loadedPage = false
   try {
-    let next = cursor
-    do {
-      const page = await qmsApi.listEquipmentTelemetryHistory({ eventType: 'FINISHED_TEST', limit: 200,
-        ...appliedRecordSearch.value, ...recordTimeFilter(), ...(next ? { cursor: next } : {}) })
-      finishedTestRecords.value = next ? [...finishedTestRecords.value, ...page.items] : page.items
-      finishedRecordsNextCursor.value = page.nextCursor ?? undefined
-      loadedPage = true
-      if (!next) finishedRecordsUpdatedAt.value = new Date()
-      next = page.nextCursor
-    } while (next)
+    const page = await qmsApi.listEquipmentTelemetryHistory({ eventType: 'FINISHED_TEST', limit: 200,
+      ...appliedRecordSearch.value, ...recordTimeFilter(), ...(cursor ? { cursor } : {}) })
+    finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
+    finishedRecordsNextCursor.value = page.nextCursor ?? undefined
+    if (!cursor) finishedRecordsUpdatedAt.value = new Date()
     return true
   } catch {
-    finishedRecordsError.value = cursor || loadedPage
+    finishedRecordsError.value = cursor
       ? '更早的设备检测记录加载失败，请重试。'
       : '设备检测记录读取失败，请重试。'
-    if (!cursor && !loadedPage) {
+    if (!cursor) {
       finishedTestRecords.value = []
       finishedRecordsNextCursor.value = undefined
       finishedRecordsUpdatedAt.value = undefined

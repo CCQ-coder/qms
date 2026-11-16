@@ -43,7 +43,7 @@ function changePageSize(size: number) {
         layout="sizes, prev, pager, next, jumper"
         @size-change="changePageSize"
       />
-      <el-button v-if="hasMore && loadError" link type="primary" @click="emit('load-more')">重试读取</el-button>
+      <el-button v-if="hasMore" link type="primary" @click="emit('load-more')">{{ loadError ? '重试读取' : '加载更早记录' }}</el-button>
     </div>
   </div>
 </template>
