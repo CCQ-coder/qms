@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   DataAnalysis,
@@ -9,9 +9,11 @@ import {
   SetUp
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { qmsApi } from '@/api/qms'
 import { authenticatedSubject, isOidcEnabled, logout, startLogin } from '@/auth/oidc'
 import { localSession, signOutLocal } from '@/auth/local-session'
-import { isMenuGroupVisible, isMenuVisible, menuAccess, refreshMenuAccess } from '@/navigation/menu'
+import { isMenuGroupVisible, isMenuVisible, menuAccess, menuLabel, refreshMenuAccess } from '@/navigation/menu'
+import { appBrand, BROWSER_TITLE_KEY, resetAppBrand, setBrowserTitle, setSidebarTitle, SIDEBAR_TITLE_KEY } from './appBrand'
 import {
   desktopApiBaseUrl,
   isDesktopApplication,
@@ -80,10 +82,25 @@ async function saveDesktopServerAddress() {
   }
 }
 
+let brandActive = false
 onMounted(() => {
+  brandActive = true
+  resetAppBrand()
   // AppShell is remounted after a local account switch. Always reload instead of
   // reusing the previous account's in-memory menu permissions.
   void refreshMenuAccess()
+  void Promise.all([
+    qmsApi.getTenantParameter(BROWSER_TITLE_KEY),
+    qmsApi.getTenantParameter(SIDEBAR_TITLE_KEY)
+  ]).then(([browser, sidebar]) => {
+    if (!brandActive) return
+    setBrowserTitle(browser.value)
+    setSidebarTitle(sidebar.value)
+  }).catch(() => {})
+})
+onUnmounted(() => {
+  brandActive = false
+  resetAppBrand()
 })
 </script>
 
@@ -92,55 +109,55 @@ onMounted(() => {
     <el-aside :width="asideCollapsed ? '72px' : '244px'" class="app-aside">
       <div class="brand">
         <div class="brand-mark">Q</div>
-        <span v-show="!asideCollapsed">PCB QMS</span>
+        <span v-show="!asideCollapsed" class="brand-name" :title="appBrand.sidebarTitle">{{ appBrand.sidebarTitle }}</span>
       </div>
       <el-menu :collapse="asideCollapsed" :default-active="route.path" :default-openeds="['overview', 'quality', 'trace', 'equipment', 'system']" router class="main-menu grouped-menu">
         <el-sub-menu v-if="isMenuGroupVisible('OVERVIEW')" index="overview">
-          <template #title><el-icon><DataAnalysis /></el-icon><span>总览</span></template>
-          <el-menu-item v-if="isMenuVisible('DASHBOARD')" index="/dashboard"><span>质量总览</span></el-menu-item>
+          <template #title><el-icon><DataAnalysis /></el-icon><span>{{ menuLabel('OVERVIEW') }}</span></template>
+          <el-menu-item v-if="isMenuVisible('DASHBOARD')" index="/dashboard"><span>{{ menuLabel('DASHBOARD') }}</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('QUALITY')" index="quality">
-          <template #title><el-icon><DocumentChecked /></el-icon><span>质量检测</span></template>
-          <el-menu-item v-if="isMenuVisible('WORK_ORDERS')" index="/work-orders"><span>生产指令查询</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('PROCESS_INSPECTION')" index="/process-inspection"><span>工序检验</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('INSPECTION_WORKBENCH')" index="/inspection"><span>成品测试</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('NONCONFORMITIES')" index="/nonconformities"><span>不良品处理</span></el-menu-item>
+          <template #title><el-icon><DocumentChecked /></el-icon><span>{{ menuLabel('QUALITY') }}</span></template>
+          <el-menu-item v-if="isMenuVisible('WORK_ORDERS')" index="/work-orders"><span>{{ menuLabel('WORK_ORDERS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('PROCESS_INSPECTION')" index="/process-inspection"><span>{{ menuLabel('PROCESS_INSPECTION') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('INSPECTION_WORKBENCH')" index="/inspection"><span>{{ menuLabel('INSPECTION_WORKBENCH') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('NONCONFORMITIES')" index="/nonconformities"><span>{{ menuLabel('NONCONFORMITIES') }}</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('TRACE')" index="trace">
-          <template #title><el-icon><Operation /></el-icon><span>报表</span></template>
-          <el-menu-item v-if="isMenuVisible('ANALYTICS')" index="/analytics"><span>报表分析</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_FINISHED_TEST_SUMMARY')" index="/equipment/finished-test-summary"><span>成品测试汇总表</span></el-menu-item>
+          <template #title><el-icon><Operation /></el-icon><span>{{ menuLabel('TRACE') }}</span></template>
+          <el-menu-item v-if="isMenuVisible('ANALYTICS')" index="/analytics"><span>{{ menuLabel('ANALYTICS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_FINISHED_TEST_SUMMARY')" index="/equipment/finished-test-summary"><span>{{ menuLabel('EQUIPMENT_FINISHED_TEST_SUMMARY') }}</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="isMenuGroupVisible('EQUIPMENT')" index="equipment">
-          <template #title><el-icon><SetUp /></el-icon><span>设备管理</span></template>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_LEDGER')" index="/equipment"><span>设备台账</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_INSPECTION')" index="/equipment/inspection"><span>点检管理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_MAINTENANCE')" index="/equipment/maintenance"><span>保养管理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_REPAIR')" index="/equipment/repair"><span>维修管理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_ALERTS')" index="/equipment/alerts"><span>设备告警</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_TEMPLATES')" index="/equipment/templates"><span>项目模板</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_GATEWAY_MAPPINGS')" index="/equipment/gateway-mappings"><span>设备网关映射</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('EQUIPMENT_RUNTIME_MONITOR')" index="/equipment/runtime-monitor"><span>设备数据接入</span></el-menu-item>
+          <template #title><el-icon><SetUp /></el-icon><span>{{ menuLabel('EQUIPMENT') }}</span></template>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_LEDGER')" index="/equipment"><span>{{ menuLabel('EQUIPMENT_LEDGER') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_INSPECTION')" index="/equipment/inspection"><span>{{ menuLabel('EQUIPMENT_INSPECTION') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_MAINTENANCE')" index="/equipment/maintenance"><span>{{ menuLabel('EQUIPMENT_MAINTENANCE') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_REPAIR')" index="/equipment/repair"><span>{{ menuLabel('EQUIPMENT_REPAIR') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_ALERTS')" index="/equipment/alerts"><span>{{ menuLabel('EQUIPMENT_ALERTS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_TEMPLATES')" index="/equipment/templates"><span>{{ menuLabel('EQUIPMENT_TEMPLATES') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_GATEWAY_MAPPINGS')" index="/equipment/gateway-mappings"><span>{{ menuLabel('EQUIPMENT_GATEWAY_MAPPINGS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('EQUIPMENT_RUNTIME_MONITOR')" index="/equipment/runtime-monitor"><span>{{ menuLabel('EQUIPMENT_RUNTIME_MONITOR') }}</span></el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="tenantAdministrator && isMenuGroupVisible('SYSTEM')" index="system">
-          <template #title><el-icon><Setting /></el-icon><span>系统管理</span></template>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_USERS')" index="/system/users"><span>用户管理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_ROLES')" index="/system/roles"><span>角色权限</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_MENU_MANAGEMENT')" index="/system/menus"><span>菜单管理</span></el-menu-item>
-          <el-menu-item v-if="platformAdministrator && isMenuVisible('SYSTEM_TENANTS')" index="/system/tenants"><span>租户管理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_ORGANIZATIONS')" index="/system/organizations"><span>组织机构</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_DEPARTMENTS')" index="/system/departments"><span>部门设置</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_PROCESSES')" index="/system/processes"><span>工序设置</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_SCRAP_REASONS')" index="/system/scrap-reasons"><span>报废原因设置</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_DICTIONARIES')" index="/system/dictionaries"><span>字典管理</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_PARAMETERS')" index="/system-parameters"><span>系统参数</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_INTERFACES')" index="/system/interfaces"><span>接口配置</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_APPROVAL_FLOW')" index="/system/approval-flow"><span>审批流</span></el-menu-item>
-          <el-menu-item v-if="isMenuVisible('SYSTEM_OPERATION_LOG')" index="/system/operation-log"><span>操作日志</span></el-menu-item>
+          <template #title><el-icon><Setting /></el-icon><span>{{ menuLabel('SYSTEM') }}</span></template>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_USERS')" index="/system/users"><span>{{ menuLabel('SYSTEM_USERS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_ROLES')" index="/system/roles"><span>{{ menuLabel('SYSTEM_ROLES') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_MENU_MANAGEMENT')" index="/system/menus"><span>{{ menuLabel('SYSTEM_MENU_MANAGEMENT') }}</span></el-menu-item>
+          <el-menu-item v-if="platformAdministrator && isMenuVisible('SYSTEM_TENANTS')" index="/system/tenants"><span>{{ menuLabel('SYSTEM_TENANTS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_ORGANIZATIONS')" index="/system/organizations"><span>{{ menuLabel('SYSTEM_ORGANIZATIONS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_DEPARTMENTS')" index="/system/departments"><span>{{ menuLabel('SYSTEM_DEPARTMENTS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_PROCESSES')" index="/system/processes"><span>{{ menuLabel('SYSTEM_PROCESSES') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_SCRAP_REASONS')" index="/system/scrap-reasons"><span>{{ menuLabel('SYSTEM_SCRAP_REASONS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_DICTIONARIES')" index="/system/dictionaries"><span>{{ menuLabel('SYSTEM_DICTIONARIES') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_PARAMETERS')" index="/system-parameters"><span>{{ menuLabel('SYSTEM_PARAMETERS') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_INTERFACES')" index="/system/interfaces"><span>{{ menuLabel('SYSTEM_INTERFACES') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_APPROVAL_FLOW')" index="/system/approval-flow"><span>{{ menuLabel('SYSTEM_APPROVAL_FLOW') }}</span></el-menu-item>
+          <el-menu-item v-if="isMenuVisible('SYSTEM_OPERATION_LOG')" index="/system/operation-log"><span>{{ menuLabel('SYSTEM_OPERATION_LOG') }}</span></el-menu-item>
         </el-sub-menu>
       </el-menu>
       <button class="collapse-button" @click="asideCollapsed = !asideCollapsed">{{ asideCollapsed ? '›' : '‹ 收起菜单' }}</button>

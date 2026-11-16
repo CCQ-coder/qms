@@ -18,6 +18,7 @@ import com.pcbqms.administration.infrastructure.persistence.AdministrationItemMa
 import com.pcbqms.common.tenancy.TenantContext;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -112,5 +113,24 @@ class AdministrationApplicationServiceTest {
             .orElseThrow();
         assertThat(summaryMenu.getParentCode()).isEqualTo("TRACE");
         assertThat(summaryMenu.getSortOrder()).isEqualTo(34);
+    }
+
+    @Test
+    void menuAccessReturnsTenantConfiguredMenuNames() {
+        TenantContext.set("customer-b", "admin.b");
+        AdministrationItem menu = new AdministrationItem();
+        menu.setItemCode("DASHBOARD");
+        menu.setItemName("品质看板");
+        menu.setStatus("ACTIVE");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin.b", "TENANT_ADMIN", true, Set.of()));
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of(menu));
+        var service = new AdministrationApplicationService(administrationItemMapper,
+            administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper());
+
+        var access = service.menuAccess();
+
+        assertThat(access.menuNames()).containsEntry("DASHBOARD", "品质看板");
+        assertThat(access.activeMenuCodes()).contains("DASHBOARD");
     }
 }

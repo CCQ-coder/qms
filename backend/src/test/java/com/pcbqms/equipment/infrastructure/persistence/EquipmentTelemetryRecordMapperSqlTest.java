@@ -33,9 +33,18 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
+    void flyingProbeHistoryFiltersCustomerOrderBeforePaging() {
+        String sql = historySql("FLYING_PROBE_TEST_COUNTERS", null, "SO-456", null, null, true);
+
+        assertThat(sql).contains("AS customer_order_no", "work_order.customer_order_no LIKE CONCAT('%', ?, '%')");
+        assertThat(sql.indexOf("work_order.customer_order_no LIKE"))
+            .isLessThan(sql.indexOf("ORDER BY device_time"));
+    }
+
+    @Test
     void numberedHistoryCountsMatchingRowsBeforeLimitingTheSelectedPage() {
-        String firstPageSql = historySql("FLYING_PROBE_TEST_COUNTERS", null, "P2L018680B", 0L, true);
-        String laterPageSql = historySql("FLYING_PROBE_TEST_COUNTERS", null, null, 20L, false);
+        String firstPageSql = historySql("FLYING_PROBE_TEST_COUNTERS", null, null, "P2L018680B", 0L, true);
+        String laterPageSql = historySql("FLYING_PROBE_TEST_COUNTERS", null, null, null, 20L, false);
 
         assertThat(firstPageSql).contains("COUNT(*) OVER()", "LIMIT ? OFFSET ?");
         assertThat(firstPageSql.indexOf("material_no LIKE")).isLessThan(firstPageSql.indexOf("ORDER BY device_time"));
@@ -47,10 +56,10 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     private String historySql(String eventType, String workOrderNo, String internalProductNo) {
-        return historySql(eventType, workOrderNo, internalProductNo, null, false);
+        return historySql(eventType, workOrderNo, null, internalProductNo, null, false);
     }
 
-    private String historySql(String eventType, String workOrderNo, String internalProductNo,
+    private String historySql(String eventType, String workOrderNo, String customerOrderNo, String internalProductNo,
                               Long offset, boolean includeTotal) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
@@ -58,6 +67,7 @@ class EquipmentTelemetryRecordMapperSqlTest {
         parameters.put("tenantCode", "customer-b");
         parameters.put("eventType", eventType);
         parameters.put("workOrderNo", workOrderNo);
+        parameters.put("customerOrderNo", customerOrderNo);
         parameters.put("internalProductNo", internalProductNo);
         parameters.put("cursorTime", LocalDateTime.of(2026, 11, 1, 9, 0));
         parameters.put("cursorId", "probe-1");

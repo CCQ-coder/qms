@@ -96,6 +96,7 @@ public class EquipmentTelemetryQueryApplicationService {
             offset == null ? pageSize + 1 : pageSize,
             eventType,
             StringUtils.hasText(query.workOrderNo()) ? query.workOrderNo().trim() : null,
+            StringUtils.hasText(query.customerOrderNo()) ? query.customerOrderNo().trim() : null,
             StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null,
             offset,
             includeTotal

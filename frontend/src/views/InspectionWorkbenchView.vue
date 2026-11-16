@@ -37,7 +37,9 @@ const equipment = ref<Equipment[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
 const hostOfflineAfterSeconds = ref(300)
 const finishedTestRecords = ref<FinishedTestInspectionRecord[]>([])
-const finishedRecordsNextCursor = ref<string>()
+const finishedRecordPage = ref(1)
+const finishedRecordPageSize = ref(10)
+const finishedRecordTotal = ref(0)
 const finishedRecordsLoading = ref(false)
 const finishedRecordsUpdatedAt = ref<Date>()
 const probeSnapshots = ref<Record<string, EquipmentTelemetryRecord>>({})
@@ -58,8 +60,9 @@ const retryableLoaded = ref(false)
 const retryableError = ref('')
 const retryableUpdatedAt = ref<Date>()
 const probeWorkOrderNo = ref('')
+const probeCustomerOrderNo = ref('')
 const probeInternalProductNo = ref('')
-const appliedProbeSearch = ref<{ workOrderNo?: string; internalProductNo?: string }>({})
+const appliedProbeSearch = ref<{ workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection>()
 const bindingKeyword = ref('')
@@ -329,29 +332,28 @@ async function loadProbeSnapshots(devices: Equipment[]) {
   return failedIds.size === 0
 }
 
-async function loadCompletedFinishedRecords(cursor?: string) {
+async function loadCompletedFinishedRecords(page = 1, pageSize = finishedRecordPageSize.value, includeTotal = true) {
   if (finishedRecordsLoading.value) return false
   finishedRecordsLoading.value = true
   finishedRecordsError.value = ''
   try {
-    const page = await qmsApi.listCompletedFinishedTestRecords(100, cursor)
-    finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
-    finishedRecordsNextCursor.value = page.nextCursor ?? undefined
-    if (!cursor) finishedRecordsUpdatedAt.value = new Date()
+    const result = await qmsApi.pageCompletedFinishedTestRecords(page, pageSize, includeTotal)
+    finishedTestRecords.value = result.items
+    if (includeTotal) finishedRecordTotal.value = result.total ?? 0
+    finishedRecordPage.value = page
+    finishedRecordPageSize.value = pageSize
+    if (includeTotal) finishedRecordsUpdatedAt.value = new Date()
     return true
   } catch {
-    finishedRecordsError.value = cursor
-      ? '更早的 FQC 检验记录加载失败，请重试。'
-      : '已提交 FQC 检验记录读取失败，请重试。'
-    if (!cursor) {
-      finishedTestRecords.value = []
-      finishedRecordsNextCursor.value = undefined
-      finishedRecordsUpdatedAt.value = undefined
-    }
+    finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
     return false
   } finally {
     finishedRecordsLoading.value = false
   }
+}
+
+function changeFinishedRecordPage(page: number, size: number) {
+  void loadCompletedFinishedRecords(page, size, false)
 }
 
 async function loadRetryableProjections(page = retryablePage.value) {
@@ -465,9 +467,11 @@ function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
 function searchProbeRecords() {
   if (recordPanelLoading.value) return
   const workOrderNo = probeWorkOrderNo.value.trim()
+  const customerOrderNo = probeCustomerOrderNo.value.trim()
   const internalProductNo = probeInternalProductNo.value.trim()
   appliedProbeSearch.value = {
     ...(workOrderNo ? { workOrderNo } : {}),
+    ...(customerOrderNo ? { customerOrderNo } : {}),
     ...(internalProductNo ? { internalProductNo } : {})
   }
   if (recordSource.value === 'retryable') void loadRetryableProjections(1)
@@ -849,6 +853,7 @@ onBeforeUnmount(() => {
           <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('retryable')">未匹配</el-button>
         </div>
         <el-input v-model="probeWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchProbeRecords" />
+        <el-input v-if="recordSource === 'probe'" v-model="probeCustomerOrderNo" clearable placeholder="搜索订单编号" aria-label="搜索订单编号" @keyup.enter="searchProbeRecords" />
         <el-input v-model="probeInternalProductNo" clearable placeholder="搜索厂内编号" aria-label="搜索厂内编号" @keyup.enter="searchProbeRecords" />
         <el-button type="primary" :disabled="recordPanelLoading" @click="searchProbeRecords">查询</el-button>
       </div>
@@ -860,6 +865,7 @@ onBeforeUnmount(() => {
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="订单编号" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="厂内编号" min-width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="已测" min-width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
             <el-table-column label="好板" min-width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
@@ -888,11 +894,11 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：设备、工单、料号、任务号或检验员" />
-          <span>已加载 {{ finishedTestRecords.length }} 条{{ recordKeyword.trim() ? `，其中匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
+          <el-input v-model="recordKeyword" clearable placeholder="筛选当前页：设备、工单、料号、任务号或检验员" />
+          <span>共 {{ finishedRecordTotal }} 条{{ recordKeyword.trim() ? `，当前页匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
-          <paged-table :key="recordKeyword" :data="filteredFinishedTestRecords" size="small" empty-text="暂无已提交的 FQC 检验记录；飞针数据请查看“飞针机采集记录”">
+          <paged-table :data="filteredFinishedTestRecords" :total="finishedRecordTotal" :page="finishedRecordPage" :page-size="finishedRecordPageSize" size="small" empty-text="暂无已提交的 FQC 检验记录；飞针数据请查看“飞针机采集记录”" @page-change="changeFinishedRecordPage">
             <el-table-column label="检验时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
             <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
@@ -904,7 +910,6 @@ onBeforeUnmount(() => {
             <el-table-column label="结果" min-width="90"><template #default="scope"><el-tag :type="scope.row.verdict === 'PASS' ? 'success' : 'danger'">{{ scope.row.verdict }}</el-tag></template></el-table-column>
           </paged-table>
         </div>
-        <div v-if="finishedRecordsNextCursor" class="task-queue-toolbar"><span>还有更早的 FQC 检验记录</span><el-button :loading="finishedRecordsLoading" @click="loadCompletedFinishedRecords(finishedRecordsNextCursor)">加载更多</el-button></div>
       </template>
     </el-card>
 

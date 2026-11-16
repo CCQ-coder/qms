@@ -121,17 +121,21 @@ public class InspectionApplicationService {
      * workstation page can show the same audit fields as the device feed.
      */
     public FinishedTestRecordPage listCompletedFinishedRecords(int limit, String cursor) {
+        return listCompletedFinishedRecords(limit, cursor, null, null);
+    }
+
+    public FinishedTestRecordPage listCompletedFinishedRecords(int limit, String cursor, Integer page, Boolean includeTotalRequested) {
         if (limit < 1 || limit > 200) {
             throw new IllegalArgumentException("每页记录数必须为 1 到 200");
         }
         String tenantCode = TenantContext.tenantCode();
         InspectionAccessScopeService.InspectionAccess access = inspectionAccessScopeService.currentAccess();
         if (!access.fullDataAccess() && access.processCodes().isEmpty()) {
-            return new FinishedTestRecordPage(List.of(), null);
+            return new FinishedTestRecordPage(List.of(), null, page != null && !Boolean.FALSE.equals(includeTotalRequested) ? 0L : null);
         }
         LocalDateTime cursorTime = null;
         String cursorId = null;
-        if (StringUtils.hasText(cursor)) {
+        if (page == null && StringUtils.hasText(cursor)) {
             try {
                 String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
                 int separator = decoded.indexOf('|');
@@ -143,13 +147,16 @@ public class InspectionApplicationService {
             }
         }
         List<String> processCodes = access.fullDataAccess() ? null : new ArrayList<>(access.processCodes());
+        // shortcut: offset pages may shift when FQC records arrive; add a snapshot boundary if stable exports are needed.
+        Long offset = page == null ? null : (Math.max(page, 1) - 1L) * limit;
+        boolean includeTotal = offset != null && !Boolean.FALSE.equals(includeTotalRequested);
         List<InspectionRecord> fetched = inspectionRecordMapper.selectFinishedPage(
             tenantCode, FinishedTestDataWindow.START,
-            processCodes, cursorTime, cursorId, limit + 1);
-        boolean hasMore = fetched.size() > limit;
+            processCodes, cursorTime, cursorId, offset == null ? limit + 1 : limit, offset, includeTotal);
+        boolean hasMore = offset == null && fetched.size() > limit;
         List<InspectionRecord> records = hasMore ? fetched.subList(0, limit) : fetched;
         if (records.isEmpty()) {
-            return new FinishedTestRecordPage(List.of(), null);
+            return new FinishedTestRecordPage(List.of(), null, includeTotal ? 0L : null);
         }
         List<String> taskIds = records.stream().map(InspectionRecord::getTaskId).distinct().toList();
         Map<String, InspectionTask> tasksById = inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)
@@ -177,7 +184,7 @@ public class InspectionApplicationService {
         InspectionRecord last = records.getLast();
         String nextCursor = hasMore ? Base64.getUrlEncoder().withoutPadding().encodeToString(
             (last.getInspectedAt() + "|" + last.getId()).getBytes(StandardCharsets.UTF_8)) : null;
-        return new FinishedTestRecordPage(items, nextCursor);
+        return new FinishedTestRecordPage(items, nextCursor, includeTotal ? records.getFirst().getTotalCount() : null);
     }
 
     @Transactional

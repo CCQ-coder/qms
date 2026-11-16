@@ -24,6 +24,11 @@ public class TenantParameterApplicationService {
 
     public TenantParameterResponse update(String key, String value) {
         inspectionAccessScopeService.requireTenantAdministrator();
+        String normalizedValue = value.trim();
+        if (("ui.browser-title".equals(key) || "ui.sidebar-title".equals(key))
+            && (normalizedValue.isEmpty() || normalizedValue.length() > 40)) {
+            throw new IllegalArgumentException("标题须为 1 到 40 个字符");
+        }
         SystemParameter parameter = find(key);
         LocalDateTime now = LocalDateTime.now();
         boolean isNew = parameter == null;
@@ -33,7 +38,7 @@ public class TenantParameterApplicationService {
             parameter.setTenantCode(TenantContext.tenantCode());
             parameter.setParameterKey(key);
         }
-        parameter.setParameterValue(value.trim());
+        parameter.setParameterValue(normalizedValue);
         parameter.setUpdatedBy(TenantContext.actor());
         parameter.setUpdatedAt(now);
         if (isNew) {

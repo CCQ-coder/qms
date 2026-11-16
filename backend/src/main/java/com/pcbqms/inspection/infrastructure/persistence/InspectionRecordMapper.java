@@ -12,7 +12,7 @@ import org.apache.ibatis.annotations.Select;
 public interface InspectionRecordMapper extends BaseMapper<InspectionRecord> {
     @Select("""
         <script>
-        SELECT record.* FROM qms_inspection_record record
+        SELECT record.*<if test="includeTotal">, COUNT(*) OVER() AS total_count</if> FROM qms_inspection_record record
         JOIN qms_inspection_task task ON task.id = record.task_id AND task.tenant_code = record.tenant_code
         WHERE record.tenant_code = #{tenantCode} AND task.status = 'COMPLETED'
           AND (task.task_type = 'FINISHED' OR task.process_code = 'FQC')
@@ -26,13 +26,17 @@ public interface InspectionRecordMapper extends BaseMapper<InspectionRecord> {
                OR (record.inspected_at = #{cursorTime} AND record.id &lt; #{cursorId}))
         </if>
         ORDER BY record.inspected_at DESC, record.id DESC
-        LIMIT #{limit}
+        <choose>
+          <when test="offset != null">LIMIT #{limit} OFFSET #{offset}</when>
+          <otherwise>LIMIT #{limit}</otherwise>
+        </choose>
         </script>
         """)
     List<InspectionRecord> selectFinishedPage(
         @Param("tenantCode") String tenantCode, @Param("dataStart") LocalDateTime dataStart,
         @Param("processCodes") List<String> processCodes,
         @Param("cursorTime") LocalDateTime cursorTime, @Param("cursorId") String cursorId,
-        @Param("limit") int limit);
+        @Param("limit") int limit, @Param("offset") Long offset,
+        @Param("includeTotal") boolean includeTotal);
 }
 

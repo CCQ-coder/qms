@@ -35,6 +35,7 @@ public record EquipmentTelemetryRecordResponse(
     String rawPayload,
     String materialNo,
     String workOrderNo,
+    String customerOrderNo,
     String batchNo,
     Integer goodBoardCount,
     Integer badBoardCount,
@@ -63,7 +64,7 @@ public record EquipmentTelemetryRecordResponse(
             record.getAlarmMessage(), record.getMachiningCount()
             , legacyState, legacyId, legacyMachineType, runtimeSeconds, routeLength, screenText,
             record.getSourceRecordNo(), record.getRawPayload(),
-            record.getMaterialNo(), record.getWorkOrderNo(), record.getBatchNo(), goodBoardCount, badBoardCount,
+            record.getMaterialNo(), record.getWorkOrderNo(), record.getCustomerOrderNo(), record.getBatchNo(), goodBoardCount, badBoardCount,
             projection == null ? null : projection.getStatus(),
             projection == null ? null : projection.getReason(),
             projection == null ? null : projection.getInspectionRecordId(),

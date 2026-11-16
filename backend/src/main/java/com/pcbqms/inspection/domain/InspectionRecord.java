@@ -1,6 +1,7 @@
 package com.pcbqms.inspection.domain;
 
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
@@ -25,4 +26,6 @@ public class InspectionRecord {
     private String inspectedBy;
     private LocalDateTime inspectedAt;
     private LocalDateTime createdAt;
+    @TableField(exist = false)
+    private Long totalCount;
 }

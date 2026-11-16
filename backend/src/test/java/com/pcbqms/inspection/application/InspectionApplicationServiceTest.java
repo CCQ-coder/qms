@@ -125,7 +125,7 @@ class InspectionApplicationServiceTest {
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("tester.a", "INSPECTOR", false, Set.of("FQC")));
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
-        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(), any(int.class)))
+        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(), any(int.class), isNull(), eq(false)))
             .thenReturn(List.of(record));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder));
         when(productionBatchMapper.selectList(any())).thenReturn(List.of(batch));
@@ -166,7 +166,7 @@ class InspectionApplicationServiceTest {
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
-        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(), any(int.class)))
+        when(inspectionRecordMapper.selectFinishedPage(any(), any(), any(), any(), any(), any(int.class), isNull(), eq(false)))
             .thenReturn(List.of(record));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder));
         when(objectMapper.readValue(any(String.class), any(com.fasterxml.jackson.core.type.TypeReference.class)))
@@ -231,11 +231,11 @@ class InspectionApplicationServiceTest {
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), eq(FinishedTestDataWindow.START),
-            isNull(), isNull(), isNull(), eq(2)))
+            isNull(), isNull(), isNull(), eq(2), isNull(), eq(false)))
             .thenReturn(List.of(newer, older));
         when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), eq(FinishedTestDataWindow.START),
             isNull(), eq(newer.getInspectedAt()),
-            eq(newer.getId()), eq(2))).thenReturn(List.of(older));
+            eq(newer.getId()), eq(2), isNull(), eq(false))).thenReturn(List.of(older));
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
 
@@ -246,6 +246,38 @@ class InspectionApplicationServiceTest {
         assertThat(first.nextCursor()).isNotBlank();
         assertThat(second.items()).extracting(item -> item.id()).containsExactly("record-a");
         assertThat(second.nextCursor()).isNull();
+    }
+
+    @Test
+    void numberedFinishedRecordsReadOnlyRequestedPageAndReturnTotal() {
+        TenantContext.set("customer-a", "admin");
+        InspectionTask task = new InspectionTask();
+        task.setId("task-page");
+        task.setTenantCode("customer-a");
+        task.setWorkOrderId("work-page");
+        task.setProcessCode("FQC");
+        task.setTaskType("FINISHED");
+        task.setStatus("COMPLETED");
+        InspectionRecord record = new InspectionRecord();
+        record.setId("record-21");
+        record.setTaskId("task-page");
+        record.setTotalCount(43L);
+        WorkOrder order = new WorkOrder();
+        order.setId("work-page");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+        when(inspectionRecordMapper.selectFinishedPage(eq("customer-a"), eq(FinishedTestDataWindow.START),
+            isNull(), isNull(), isNull(), eq(10), eq(20L), eq(true))).thenReturn(List.of(record));
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task));
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
+
+        var result = service().listCompletedFinishedRecords(10, null, 3, true);
+
+        assertThat(result.items()).extracting(item -> item.id()).containsExactly("record-21");
+        assertThat(result.total()).isEqualTo(43L);
+        assertThat(result.nextCursor()).isNull();
+        verify(inspectionRecordMapper).selectFinishedPage(eq("customer-a"), eq(FinishedTestDataWindow.START),
+            isNull(), isNull(), isNull(), eq(10), eq(20L), eq(true));
     }
 
     private InspectionApplicationService service() {

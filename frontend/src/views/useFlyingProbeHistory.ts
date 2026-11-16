@@ -18,7 +18,7 @@ export function useFlyingProbeHistory(
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
-  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = {}
+  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo'> = {}
 
   async function load(selectedPage: number, selectedSize: number, includeTotal: boolean) {
     if (loading.value) return
@@ -42,7 +42,7 @@ export function useFlyingProbeHistory(
 
   return {
     records, page, pageSize, total, loading, loaded, error, updatedAt,
-    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'internalProductNo'> = search) => {
+    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo'> = search) => {
       search = filters
       return load(1, pageSize.value, true)
     },

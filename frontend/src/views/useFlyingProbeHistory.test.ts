@@ -27,14 +27,14 @@ test('counts once, then requests only the selected page', async () => {
       : { items: [record('first')], pageSize: 10, total: 21 }
   })
 
-  await history.refresh({ workOrderNo: 'WO-123', internalProductNo: 'P2L018680B' })
+  await history.refresh({ workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' })
   await history.changePage(2, 10)
 
   assert.deepEqual(queries, [
     { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 10, page: 1, includeTotal: true,
-      workOrderNo: 'WO-123', internalProductNo: 'P2L018680B' },
+      workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' },
     { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 10, page: 2, includeTotal: false,
-      workOrderNo: 'WO-123', internalProductNo: 'P2L018680B' }
+      workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' }
   ])
   assert.deepEqual(history.records.value.map((item) => item.id), ['second'])
   assert.equal(history.total.value, 21)

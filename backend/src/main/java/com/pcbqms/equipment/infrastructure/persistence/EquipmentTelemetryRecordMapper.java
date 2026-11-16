@@ -55,7 +55,11 @@ public interface EquipmentTelemetryRecordMapper {
         SELECT id, tenant_code, equipment_id, source_username, machine_name, device_time, received_at,
                event_type, equipment_status, program_no, program_version, material_no, work_order_no, batch_no,
                operator_name, progress_percent, spindle_status, alarm_code, alarm_message, machining_count,
-               source_record_no, deduplication_key, raw_payload, created_at
+               source_record_no, deduplication_key, raw_payload, created_at,
+               (SELECT work_order.customer_order_no FROM qms_work_order work_order
+                WHERE work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.work_order_no COLLATE utf8mb4_0900_ai_ci
+                LIMIT 1) AS customer_order_no
         <if test="includeTotal">, COUNT(*) OVER() AS total_count</if>
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
@@ -67,6 +71,12 @@ public interface EquipmentTelemetryRecordMapper {
         </if>
         <if test="workOrderNo != null">
             AND work_order_no LIKE CONCAT('%', #{workOrderNo}, '%')
+        </if>
+        <if test="customerOrderNo != null">
+            AND EXISTS (SELECT 1 FROM qms_work_order work_order
+                WHERE work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.work_order_no COLLATE utf8mb4_0900_ai_ci
+                  AND work_order.customer_order_no LIKE CONCAT('%', #{customerOrderNo}, '%'))
         </if>
         <if test="internalProductNo != null">
             AND material_no LIKE CONCAT('%', #{internalProductNo}, '%')
@@ -126,6 +136,7 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("limit") int limit,
         @Param("eventType") String eventType,
         @Param("workOrderNo") String workOrderNo,
+        @Param("customerOrderNo") String customerOrderNo,
         @Param("internalProductNo") String internalProductNo,
         @Param("offset") Long offset,
         @Param("includeTotal") boolean includeTotal

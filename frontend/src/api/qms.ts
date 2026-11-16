@@ -3,7 +3,7 @@ import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary, FinishedTestAnalysis,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationAuditLogPage, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
-  , MenuAccess, GatewayHostStatus
+  , MenuAccess, GatewayHostStatus, DailyMaterialBadBoards
 } from '@/types/qms'
 
 export const qmsApi = {
@@ -71,6 +71,13 @@ export const qmsApi = {
   async listCompletedFinishedTestRecords(limit = 100, cursor?: string) {
     const { data } = await http.get<ApiResponse<{ items: FinishedTestInspectionRecord[], nextCursor: string | null }>>(
       '/api/v1/inspection-tasks/completed-finished-records', { params: { limit, cursor } }
+    )
+    return data.data
+  },
+
+  async pageCompletedFinishedTestRecords(page: number, limit: number, includeTotal: boolean) {
+    const { data } = await http.get<ApiResponse<{ items: FinishedTestInspectionRecord[], total?: number | null }>>(
+      '/api/v1/inspection-tasks/completed-finished-records', { params: { page, limit, includeTotal } }
     )
     return data.data
   },
@@ -372,6 +379,11 @@ export const qmsApi = {
 
   async getFinishedTestAnalysis(from?: string, to?: string) {
     const { data } = await http.get<ApiResponse<FinishedTestAnalysis>>('/api/v1/reports/finished-test-analysis', { params: { from, to } })
+    return data.data
+  },
+
+  async getTodayBadBoardsByMaterial() {
+    const { data } = await http.get<ApiResponse<DailyMaterialBadBoards>>('/api/v1/dashboard/today-bad-boards-by-material')
     return data.data
   },
 

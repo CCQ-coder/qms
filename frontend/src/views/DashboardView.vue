@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime } from '@/utils/display-text'
-import type { DashboardSummary, EquipmentTelemetryRecord, QualitySummary } from '@/types/qms'
+import type { DailyMaterialBadBoards, DashboardSummary, EquipmentTelemetryRecord, QualitySummary } from '@/types/qms'
 
 const loading = ref(true)
 const summary = ref<DashboardSummary>()
@@ -11,21 +11,26 @@ const summaryError = ref('')
 const qualityError = ref('')
 const probeRecords = ref<EquipmentTelemetryRecord[]>([])
 const probeError = ref('')
+const materialBadBoards = ref<DailyMaterialBadBoards>()
+const materialError = ref('')
 const latestProbeRecord = computed(() => probeRecords.value[0])
 const businessUpdatedAt = ref<Date>()
 const updatedAtLabel = computed(() => businessUpdatedAt.value ? formatDateTime(businessUpdatedAt.value) : loading.value ? '读取中' : '尚未完整读取')
 async function load() {
   loading.value = true
   try {
-    const [dashboardResult, qualityResult, probeResult] = await Promise.allSettled([
+    const [dashboardResult, qualityResult, probeResult, materialResult] = await Promise.allSettled([
       qmsApi.getDashboardSummary(),
       qmsApi.getQualitySummary(),
-      qmsApi.listEquipmentTelemetryHistory({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1 })
+      qmsApi.listEquipmentTelemetryHistory({ eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1 }),
+      qmsApi.getTodayBadBoardsByMaterial()
     ])
     summaryError.value = dashboardResult.status === 'rejected' ? '质量流程状态读取失败，请刷新重试。' : ''
     qualityError.value = qualityResult.status === 'rejected' ? '质量汇总读取失败，请刷新重试。' : ''
     summary.value = dashboardResult.status === 'fulfilled' ? dashboardResult.value : undefined
     quality.value = qualityResult.status === 'fulfilled' ? qualityResult.value : undefined
+    materialBadBoards.value = materialResult.status === 'fulfilled' ? materialResult.value : undefined
+    materialError.value = materialResult.status === 'rejected' ? '今日料号坏板读取失败，请刷新重试。' : ''
     if (probeResult.status === 'fulfilled') {
       probeRecords.value = probeResult.value.items
       probeError.value = ''
@@ -40,9 +45,11 @@ async function load() {
     summary.value = undefined
     quality.value = undefined
     probeRecords.value = []
+    materialBadBoards.value = undefined
     summaryError.value = '质量业务数据处理失败，请刷新重试。'
     qualityError.value = summaryError.value
     probeError.value = '飞针机采集状态处理失败，请刷新重试。'
+    materialError.value = '今日料号坏板处理失败，请刷新重试。'
   } finally { loading.value = false }
 }
 
@@ -76,6 +83,15 @@ onMounted(() => { void load() })
         <div><span>QMS 接收时间</span><strong>{{ formatDateTime(latestProbeRecord.receivedAt) }}</strong></div>
       </div>
       <el-empty v-else description="当前查询范围内暂无飞针机采集记录" />
+    </el-card>
+
+    <el-card shadow="never" class="content-card">
+      <template #header><div class="dashboard-card-heading"><h3>{{ materialBadBoards?.date || '今日' }} 飞针坏板（按料号）</h3><el-button @click="load">刷新</el-button></div></template>
+      <el-alert v-if="materialError" :title="materialError" type="error" :closable="false" />
+      <paged-table v-else :data="materialBadBoards?.materials || []" empty-text="今日暂无已处理的飞针坏板记录">
+        <el-table-column prop="materialNo" label="料号" min-width="180" />
+        <el-table-column prop="badCount" label="坏板" min-width="100" align="right" />
+      </paged-table>
     </el-card>
 
     <el-card shadow="never" class="content-card dashboard-flow-card">

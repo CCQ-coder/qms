@@ -22,6 +22,7 @@ public class EquipmentTelemetryRecord {
     private String programVersion;
     private String materialNo;
     private String workOrderNo;
+    private String customerOrderNo;
     private String batchNo;
     private String operatorName;
     private BigDecimal progressPercent;

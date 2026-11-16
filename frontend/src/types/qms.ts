@@ -431,6 +431,7 @@ export type EquipmentTelemetryRecord = {
   programNo?: string
   materialNo?: string
   workOrderNo?: string
+  customerOrderNo?: string
   batchNo?: string
   operatorName?: string
   progressPercent?: number
@@ -458,6 +459,7 @@ export type EquipmentTelemetryHistoryQuery = {
   equipmentId?: string
   eventType?: string
   workOrderNo?: string
+  customerOrderNo?: string
   internalProductNo?: string
   fromTime?: string
   toTime?: string
@@ -669,4 +671,10 @@ export type MenuAccess = {
   roleCode: string
   activeMenuCodes: string[]
   permittedMenuCodes: string[]
+  menuNames?: Record<string, string>
+}
+
+export type DailyMaterialBadBoards = {
+  date: string
+  materials: Array<{ materialNo: string; badCount: number }>
 }
