@@ -100,6 +100,40 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
+    void manualBindingClaimsAnUnprojectedTelemetryRecord() {
+        TenantContext.set("tenant-a", "supervisor");
+        var now = LocalDateTime.now();
+        var telemetry = event("unprojected", now.minusHours(1), now.minusMinutes(1), 3, 2, 1);
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("unprojected")).thenReturn(null, projection);
+        when(projectionMapper.selectTelemetryForClaim("tenant-a", "unprojected", FinishedTestDataWindow.START))
+            .thenReturn(telemetry);
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
+        FlyingProbeRun run = run();
+        when(projectionMapper.lockRun(any())).thenReturn(run);
+
+        service().bindManually("unprojected", "WO-1");
+
+        verify(projectionMapper).claim(telemetry);
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+    }
+
+    @Test
+    void manualBindingRetriesAnUnboundSkippedProjection() {
+        TenantContext.set("tenant-a", "supervisor");
+        var now = LocalDateTime.now();
+        var projection = projection(event("skipped", now.minusHours(1), now.minusMinutes(1), 3, 2, 1));
+        projection.setStatus("SKIPPED");
+        when(projectionMapper.lockProjection("skipped")).thenReturn(projection);
+        when(workOrderMapper.selectOne(any())).thenReturn(workOrder());
+        when(projectionMapper.lockRun(any())).thenReturn(run());
+
+        service().bindManually("skipped", "WO-1");
+
+        assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
+    }
+
+    @Test
     void manualBindingCannotChangeTheOrderOfAnExistingFile() {
         TenantContext.set("tenant-a", "supervisor");
         var telemetry = event("already-bound", LocalDateTime.now().minusHours(1),

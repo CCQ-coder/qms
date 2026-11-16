@@ -154,6 +154,17 @@ public interface FlyingProbeProjectionMapper {
         """)
     int claim(EquipmentTelemetryRecord telemetry);
 
+    @Select("""
+        SELECT id, tenant_code, equipment_id, machine_name, material_no, device_time, received_at,
+               event_type, source_record_no, raw_payload
+        FROM qms_equipment_telemetry
+        WHERE id = #{telemetryId} AND tenant_code = #{tenantCode}
+          AND event_type = 'FLYING_PROBE_TEST_COUNTERS' AND device_time >= #{dataStart}
+        """)
+    EquipmentTelemetryRecord selectTelemetryForClaim(
+        @Param("tenantCode") String tenantCode, @Param("telemetryId") String telemetryId,
+        @Param("dataStart") LocalDateTime dataStart);
+
     @Select("SELECT * FROM qms_flying_probe_projection WHERE telemetry_id = #{telemetryId} FOR UPDATE")
     FlyingProbeProjection lockProjection(@Param("telemetryId") String telemetryId);
 

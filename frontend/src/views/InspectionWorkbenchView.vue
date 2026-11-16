@@ -871,6 +871,7 @@ onBeforeUnmount(() => {
             <el-table-column label="好板" min-width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="坏板" min-width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="实时合格率" min-width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
+            <el-table-column v-if="canBindFlyingProbe" label="操作" min-width="110" fixed="right"><template #default="scope"><el-button v-if="!scope.row.workOrderNo" link type="primary" @click="openBindingDialog(scope.row)">手动绑定</el-button></template></el-table-column>
           </paged-table>
         </div>
       </template>

@@ -108,11 +108,22 @@ public class FlyingProbeInspectionProjectionService {
         }
         String tenantCode = TenantContext.tenantCode();
         FlyingProbeProjection projection = projectionMapper.lockProjection(telemetryId);
+        if (projection == null) {
+            EquipmentTelemetryRecord telemetry = projectionMapper.selectTelemetryForClaim(
+                tenantCode, telemetryId, FinishedTestDataWindow.START);
+            if (telemetry != null) {
+                projectionMapper.claim(telemetry);
+                projection = projectionMapper.lockProjection(telemetryId);
+            }
+        }
         if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
-        if (!"RETRYABLE".equals(projection.getStatus())) {
-            throw new IllegalArgumentException("仅待匹配的飞针记录可手动绑定");
+        if (StringUtils.hasText(projection.getWorkOrderNo())
+            || (!"PENDING".equals(projection.getStatus())
+                && !"RETRYABLE".equals(projection.getStatus())
+                && !"SKIPPED".equals(projection.getStatus()))) {
+            throw new IllegalArgumentException("仅未绑定生产指令的飞针记录可手动绑定");
         }
         Snapshot snapshot = parse(projection);
         String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
@@ -166,6 +177,7 @@ public class FlyingProbeInspectionProjectionService {
         projection.setCumulativeTested(snapshot.counts().tested());
         projection.setCumulativeGood(snapshot.counts().good());
         projection.setCumulativeBad(snapshot.counts().bad());
+        projection.setStatus("RETRYABLE");
         projection.setReason("已手动绑定生产指令，等待生成 FQC");
         projection.setRetryAfter(now);
         projection.setProcessedAt(now);
