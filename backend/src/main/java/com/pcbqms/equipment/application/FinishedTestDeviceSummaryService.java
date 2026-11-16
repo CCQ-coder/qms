@@ -38,7 +38,7 @@ public class FinishedTestDeviceSummaryService {
     public record Summary(LocalDate inspectionDate, String workOrderNo, String internalProductNo,
                           String pcbMaterialNo, long totalCount, long goodCount, long badCount, double passRate) { }
     public record DeviceSummary(LocalDate inspectionDate, String equipmentCode, String workOrderNo,
-                                String internalProductNo, String pcbMaterialNo,
+                                String customerOrderNo, String internalProductNo, String pcbMaterialNo,
                                 long totalCount, long goodCount, long badCount, double passRate) { }
     public record SettlementCandidate(String materialKey, String workOrderNo, String internalProductNo,
                                       LocalDateTime firstDetectionAt, LocalDateTime lastDetectionAt,
@@ -283,7 +283,7 @@ public class FinishedTestDeviceSummaryService {
     private List<WorkOrder> workOrders() {
         return workOrderMapper.selectList(Wrappers.query(WorkOrder.class)
             .eq("tenant_code", TenantContext.tenantCode())
-            .select("work_order_no", "internal_product_no", "material_no", "released_at"));
+            .select("work_order_no", "customer_order_no", "internal_product_no", "material_no", "released_at"));
     }
 
     private List<Sample> samples() {
@@ -358,7 +358,7 @@ public class FinishedTestDeviceSummaryService {
             String assetNo = equipmentCodes.get(sample.equipmentId());
             return new DeviceSummary(sample.deviceTime().toLocalDate(),
                 StringUtils.hasText(assetNo) ? assetNo : Objects.toString(sample.equipmentId(), "未关联设备"),
-                item.order().getWorkOrderNo(),
+                item.order().getWorkOrderNo(), item.order().getCustomerOrderNo(),
                 item.order().getInternalProductNo(), sample.materialNo(), tested, tested - bad, bad,
                 tested == 0 ? 0 : Math.round((tested - bad) * 10000.0 / tested) / 100.0);
         }).sorted(Comparator.comparing(DeviceSummary::inspectionDate).reversed()

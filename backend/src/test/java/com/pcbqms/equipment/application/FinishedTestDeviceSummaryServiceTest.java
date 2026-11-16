@@ -234,6 +234,7 @@ class FinishedTestDeviceSummaryServiceTest {
     void deviceSummaryKeepsEquipmentAndMaterialDistinctWithoutChangingOverallCounts() {
         WorkOrder order = new WorkOrder();
         order.setWorkOrderNo("WO-1");
+        order.setCustomerOrderNo("ORDER-1");
         order.setInternalProductNo("IN-1");
         LocalDateTime day = LocalDateTime.of(2026, 11, 3, 9, 0);
         var samples = List.of(
@@ -253,6 +254,8 @@ class FinishedTestDeviceSummaryServiceTest {
                 assertThat(row.goodCount()).isEqualTo(5);
                 assertThat(row.badCount()).isEqualTo(3);
                 assertThat(row.internalProductNo()).isEqualTo("IN-1");
+                assertThat(new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules().valueToTree(row)
+                    .path("customerOrderNo").asText()).isEqualTo("ORDER-1");
             });
         assertThat(result.stream().mapToLong(FinishedTestDeviceSummaryService.DeviceSummary::totalCount).sum())
             .isEqualTo(FinishedTestDeviceSummaryService.aggregate(samples, List.of(order)).getFirst().totalCount());

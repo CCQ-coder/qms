@@ -1216,6 +1216,7 @@ onBeforeUnmount(() => {
         <el-table-column v-if="summaryDimension === 'dateEquipmentOrder'" prop="inspectionDate" label="检测日期" min-width="140" />
         <el-table-column v-if="summaryDimension === 'dateEquipmentOrder'" prop="equipmentCode" label="设备编号" min-width="135" />
         <el-table-column v-if="summaryDimension !== 'internalProductNo'" prop="workOrderNo" label="生产指令" min-width="150" />
+        <el-table-column v-if="summaryDimension !== 'internalProductNo'" prop="customerOrderNo" label="订单编号" min-width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
         <el-table-column prop="internalProductNo" label="厂内编号" min-width="160" />
         <el-table-column v-if="summaryDimension !== 'internalProductNo'" prop="pcbMaterialNo" label="料号" min-width="165" show-overflow-tooltip><template #default="scope">{{ scope.row.pcbMaterialNo || '—' }}</template></el-table-column>
         <el-table-column prop="totalCount" label="检测总数" min-width="130" align="right" />

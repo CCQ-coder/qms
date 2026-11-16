@@ -56,7 +56,7 @@ class EquipmentTelemetryControllerTest {
     void returnsDeviceDimensionForFinishedTestSummary() throws Exception {
         var summary = mock(FinishedTestDeviceSummaryService.class);
         when(summary.listDeviceSummary()).thenReturn(List.of(new FinishedTestDeviceSummaryService.DeviceSummary(
-            java.time.LocalDate.of(2026, 11, 10), "WTD-1", "WO-1", "IN-1", "PCB-1", 4, 3, 1, 75)));
+            java.time.LocalDate.of(2026, 11, 10), "WTD-1", "WO-1", "ORDER-1", "IN-1", "PCB-1", 4, 3, 1, 75)));
         var controller = new EquipmentTelemetryController(
             mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
             mock(EquipmentTelemetryQueryApplicationService.class), summary,
@@ -66,6 +66,7 @@ class EquipmentTelemetryControllerTest {
             .perform(get("/api/v1/equipment/telemetry/finished-test-summary/by-device"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data[0].equipmentCode").value("WTD-1"))
+            .andExpect(jsonPath("$.data[0].customerOrderNo").value("ORDER-1"))
             .andExpect(jsonPath("$.data[0].totalCount").value(4));
     }
 

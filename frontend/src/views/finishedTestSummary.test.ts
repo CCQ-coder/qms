@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupFinishedTestSummary } from './finishedTestSummary.ts'
+import { groupFinishedTestSummary, summarizeFinishedTestDevices } from './finishedTestSummary.ts'
 
 const rows = [
-  { inspectionDate: '2026-11-10', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-1', totalCount: 3, goodCount: 2, badCount: 1, passRate: 66.67 },
-  { inspectionDate: '2026-11-09', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-1', totalCount: 2, goodCount: 2, badCount: 0, passRate: 100 },
-  { inspectionDate: '2026-11-10', equipmentCode: 'WTD-2', workOrderNo: 'WO-2', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-2', totalCount: 5, goodCount: 3, badCount: 2, passRate: 60 },
-  { inspectionDate: '2026-11-10', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-3', totalCount: 1, goodCount: 1, badCount: 0, passRate: 100 }
+  { inspectionDate: '2026-11-10', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-1', totalCount: 3, goodCount: 2, badCount: 1, passRate: 66.67 },
+  { inspectionDate: '2026-11-09', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-1', totalCount: 2, goodCount: 2, badCount: 0, passRate: 100 },
+  { inspectionDate: '2026-11-10', equipmentCode: 'WTD-2', workOrderNo: 'WO-2', customerOrderNo: 'ORDER-2', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-2', totalCount: 5, goodCount: 3, badCount: 2, passRate: 60 },
+  { inspectionDate: '2026-11-10', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1', internalProductNo: 'IN-1', pcbMaterialNo: 'PCB-3', totalCount: 1, goodCount: 1, badCount: 0, passRate: 100 }
 ]
 
 test('groups device counts by production order, internal number or date plus device plus order', () => {
@@ -22,4 +22,24 @@ test('groups device counts by production order, internal number or date plus dev
     { inspectionDate: '2026-11-10', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', totalCount: 4 },
     { inspectionDate: '2026-11-09', equipmentCode: 'WTD-1', workOrderNo: 'WO-1', totalCount: 2 }
   ])
+  assert.deepEqual(groupFinishedTestSummary(rows, 'workOrderNo').map(({ workOrderNo, customerOrderNo }) => ({ workOrderNo, customerOrderNo })), [
+    { workOrderNo: 'WO-2', customerOrderNo: 'ORDER-2' },
+    { workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1' }
+  ])
+  assert.deepEqual(groupFinishedTestSummary(rows, 'dateEquipmentOrder').map(({ workOrderNo, customerOrderNo }) => ({ workOrderNo, customerOrderNo })), [
+    { workOrderNo: 'WO-2', customerOrderNo: 'ORDER-2' },
+    { workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1' },
+    { workOrderNo: 'WO-1', customerOrderNo: 'ORDER-1' }
+  ])
+})
+
+test('summarizes device boards by detection date with the same counts as the monitor', () => {
+  assert.deepEqual(summarizeFinishedTestDevices(rows, '2026-11-10', '2026-11-10'), {
+    totalCount: 9,
+    goodCount: 6,
+    badCount: 3,
+    passRate: 66.67,
+    dailyTrend: [{ inspectionDate: '2026-11-10', totalCount: 9, goodCount: 6, badCount: 3, passRate: 66.67 }]
+  })
+  assert.equal(summarizeFinishedTestDevices(rows).totalCount, 11)
 })

@@ -498,6 +498,7 @@ export type FinishedTestDeviceSummary = {
   inspectionDate: string
   equipmentCode: string
   workOrderNo: string
+  customerOrderNo?: string
   internalProductNo?: string
   pcbMaterialNo?: string
   totalCount: number

@@ -8,11 +8,14 @@ import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { qmsApi } from '@/api/qms'
 import { formatDateTime, statusText, taskTypeText } from '@/utils/display-text'
-import type { FinishedTestMonthlyAnalytics, QualitySummary, Traceability } from '@/types/qms'
+import { summarizeFinishedTestDevices } from './finishedTestSummary'
+import type { FinishedTestDeviceSummary, FinishedTestMonthlyAnalytics, QualitySummary, Traceability } from '@/types/qms'
 
 const loading = ref(false)
 const route = useRoute()
 const summary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
+const deviceRows = ref<FinishedTestDeviceSummary[]>([])
+const deviceSummaryError = ref('')
 const reportDateRange = ref<string[]>([])
 const trendChartRef = ref<HTMLElement>()
 let trendChart: ECharts | undefined
@@ -32,7 +35,9 @@ const traceability = ref<Traceability>()
 const exportingExcel = ref(false)
 const isAnalyticsPage = computed(() => route.meta.reportSection !== 'traceability')
 const dateRangeLabel = computed(() => reportDateRange.value.length === 2
-  ? `${reportDateRange.value[0]} 至 ${reportDateRange.value[1]}` : '全部检验日期')
+  ? `${reportDateRange.value[0]} 至 ${reportDateRange.value[1]}` : '全部日期')
+const deviceQuality = computed(() => summarizeFinishedTestDevices(deviceRows.value,
+  reportDateRange.value[0], reportDateRange.value[1]))
 
 function reportDateParams() {
   return reportDateRange.value.length === 2
@@ -45,11 +50,18 @@ async function loadSummary() {
   loading.value = true
   try {
     const { from, to } = reportDateParams()
-    summary.value = await qmsApi.getQualitySummary(from, to)
-    await nextTick()
-    renderTrendChart()
-  } catch {
-    ElMessage.error('质量汇总读取失败')
+    const [qualityResult, deviceResult] = await Promise.allSettled([
+      qmsApi.getQualitySummary(from, to), qmsApi.listFinishedTestDeviceSummary()
+    ])
+    if (qualityResult.status === 'fulfilled') summary.value = qualityResult.value
+    else ElMessage.error('检验记录汇总读取失败')
+    if (deviceResult.status === 'fulfilled') {
+      deviceRows.value = deviceResult.value
+      deviceSummaryError.value = ''
+    } else {
+      deviceRows.value = []
+      deviceSummaryError.value = '设备检测汇总读取失败，请重试。'
+    }
   } finally {
     loading.value = false
   }
@@ -101,21 +113,21 @@ function renderMonthlyCharts() {
 }
 
 function renderTrendChart() {
-  if (!trendChartRef.value || !summary.value.dailyTrend.length) return
   trendChart?.dispose()
+  if (!trendChartRef.value || !deviceQuality.value.dailyTrend.length) return
   trendChart = init(trendChartRef.value)
   trendChart.setOption({
     grid: { top: 38, right: 24, bottom: 28, left: 45 },
     tooltip: { trigger: 'axis' },
-    legend: { data: ['一次合格率', '不合格记录'] },
-    xAxis: { type: 'category', data: summary.value.dailyTrend.map((item) => item.inspectionDate) },
+    legend: { data: ['板数合格率', '坏板数'] },
+    xAxis: { type: 'category', data: deviceQuality.value.dailyTrend.map((item) => item.inspectionDate) },
     yAxis: [
       { type: 'value', name: '合格率', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
-      { type: 'value', name: '不合格记录', minInterval: 1 }
+      { type: 'value', name: '坏板数', minInterval: 1 }
     ],
     series: [
-      { name: '一次合格率', type: 'line', smooth: true, data: summary.value.dailyTrend.map((item) => item.passRate), yAxisIndex: 0, itemStyle: { color: '#155eef' } },
-      { name: '不合格记录', type: 'bar', data: summary.value.dailyTrend.map((item) => item.failRecords), yAxisIndex: 1, itemStyle: { color: '#f79009' } }
+      { name: '板数合格率', type: 'line', smooth: true, data: deviceQuality.value.dailyTrend.map((item) => item.passRate), yAxisIndex: 0, itemStyle: { color: '#155eef' } },
+      { name: '坏板数', type: 'bar', data: deviceQuality.value.dailyTrend.map((item) => item.badCount), yAxisIndex: 1, itemStyle: { color: '#f79009' } }
     ]
   })
 }
@@ -171,7 +183,7 @@ async function exportQualityExcel() {
   }
 }
 
-watch(() => summary.value.dailyTrend, () => nextTick(renderTrendChart), { deep: true })
+watch(() => deviceQuality.value.dailyTrend, () => nextTick(renderTrendChart), { deep: true })
 watch(() => route.fullPath, () => {
   if (isAnalyticsPage.value) { void loadSummary(); void loadMonthly() }
 })
@@ -190,13 +202,14 @@ onBeforeUnmount(() => {
 <template>
   <section class="page-stack" v-loading="loading">
     <template v-if="isAnalyticsPage">
-    <el-card shadow="never" class="content-card"><div class="report-filter"><span>检验日期</span><el-date-picker v-model="reportDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable /><el-button type="primary" :loading="loading" @click="loadSummary">查询</el-button><span class="filter-hint">当前范围：{{ dateRangeLabel }}</span></div></el-card>
-    <div class="metric-grid report-metrics"><article class="metric-card"><span>检验记录</span><strong>{{ summary.totalRecords }}</strong><small>{{ dateRangeLabel }} · 当前权限范围</small></article><article class="metric-card success"><span>一次合格率</span><strong>{{ summary.firstPassRate }}%</strong><small>按可见已提交记录计算</small></article><article class="metric-card"><span>合格记录</span><strong>{{ summary.passRecords }}</strong><small>合格</small></article><article class="metric-card warning"><span>不合格记录</span><strong>{{ summary.failRecords }}</strong><small>不合格</small></article></div>
+    <el-card shadow="never" class="content-card"><div class="report-filter"><span>日期</span><el-date-picker v-model="reportDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable /><el-button type="primary" :loading="loading" @click="loadSummary">查询</el-button><span class="filter-hint">当前范围：{{ dateRangeLabel }}</span></div></el-card>
+    <el-alert v-if="deviceSummaryError" type="error" :closable="false" :title="deviceSummaryError" />
+    <div class="metric-grid report-metrics"><article class="metric-card"><span>检测板数</span><strong>{{ deviceQuality.totalCount }}</strong><small>{{ dateRangeLabel }} · 已关联生产指令</small></article><article class="metric-card success"><span>板数合格率</span><strong>{{ deviceQuality.passRate.toFixed(2) }}%</strong><small>与设备实时监控同口径</small></article><article class="metric-card"><span>好板</span><strong>{{ deviceQuality.goodCount }}</strong><small>设备检测增量</small></article><article class="metric-card warning"><span>坏板</span><strong>{{ deviceQuality.badCount }}</strong><small>设备检测增量</small></article></div>
 
     <el-card shadow="never" class="content-card">
-      <template #header><div class="card-header"><span>质量趋势</span><small>一次合格率与不合格记录按检验日期汇总</small></div></template>
-      <div v-if="summary.dailyTrend.length" ref="trendChartRef" class="quality-trend-chart" />
-      <el-empty v-else description="当前日期范围暂无可见检验趋势数据" />
+      <template #header><div class="card-header"><span>质量趋势</span><small>板数合格率与坏板数按设备检测日期汇总</small></div></template>
+      <div v-if="deviceQuality.dailyTrend.length" ref="trendChartRef" class="quality-trend-chart" />
+      <el-empty v-else description="当前日期范围暂无设备检测趋势数据" />
     </el-card>
 
     <el-card shadow="never" class="content-card" v-loading="monthlyLoading">
