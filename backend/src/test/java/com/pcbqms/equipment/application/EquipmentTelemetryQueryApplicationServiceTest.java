@@ -40,7 +40,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
     @Mock private WorkOrderMapper workOrderMapper;
 
     @Test
-    void historyUsesProjectedProductionOrderAndItsInternalNumber() {
+    void historyUsesProjectedProductionOrderAndItsInternalNumberAndCustomerOrder() {
         TenantContext.set("customer-b", "admin");
         Equipment equipment = new Equipment();
         equipment.setId("equipment-1");
@@ -57,6 +57,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         WorkOrder order = new WorkOrder();
         order.setWorkOrderNo("WO-1");
         order.setInternalProductNo("IN-1");
+        order.setCustomerOrderNo("ORDER-1");
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
@@ -72,6 +73,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
 
         assertThat(item.workOrderNo()).isEqualTo("WO-1");
         assertThat(item.internalProductNo()).isEqualTo("IN-1");
+        assertThat(item.customerOrderNo()).isEqualTo("ORDER-1");
     }
 
     @AfterEach
@@ -159,6 +161,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         record.setMachineName("0002");
         record.setEquipmentStatus("PROCESSING");
         record.setMaterialNo("19250");
+        record.setWorkOrderNo("WO-ZBX");
         record.setSourceRecordNo("ZB-1");
         record.setRawPayload("""
             {"attributes":{"PortNumber":"19250","PanelsTested":1,"ErrorTested":0,"OpenErrors":0,
@@ -173,6 +176,10 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(telemetryRecordMapper.selectRecentByTenant(eq("customer-b"), anyInt())).thenReturn(List.of(record));
         when(equipmentMapper.selectById("equipment-1")).thenReturn(equipment);
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-ZBX");
+        order.setCustomerOrderNo("ORDER-ZBX");
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
 
         var item = new EquipmentTelemetryQueryApplicationService(
             telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules(), workOrderMapper
@@ -194,6 +201,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         });
         assertThat(item.goodBoardCount()).isNull();
         assertThat(item.badBoardCount()).isNull();
+        assertThat(item.customerOrderNo()).isEqualTo("ORDER-ZBX");
         assertThat(item.rawPayload()).contains("\"PortNumber\":\"19250\"");
     }
 

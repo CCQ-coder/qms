@@ -35,6 +35,7 @@ public record EquipmentTelemetryRecordResponse(
     String rawPayload,
     String materialNo,
     String workOrderNo,
+    String customerOrderNo,
     String internalProductNo,
     String batchNo,
     Integer goodBoardCount,
@@ -58,6 +59,7 @@ public record EquipmentTelemetryRecordResponse(
         Integer badBoardCount,
         EquipmentTelemetryProjectionStatus projection,
         ZhongboTestReportFields zhongboTestReport,
+        String customerOrderNo,
         String internalProductNo
     ) {
         return new EquipmentTelemetryRecordResponse(
@@ -68,7 +70,7 @@ public record EquipmentTelemetryRecordResponse(
             , legacyState, legacyId, legacyMachineType, runtimeSeconds, routeLength, screenText,
             record.getSourceRecordNo(), record.getRawPayload(),
             record.getMaterialNo(), projection != null && projection.getWorkOrderNo() != null
-                ? projection.getWorkOrderNo() : record.getWorkOrderNo(), internalProductNo,
+                ? projection.getWorkOrderNo() : record.getWorkOrderNo(), customerOrderNo, internalProductNo,
             record.getBatchNo(), goodBoardCount, badBoardCount,
             projection == null ? null : projection.getStatus(),
             projection == null ? null : projection.getReason(),

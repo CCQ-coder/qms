@@ -456,6 +456,7 @@ export type EquipmentTelemetryRecord = {
   programNo?: string
   materialNo?: string
   workOrderNo?: string
+  customerOrderNo?: string
   internalProductNo?: string
   batchNo?: string
   operatorName?: string

@@ -1059,6 +1059,7 @@ onBeforeUnmount(() => {
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="订单编号" min-width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="设备料号" min-width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="厂内编号" min-width="150" show-overflow-tooltip><template #default="scope">{{ internalNo(scope.row) }}</template></el-table-column>
             <el-table-column label="检测总数" min-width="105" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
@@ -1122,6 +1123,7 @@ onBeforeUnmount(() => {
             <el-table-column label="设备检测时间" width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="订单编号" width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="PCB料号" width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="厂内编号" width="160" show-overflow-tooltip><template #default="scope">{{ internalNo(scope.row) }}</template></el-table-column>
             <el-table-column label="累计已测板数" width="120" align="right"><template #default="scope">{{ scope.row.zhongboTestReport?.panelsTested ?? '—' }}</template></el-table-column>
@@ -1175,6 +1177,7 @@ onBeforeUnmount(() => {
             <el-table-column label="检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="130" />
             <el-table-column label="生产指令" min-width="145"><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="订单编号" min-width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="厂内编号" min-width="150"><template #default="scope">{{ internalNo(scope.row) }}</template></el-table-column>
             <el-table-column label="PCB料号" min-width="140"><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="检测总数" min-width="105" align="right"><template #default="scope">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.panelsTested ?? '—') : (scope.row.machiningCount ?? '—') }}</template></el-table-column>
