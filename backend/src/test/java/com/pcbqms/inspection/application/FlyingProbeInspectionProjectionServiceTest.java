@@ -63,8 +63,8 @@ class FlyingProbeInspectionProjectionServiceTest {
     @Test
     void gyOldProbeDataCannotBeProjectedOrManuallyMatched() {
         TenantContext.set("customer-b", "admin");
-        var old = event("old-probe", LocalDateTime.of(2026, 10, 14, 8, 0),
-            LocalDateTime.of(2026, 10, 14, 9, 0), 3, 2, 1);
+        var old = event("old-probe", LocalDateTime.of(2026, 10, 15, 8, 0),
+            LocalDateTime.of(2026, 10, 15, 9, 0), 3, 2, 1);
         old.setTenantCode("customer-b");
         service().projectNew(old);
         verifyNoInteractions(projectionMapper);
@@ -80,8 +80,8 @@ class FlyingProbeInspectionProjectionServiceTest {
     @Test
     void gyFileStartedBeforeCutoffIsNotMatchedEvenWhenDeviceTimeIsNewer() {
         TenantContext.set("customer-b", "admin");
-        var telemetry = event("old-file", LocalDateTime.of(2026, 10, 14, 8, 0),
-            LocalDateTime.of(2026, 10, 16, 9, 0), 3, 2, 1);
+        var telemetry = event("old-file", LocalDateTime.of(2026, 10, 15, 8, 0),
+            LocalDateTime.of(2026, 10, 17, 9, 0), 3, 2, 1);
         telemetry.setTenantCode("customer-b");
         var projection = projection(telemetry);
         when(projectionMapper.lockProjection("old-file")).thenReturn(projection);
@@ -91,7 +91,7 @@ class FlyingProbeInspectionProjectionServiceTest {
         assertThat(projection.getStatus()).isEqualTo("SKIPPED");
         verify(workOrderMapper, never()).selectList(any());
         projection.setStatus("RETRYABLE");
-        projection.setSourceStartTime(LocalDateTime.of(2026, 10, 14, 8, 0));
+        projection.setSourceStartTime(LocalDateTime.of(2026, 10, 15, 8, 0));
         assertThatThrownBy(() -> service().bindManually("old-file", "WO-1"))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("有效范围");
         verify(workOrderMapper, never()).selectOne(any());

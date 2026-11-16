@@ -41,17 +41,17 @@ class FinishedTestDeviceSummaryServiceTest {
         when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Sample>>any(),
             eq("customer-b"))).thenReturn(List.of(
                 new FinishedTestDeviceSummaryService.Sample("old-probe", "WTD-1", "PCB-1", "WO-1",
-                    LocalDateTime.of(2026, 10, 14, 9, 0), 9, 1, false),
+                    LocalDateTime.of(2026, 10, 15, 9, 0), 9, 1, false),
                 new FinishedTestDeviceSummaryService.Sample("cutoff-probe", "WTD-1", "PCB-1", "WO-1",
-                    LocalDateTime.of(2026, 10, 15, 0, 0), 3, 0, false)
+                    LocalDateTime.of(2026, 10, 16, 0, 0), 3, 0, false)
             ), List.of(new FinishedTestDeviceSummaryService.Sample("old-zhongbo", "ZBX-1", "PCB-1", "WO-1",
-                LocalDateTime.of(2026, 10, 14, 10, 0), 2, 0, true)));
+                LocalDateTime.of(2026, 10, 15, 10, 0), 2, 0, true)));
 
         var summaries = new FinishedTestDeviceSummaryService(jdbc, orders,
             mock(InspectionAccessScopeService.class)).listSummary();
 
         assertThat(summaries).extracting(summary -> summary.inspectionDate() + ":" + summary.totalCount())
-            .containsExactly("2026-10-15:3", "2026-10-14:2");
+            .containsExactly("2026-10-16:3", "2026-10-15:2");
     }
 
     @Test

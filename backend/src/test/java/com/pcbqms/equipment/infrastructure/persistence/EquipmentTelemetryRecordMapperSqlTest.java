@@ -49,10 +49,11 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
-    void gyHistoryAndRecentListsExcludeOnlyPreCutoffFlyingProbeRecordsBeforePaging() {
-        String condition = "tenant_code <> 'customer-b' OR event_type <> 'FLYING_PROBE_TEST_COUNTERS' "
-            + "OR device_time >= '2026-10-15'";
+    void gyHistoryAndRecentListsExcludePreCutoffFinishedTestRecordsBeforePaging() {
+        String condition = "tenant_code <> 'customer-b' OR event_type NOT IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT') "
+            + "OR device_time >= '2026-10-16'";
         assertThat(historySql("FINISHED_TEST")).contains(condition);
+        assertThat(historySql("ZHONGBO_TEST_REPORT")).contains(condition);
 
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
