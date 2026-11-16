@@ -49,7 +49,7 @@ public class FlyingProbeInspectionProjectionService {
     static final String EVENT_TYPE = "FLYING_PROBE_TEST_COUNTERS";
     private static final String TEMPLATE_CODE = "FLYING_PROBE_ELECTRICAL_V1";
     private static final String MATERIAL_EXTRACT_PATTERN_KEY = "flying-probe.material-extract-pattern";
-    private static final LocalDateTime GY_WTD_FROM = LocalDate.of(2025, 10, 15).atStartOfDay();
+    private static final LocalDateTime GY_WTD_FROM = LocalDate.of(2026, 10, 15).atStartOfDay();
     private static final Pattern FIVE_DIGIT_NUMBER = Pattern.compile("(?<![0-9])[0-9]{5}(?![0-9])");
     private static final String ADMIN = "admin";
     private final FlyingProbeProjectionMapper projectionMapper;

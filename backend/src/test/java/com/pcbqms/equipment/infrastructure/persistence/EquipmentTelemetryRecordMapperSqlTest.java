@@ -51,7 +51,7 @@ class EquipmentTelemetryRecordMapperSqlTest {
     @Test
     void gyHistoryAndRecentListsExcludeOnlyPreCutoffFlyingProbeRecordsBeforePaging() {
         String condition = "tenant_code <> 'customer-b' OR event_type <> 'FLYING_PROBE_TEST_COUNTERS' "
-            + "OR device_time >= '2025-10-15'";
+            + "OR device_time >= '2026-10-15'";
         assertThat(historySql("FINISHED_TEST")).contains(condition);
 
         Configuration configuration = new Configuration();

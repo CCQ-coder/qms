@@ -46,7 +46,7 @@ public interface EquipmentTelemetryRecordMapper {
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
           AND (tenant_code <> 'customer-b' OR event_type <> 'FLYING_PROBE_TEST_COUNTERS'
-               OR device_time >= '2025-10-15')
+               OR device_time >= '2026-10-15')
         ORDER BY received_at DESC
         LIMIT #{limit}
         """)
@@ -61,7 +61,7 @@ public interface EquipmentTelemetryRecordMapper {
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
           AND (tenant_code &lt;&gt; 'customer-b' OR event_type &lt;&gt; 'FLYING_PROBE_TEST_COUNTERS'
-               OR device_time >= '2025-10-15')
+               OR device_time >= '2026-10-15')
         <if test="eventType == 'FINISHED_TEST'">
             AND event_type IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')
         </if>

@@ -312,7 +312,7 @@ public class FinishedTestDeviceSummaryService {
                 rs.getString("material_no"), rs.getString("work_order_no"),
                 rs.getTimestamp("device_time").toLocalDateTime(), rs.getLong("tested"), rs.getLong("bad"), true), tenant));
         return "customer-b".equals(tenant) ? samples.stream()
-            .filter(sample -> sample.cumulative() || !sample.deviceTime().isBefore(LocalDate.of(2025, 10, 15).atStartOfDay()))
+            .filter(sample -> sample.cumulative() || !sample.deviceTime().isBefore(LocalDate.of(2026, 10, 15).atStartOfDay()))
             .toList() : samples;
     }
 
