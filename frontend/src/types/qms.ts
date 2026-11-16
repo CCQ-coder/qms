@@ -544,12 +544,16 @@ export type EquipmentTelemetryHistoryQuery = {
   toTime?: string
   cursor?: string
   limit?: number
+  page?: number
+  includeTotal?: boolean
+  keyword?: string
 }
 
 export type EquipmentTelemetryHistoryPage = {
   items: EquipmentTelemetryRecord[]
   nextCursor?: string
   pageSize: number
+  total?: number
 }
 
 export type FlyingProbeRetryableProjection = {
@@ -716,6 +720,11 @@ export type AdministrationAuditLog = {
   summary: string
   actor: string
   createdAt: string
+}
+
+export type AdministrationAuditLogPage = {
+  items: AdministrationAuditLog[]
+  total?: number
 }
 
 export type MenuAccess = {

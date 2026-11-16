@@ -67,4 +67,14 @@ public class AdministrationController {
     ) {
         return ApiResponse.of(administrationApplicationService.listAuditLogs(module, limit));
     }
+
+    @GetMapping("/audit-logs/page")
+    public ApiResponse<AdministrationAuditLogPageResponse> pageAuditLogs(
+        @RequestParam(required = false) String module,
+        @RequestParam(defaultValue = "1") Integer page,
+        @RequestParam(defaultValue = "10") Integer pageSize,
+        @RequestParam(defaultValue = "false") Boolean includeTotal
+    ) {
+        return ApiResponse.of(administrationApplicationService.pageAuditLogs(module, page, pageSize, includeTotal));
+    }
 }

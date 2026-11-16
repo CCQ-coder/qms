@@ -140,6 +140,9 @@ public class EquipmentTelemetryController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toTime,
         @RequestParam(required = false) String cursor,
         @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) Integer page,
+        @RequestParam(required = false) Boolean includeTotal,
+        @RequestParam(required = false) String keyword,
         @RequestParam(required = false) String eventType,
         @RequestParam(required = false) String workOrderNo,
         @RequestParam(required = false) String customerOrderNo,
@@ -149,7 +152,7 @@ public class EquipmentTelemetryController {
     ) {
         return ApiResponse.of(telemetryQueryApplicationService.pageHistory(
             new EquipmentTelemetryHistoryQuery(equipmentId, fromTime, toTime, cursor, limit, eventType,
-                workOrderNo, customerOrderNo, internalProductNo, factoryInternalNo, unmatchedOnly)
+                workOrderNo, customerOrderNo, internalProductNo, factoryInternalNo, unmatchedOnly, page, includeTotal, keyword)
         ));
     }
 

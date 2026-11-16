@@ -5,9 +5,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.access.application.InspectionAccessScopeService.InspectionAccess;
 import com.pcbqms.administration.api.SaveAdministrationItemRequest;
@@ -26,6 +28,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 
 @ExtendWith(MockitoExtension.class)
 class AdministrationApplicationServiceTest {
@@ -38,6 +42,29 @@ class AdministrationApplicationServiceTest {
     @AfterEach
     void clearTenantContext() {
         TenantContext.clear();
+    }
+
+    @Test
+    void auditLogPagesCountOnceAndReadOnlyTheRequestedRows() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), AdministrationAuditLog.class);
+        TenantContext.set("customer-b", "admin.b");
+        AdministrationAuditLog log = new AdministrationAuditLog();
+        log.setId("log-21");
+        when(administrationAuditLogMapper.selectCount(any())).thenReturn(43L);
+        when(administrationAuditLogMapper.selectList(any())).thenReturn(List.of(log));
+        var service = new AdministrationApplicationService(administrationItemMapper,
+            administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper());
+
+        var first = service.pageAuditLogs(" role ", 1, 10, true);
+        var later = service.pageAuditLogs(" role ", 3, 10, false);
+
+        assertThat(first.total()).isEqualTo(43L);
+        assertThat(later.total()).isNull();
+        assertThat(later.items()).extracting(item -> item.id()).containsExactly("log-21");
+        verify(administrationAuditLogMapper, times(1)).selectCount(any());
+        var queries = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(administrationAuditLogMapper, times(2)).selectList(queries.capture());
+        assertThat(queries.getAllValues().get(1).getSqlSegment()).contains("LIMIT 10 OFFSET 20");
     }
 
     @Test

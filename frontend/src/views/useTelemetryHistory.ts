@@ -13,36 +13,46 @@ export function useTelemetryHistory(
   label: string
 ) {
   const records = ref<EquipmentTelemetryRecord[]>([])
-  const nextCursor = ref<string>()
+  const total = ref(0)
+  const page = ref(1)
+  const pageSize = ref(10)
   const loading = ref(false)
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
-  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime'> = {}
+  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime' | 'keyword'> = {}
 
-  async function load(cursor?: string) {
+  async function load(nextPage: number, nextSize: number, includeTotal = false) {
     if (loading.value) return
     loading.value = true
     error.value = ''
     try {
-      const page = await fetchPage({ eventType, limit: 200, ...search, ...(cursor ? { cursor } : {}) })
-      records.value = cursor ? [...records.value, ...page.items] : page.items
-      nextCursor.value = page.nextCursor
+      const result = await fetchPage({ eventType, limit: nextSize, page: nextPage, includeTotal, ...search })
+      records.value = result.items
+      if (includeTotal) total.value = result.total ?? 0
+      page.value = nextPage
+      pageSize.value = nextSize
       loaded.value = true
-      if (!cursor) updatedAt.value = new Date()
+      if (includeTotal) updatedAt.value = new Date()
     } catch {
       error.value = `${label}读取失败，请重试。`
+      if (includeTotal) {
+        records.value = []
+        total.value = 0
+        page.value = 1
+        updatedAt.value = undefined
+      }
     } finally {
       loading.value = false
     }
   }
 
   return {
-    records, nextCursor, loading, loaded, error, updatedAt,
-    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime'> = search) => {
+    records, total, page, pageSize, loading, loaded, error, updatedAt,
+    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime' | 'keyword'> = search) => {
       search = filters
-      return load()
+      return load(1, pageSize.value, true)
     },
-    loadMore: () => nextCursor.value ? load(nextCursor.value) : Promise.resolve()
+    loadPage: load
   }
 }

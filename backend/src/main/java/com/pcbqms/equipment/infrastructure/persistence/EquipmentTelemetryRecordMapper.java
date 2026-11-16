@@ -58,8 +58,12 @@ public interface EquipmentTelemetryRecordMapper {
                event_type, equipment_status, program_no, program_version, material_no, work_order_no, batch_no,
                operator_name, progress_percent, spindle_status, alarm_code, alarm_message, machining_count,
                source_record_no, deduplication_key, raw_payload, created_at
+        <if test="includeTotal">, COUNT(*) OVER() AS total_count</if>
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
+          AND EXISTS (SELECT 1 FROM qms_equipment equipment
+                      WHERE equipment.id = qms_equipment_telemetry.equipment_id
+                        AND equipment.tenant_code = qms_equipment_telemetry.tenant_code)
           AND (tenant_code &lt;&gt; 'customer-b' OR event_type NOT IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')
                OR device_time >= '2026-10-16')
         <if test="eventType == 'FINISHED_TEST'">
@@ -103,6 +107,35 @@ public interface EquipmentTelemetryRecordMapper {
                          AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
                        LIMIT 1), qms_equipment_telemetry.work_order_no) COLLATE utf8mb4_0900_ai_ci
             )
+        </if>
+        <if test="keyword != null">
+            AND (work_order_no LIKE CONCAT('%', #{keyword}, '%')
+                 OR material_no LIKE CONCAT('%', #{keyword}, '%')
+                 OR source_record_no LIKE CONCAT('%', #{keyword}, '%')
+                 OR machine_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR EXISTS (
+                     SELECT 1 FROM qms_equipment equipment
+                     WHERE equipment.id = qms_equipment_telemetry.equipment_id
+                       AND equipment.tenant_code = qms_equipment_telemetry.tenant_code
+                       AND equipment.asset_no LIKE CONCAT('%', #{keyword}, '%')
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM qms_flying_probe_projection projection
+                     WHERE projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci
+                       AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                       AND projection.work_order_no LIKE CONCAT('%', #{keyword}, '%')
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM qms_work_order work_order
+                     WHERE work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                       AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci = COALESCE(
+                           (SELECT projection.work_order_no FROM qms_flying_probe_projection projection
+                            WHERE projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.id COLLATE utf8mb4_0900_ai_ci
+                              AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = qms_equipment_telemetry.tenant_code COLLATE utf8mb4_0900_ai_ci
+                            LIMIT 1), qms_equipment_telemetry.work_order_no) COLLATE utf8mb4_0900_ai_ci
+                       AND (work_order.customer_order_no LIKE CONCAT('%', #{keyword}, '%')
+                            OR work_order.internal_product_no LIKE CONCAT('%', #{keyword}, '%'))
+                 ))
         </if>
         <if test="unmatchedOnly">
             AND NOT EXISTS (
@@ -160,7 +193,10 @@ public interface EquipmentTelemetryRecordMapper {
                 ORDER BY received_at DESC, id DESC
             </otherwise>
         </choose>
-        LIMIT #{limit}
+        <choose>
+            <when test="offset != null">LIMIT #{limit} OFFSET #{offset}</when>
+            <otherwise>LIMIT #{limit}</otherwise>
+        </choose>
         </script>
         """)
     List<EquipmentTelemetryRecord> selectHistory(
@@ -177,7 +213,10 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("customerOrderNo") String customerOrderNo,
         @Param("internalProductNo") String internalProductNo,
         @Param("factoryInternalNo") String factoryInternalNo,
-        @Param("unmatchedOnly") boolean unmatchedOnly
+        @Param("unmatchedOnly") boolean unmatchedOnly,
+        @Param("offset") Long offset,
+        @Param("includeTotal") boolean includeTotal,
+        @Param("keyword") String keyword
     );
 
     @Select("""

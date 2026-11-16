@@ -39,10 +39,6 @@ const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
 const hostStatusError = ref('')
 const offlineAfterSeconds = ref(300)
-const finishedTestRecords = ref<EquipmentTelemetryRecord[]>([])
-const finishedRecordsNextCursor = ref<string>()
-const finishedRecordsLoading = ref(false)
-const finishedRecordsUpdatedAt = ref<Date>()
 const probeSnapshots = ref<Record<string, EquipmentTelemetryRecord>>({})
 const probeFailedEquipmentIds = ref<Set<string>>(new Set())
 const summaryError = ref('')
@@ -50,7 +46,6 @@ const settlementError = ref('')
 const equipmentError = ref('')
 const runtimeError = ref('')
 const probeSnapshotsError = ref('')
-const finishedRecordsError = ref('')
 const recordSource = ref<'probe' | 'zhongbo' | 'retryable' | 'all'>('probe')
 const recordMaterialPrompt = computed(() => `搜索${recordSource.value === 'probe' || recordSource.value === 'retryable' ? '设备料号' : 'PCB料号'}`)
 const zhongboUnmatchedOnly = ref(false)
@@ -89,24 +84,39 @@ const bindingError = ref('')
 let bindingSearchVersion = 0
 const {
   records: flyingProbeRecords,
-  nextCursor: flyingProbeNextCursor,
+  total: flyingProbeTotal,
+  page: flyingProbePage,
+  pageSize: flyingProbePageSize,
   loading: flyingProbeLoading,
   loaded: flyingProbeLoaded,
   error: flyingProbeError,
   updatedAt: flyingProbeUpdatedAt,
   refresh: refreshFlyingProbeRecords,
-  loadMore: loadMoreFlyingProbeRecords
+  loadPage: loadFlyingProbePage
 } = useTelemetryHistory((query) => qmsApi.listEquipmentTelemetryHistory(query), 'FLYING_PROBE_TEST_COUNTERS', '飞针机采集记录')
 const {
   records: zhongboReports,
-  nextCursor: zhongboNextCursor,
+  total: zhongboTotal,
+  page: zhongboPage,
+  pageSize: zhongboPageSize,
   loading: zhongboLoading,
   loaded: zhongboLoaded,
   error: zhongboError,
   updatedAt: zhongboUpdatedAt,
   refresh: refreshZhongboReports,
-  loadMore: loadMoreZhongboReports
+  loadPage: loadZhongboPage
 } = useTelemetryHistory((query) => qmsApi.listEquipmentTelemetryHistory(query), 'ZHONGBO_TEST_REPORT', '众博信测试报告')
+const {
+  records: finishedTestRecords,
+  total: finishedRecordsTotal,
+  page: finishedRecordsPage,
+  pageSize: finishedRecordsPageSize,
+  loading: finishedRecordsLoading,
+  error: finishedRecordsError,
+  updatedAt: finishedRecordsUpdatedAt,
+  refresh: refreshFinishedTestRecords,
+  loadPage: loadFinishedTestPage
+} = useTelemetryHistory((query) => qmsApi.listEquipmentTelemetryHistory(query), 'FINISHED_TEST', '设备检测记录')
 const recordPanelUpdatedAt = computed(() => recordSource.value === 'probe' ? flyingProbeUpdatedAt.value
   : recordSource.value === 'zhongbo' ? zhongboUpdatedAt.value
   : recordSource.value === 'retryable' ? retryableUpdatedAt.value : finishedRecordsUpdatedAt.value)
@@ -221,14 +231,6 @@ const filteredTasks = computed(() => {
   if (!keyword) return fqcTasks.value
   return fqcTasks.value.filter((task) => [task.taskNo, task.workOrderNo, task.processName, task.assigneeName]
     .some((value) => String(value ?? '').toLowerCase().includes(keyword)))
-})
-const filteredFinishedTestRecords = computed(() => {
-  const keyword = recordKeyword.value.trim().toLowerCase()
-  if (!keyword) return finishedTestRecords.value
-  return finishedTestRecords.value.filter((record) => [
-    record.equipmentCode, record.workOrderNo, record.customerOrderNo, record.materialNo, record.internalProductNo,
-    record.sourceRecordNo, record.machineName
-  ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
 const updatedAtLabel = computed(() => updatedAt.value ? formatDateTime(updatedAt.value) : '尚未成功读取')
 const workstationConnectionLabel = computed(() => {
@@ -406,30 +408,9 @@ function refreshFilteredZhongboReports() {
     ...(zhongboUnmatchedOnly.value ? { unmatchedOnly: true } : {}) })
 }
 
-async function loadDeviceRecords(cursor?: string) {
-  if (finishedRecordsLoading.value) return false
-  finishedRecordsLoading.value = true
-  finishedRecordsError.value = ''
-  try {
-    const page = await qmsApi.listEquipmentTelemetryHistory({ eventType: 'FINISHED_TEST', limit: 200,
-      ...appliedRecordSearch.value, ...recordTimeFilter(), ...(cursor ? { cursor } : {}) })
-    finishedTestRecords.value = cursor ? [...finishedTestRecords.value, ...page.items] : page.items
-    finishedRecordsNextCursor.value = page.nextCursor ?? undefined
-    if (!cursor) finishedRecordsUpdatedAt.value = new Date()
-    return true
-  } catch {
-    finishedRecordsError.value = cursor
-      ? '更早的设备检测记录加载失败，请重试。'
-      : '设备检测记录读取失败，请重试。'
-    if (!cursor) {
-      finishedTestRecords.value = []
-      finishedRecordsNextCursor.value = undefined
-      finishedRecordsUpdatedAt.value = undefined
-    }
-    return false
-  } finally {
-    finishedRecordsLoading.value = false
-  }
+function loadDeviceRecords() {
+  return refreshFinishedTestRecords({ ...appliedRecordSearch.value, ...recordTimeFilter(),
+    ...(recordKeyword.value.trim() ? { keyword: recordKeyword.value.trim() } : {}) })
 }
 
 async function loadRetryableProjections(page = retryablePage.value) {
@@ -1051,14 +1032,14 @@ onBeforeUnmount(() => {
         <p class="summary-footnote">按设备原始记录展示；未匹配或关联错误的飞针文件可手动绑定生产指令。</p>
         <el-alert v-if="flyingProbeError" type="error" :closable="false" :title="flyingProbeError" style="margin-top: 12px" />
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar">
-          <span>{{ flyingProbeLoading || flyingProbeNextCursor ? '已加载' : '共' }} {{ flyingProbeRecords.length }} 条飞针机采集记录</span>
+          <span>共 {{ flyingProbeTotal }} 条飞针机采集记录</span>
           <div v-if="canBindFlyingProbe" class="task-queue-actions finished-record-batch-actions">
             <el-button :type="selectedProbeRecords.length ? 'primary' : 'default'" :disabled="!selectedProbeRecords.length" @click="openSelectedRecordBindingDialog">批量绑定/更正（{{ selectedProbeRecords.length }}）</el-button>
             <el-button :disabled="!selectedProbeRecords.some((record) => record.workOrderNo)" @click="cancelSelectedRecordBindings">批量取消关联</el-button>
           </div>
         </div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
-          <paged-table :key="flyingProbeUpdatedAt?.getTime()" v-loading="flyingProbeLoading" :data="flyingProbeRecords" :has-more="!!flyingProbeNextCursor" :load-error="flyingProbeError" row-key="id" size="small" empty-text="暂无飞针机采集记录" @load-more="loadMoreFlyingProbeRecords" @selection-change="selectedProbeRecords = $event">
+          <paged-table :key="flyingProbeUpdatedAt?.getTime()" v-loading="flyingProbeLoading" :data="flyingProbeRecords" :total="flyingProbeTotal" :page="flyingProbePage" :page-size="flyingProbePageSize" row-key="id" size="small" empty-text="暂无飞针机采集记录" @page-change="loadFlyingProbePage" @selection-change="selectedProbeRecords = $event">
             <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')" />
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
@@ -1092,14 +1073,14 @@ onBeforeUnmount(() => {
         <p class="summary-footnote">累计板数为设备上报原值；汇总和处置单使用相邻快照的新增数量。</p>
         <el-alert v-if="zhongboError" type="error" :closable="false" :title="zhongboError" style="margin-top: 12px" />
         <div v-if="zhongboLoaded || zhongboLoading" class="task-queue-toolbar">
-          <span>{{ zhongboLoading || zhongboNextCursor ? '已加载' : '共' }} {{ zhongboReports.length }} 条众博信测试报告</span>
+          <span>共 {{ zhongboTotal }} 条众博信测试报告</span>
           <div v-if="canBindFlyingProbe" class="task-queue-actions finished-record-batch-actions">
             <el-button :type="selectedZhongboRecords.length ? 'primary' : 'default'" :disabled="!selectedZhongboRecords.length" @click="openSelectedRecordBindingDialog">批量绑定/更正（{{ selectedZhongboRecords.length }}）</el-button>
             <el-button :disabled="!selectedZhongboRecords.some((record) => record.workOrderNo)" @click="cancelSelectedRecordBindings">批量取消关联</el-button>
           </div>
         </div>
         <div v-if="zhongboLoaded || zhongboLoading" class="finished-records-table-wrap finished-records-table-wrap--zhongbo">
-          <paged-table :key="zhongboUpdatedAt?.getTime()" v-loading="zhongboLoading" :data="zhongboReports" :has-more="!!zhongboNextCursor" :load-error="zhongboError" row-key="id" size="small" empty-text="暂无众博信测试报告" @load-more="loadMoreZhongboReports" @selection-change="selectedZhongboRecords = $event">
+          <paged-table :key="zhongboUpdatedAt?.getTime()" v-loading="zhongboLoading" :data="zhongboReports" :total="zhongboTotal" :page="zhongboPage" :page-size="zhongboPageSize" row-key="id" size="small" empty-text="暂无众博信测试报告" @page-change="loadZhongboPage" @selection-change="selectedZhongboRecords = $event">
             <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection />
             <el-table-column type="expand">
               <template #default="scope">
@@ -1168,15 +1149,16 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选已加载记录：检测设备、生产指令、订单编号、厂内编号或PCB料号" />
-          <span>{{ finishedRecordsLoading || finishedRecordsNextCursor ? '已加载' : '共' }} {{ finishedTestRecords.length }} 条{{ recordKeyword.trim() ? `，其中匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
+          <el-input v-model="recordKeyword" clearable placeholder="搜索全部记录：检测设备、生产指令、订单编号、厂内编号或PCB料号" @keyup.enter="loadDeviceRecords" />
+          <el-button :disabled="finishedRecordsLoading" @click="loadDeviceRecords">筛选</el-button>
+          <span>共 {{ finishedRecordsTotal }} 条设备检测记录</span>
           <div v-if="canBindFlyingProbe" class="task-queue-actions finished-record-batch-actions">
             <el-button :type="selectedAllRecords.length ? 'primary' : 'default'" :disabled="!selectedAllRecords.length" @click="openSelectedRecordBindingDialog">批量绑定/更正（{{ selectedAllRecords.length }}）</el-button>
             <el-button :disabled="!selectedAllRecords.some((record) => record.workOrderNo)" @click="cancelSelectedRecordBindings">批量取消关联</el-button>
           </div>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap finished-records-table-wrap--all">
-          <paged-table :key="`${recordKeyword}:${finishedRecordsUpdatedAt?.getTime() ?? 0}`" v-loading="finishedRecordsLoading" :data="filteredFinishedTestRecords" :has-more="!!finishedRecordsNextCursor" :load-error="finishedRecordsError" row-key="id" size="small" empty-text="暂无设备检测记录" @load-more="loadDeviceRecords(finishedRecordsNextCursor)" @selection-change="selectedAllRecords = $event">
+          <paged-table :key="finishedRecordsUpdatedAt?.getTime()" v-loading="finishedRecordsLoading" :data="finishedTestRecords" :total="finishedRecordsTotal" :page="finishedRecordsPage" :page-size="finishedRecordsPageSize" row-key="id" size="small" empty-text="暂无设备检测记录" @page-change="loadFinishedTestPage" @selection-change="selectedAllRecords = $event">
             <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => row.eventType === 'ZHONGBO_TEST_REPORT' || ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')" />
             <el-table-column label="检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="130" />

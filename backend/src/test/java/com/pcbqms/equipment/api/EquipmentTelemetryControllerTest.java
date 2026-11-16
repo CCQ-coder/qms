@@ -144,6 +144,10 @@ class EquipmentTelemetryControllerTest {
 
         mvc.perform(get("/api/v1/equipment/telemetry/history")
                 .param("eventType", "FLYING_PROBE_TEST_COUNTERS")
+                .param("page", "3")
+                .param("limit", "10")
+                .param("includeTotal", "false")
+                .param("keyword", "42946")
                 .param("workOrderNo", "WO-1")
                 .param("customerOrderNo", "ORDER-1")
                 .param("internalProductNo", "02PT42777A01"))
@@ -153,6 +157,10 @@ class EquipmentTelemetryControllerTest {
         verify(queryService).pageHistory(query.capture());
         var json = new ObjectMapper().findAndRegisterModules().valueToTree(query.getValue());
         assertThat(json.path("eventType").asText()).isEqualTo("FLYING_PROBE_TEST_COUNTERS");
+        assertThat(json.path("page").asInt()).isEqualTo(3);
+        assertThat(json.path("limit").asInt()).isEqualTo(10);
+        assertThat(json.path("includeTotal").asBoolean()).isFalse();
+        assertThat(json.path("keyword").asText()).isEqualTo("42946");
         assertThat(json.path("workOrderNo").asText()).isEqualTo("WO-1");
         assertThat(json.path("customerOrderNo").asText()).isEqualTo("ORDER-1");
         assertThat(json.path("internalProductNo").asText()).isEqualTo("02PT42777A01");

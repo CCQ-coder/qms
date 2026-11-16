@@ -69,10 +69,12 @@ public class EquipmentTelemetryQueryApplicationService {
             .collect(Collectors.toMap(Equipment::getId, equipment -> equipment));
         String selectedEquipmentId = StringUtils.hasText(query.equipmentId()) ? query.equipmentId().trim() : null;
         if (selectedEquipmentId != null && !accessibleEquipment.containsKey(selectedEquipmentId)) {
-            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit());
+            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit(),
+                query.page() == null || Boolean.FALSE.equals(query.includeTotal()) ? null : 0L);
         }
         if (selectedEquipmentId == null && accessibleEquipment.isEmpty()) {
-            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit());
+            return new EquipmentTelemetryHistoryPageResponse(List.of(), null, query.resolvedLimit(),
+                query.page() == null || Boolean.FALSE.equals(query.includeTotal()) ? null : 0L);
         }
         String eventType = StringUtils.hasText(query.eventType()) ? query.eventType().trim() : null;
         boolean finishedTestEvent = "ZHONGBO_TEST_REPORT".equals(eventType)
@@ -85,8 +87,11 @@ public class EquipmentTelemetryQueryApplicationService {
             throw new IllegalArgumentException("遥测历史开始时间不能晚于结束时间");
         }
         boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType);
-        Cursor cursor = decodeCursor(query.cursor());
+        Cursor cursor = query.page() == null ? decodeCursor(query.cursor()) : null;
         int pageSize = query.resolvedLimit();
+        // shortcut: offset pages may shift as telemetry arrives; add a snapshot boundary if stable exports are needed.
+        Long offset = query.page() == null ? null : (Math.max(query.page(), 1) - 1L) * pageSize;
+        boolean includeTotal = offset != null && !Boolean.FALSE.equals(query.includeTotal());
         List<EquipmentTelemetryRecord> rows = telemetryRecordMapper.selectHistory(
             tenantCode,
             selectedEquipmentId,
@@ -95,15 +100,18 @@ public class EquipmentTelemetryQueryApplicationService {
             toTime,
             cursor == null ? null : cursor.time(),
             cursor == null ? null : cursor.id(),
-            pageSize + 1,
+            offset == null ? pageSize + 1 : pageSize,
             eventType,
             StringUtils.hasText(query.workOrderNo()) ? query.workOrderNo().trim() : null,
             StringUtils.hasText(query.customerOrderNo()) ? query.customerOrderNo().trim() : null,
             StringUtils.hasText(query.internalProductNo()) ? query.internalProductNo().trim() : null,
             StringUtils.hasText(query.factoryInternalNo()) ? query.factoryInternalNo().trim() : null,
-            Boolean.TRUE.equals(query.unmatchedOnly()) && "ZHONGBO_TEST_REPORT".equals(eventType)
+            Boolean.TRUE.equals(query.unmatchedOnly()) && "ZHONGBO_TEST_REPORT".equals(eventType),
+            offset,
+            includeTotal,
+            StringUtils.hasText(query.keyword()) ? query.keyword().trim() : null
         );
-        boolean hasMore = rows.size() > pageSize;
+        boolean hasMore = offset == null && rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
         List<String> flyingProbeIds = pageRows.stream()
             .filter(record -> "FLYING_PROBE_TEST_COUNTERS".equals(record.getEventType()))
@@ -122,7 +130,8 @@ public class EquipmentTelemetryQueryApplicationService {
             .filter(Objects::nonNull)
             .toList();
         String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast(), sortByDeviceTime) : null;
-        return new EquipmentTelemetryHistoryPageResponse(items, nextCursor, pageSize);
+        Long total = includeTotal ? (rows.isEmpty() ? 0L : rows.getFirst().getTotalCount()) : null;
+        return new EquipmentTelemetryHistoryPageResponse(items, nextCursor, pageSize, total);
     }
 
     private EquipmentTelemetryRecordResponse toResponse(

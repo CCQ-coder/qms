@@ -49,6 +49,24 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
+    void numberedHistoryReturnsTotalAndOnlyTheRequestedPage() {
+        String sql = historySql("FINISHED_TEST");
+        String laterPageSql = historySql("FINISHED_TEST", null, null, false, null, false);
+
+        assertThat(sql).contains("COUNT(*) OVER()", "LIMIT ? OFFSET ?",
+            "event_type IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')");
+        assertThat(laterPageSql).contains("LIMIT ? OFFSET ?").doesNotContain("COUNT(*) OVER()");
+    }
+
+    @Test
+    void numberedHistorySearchesAllRecordsBeforeCountingAndPaging() {
+        String sql = historySql("FINISHED_TEST", null, null, false, null, true, "42946");
+        assertThat(sql).contains("material_no LIKE CONCAT('%', ?, '%')", "source_record_no LIKE CONCAT('%', ?, '%')",
+            "equipment.asset_no LIKE CONCAT('%', ?, '%')", "work_order.internal_product_no LIKE CONCAT('%', ?, '%')",
+            "COUNT(*) OVER()", "LIMIT ? OFFSET ?");
+    }
+
+    @Test
     void gyHistoryAndRecentListsExcludePreCutoffFinishedTestRecordsBeforePaging() {
         String condition = "tenant_code <> 'customer-b' OR event_type NOT IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT') "
             + "OR device_time >= '2026-10-16'";
@@ -89,6 +107,16 @@ class EquipmentTelemetryRecordMapperSqlTest {
 
     private String historySql(String eventType, String workOrderNo, String internalProductNo,
                               boolean withDates, String customerOrderNo) {
+        return historySql(eventType, workOrderNo, internalProductNo, withDates, customerOrderNo, true);
+    }
+
+    private String historySql(String eventType, String workOrderNo, String internalProductNo,
+                              boolean withDates, String customerOrderNo, boolean includeTotal) {
+        return historySql(eventType, workOrderNo, internalProductNo, withDates, customerOrderNo, includeTotal, null);
+    }
+
+    private String historySql(String eventType, String workOrderNo, String internalProductNo,
+                              boolean withDates, String customerOrderNo, boolean includeTotal, String keyword) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
@@ -104,6 +132,9 @@ class EquipmentTelemetryRecordMapperSqlTest {
         parameters.put("cursorTime", LocalDateTime.of(2026, 11, 1, 9, 0));
         parameters.put("cursorId", "probe-1");
         parameters.put("limit", 100);
+        parameters.put("offset", 20L);
+        parameters.put("includeTotal", includeTotal);
+        parameters.put("keyword", keyword);
         return configuration.getMappedStatement(EquipmentTelemetryRecordMapper.class.getName() + ".selectHistory")
             .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
     }
