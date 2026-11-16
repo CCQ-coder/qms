@@ -333,7 +333,7 @@ public class FinishedTestDeviceSummaryService {
             long bad = entry.getValue()[1];
             return new Summary(item.sample().deviceTime().toLocalDate(), item.order().getWorkOrderNo(),
                 item.order().getInternalProductNo(), item.sample().materialNo(), tested, tested - bad, bad,
-                Math.round((tested - bad) * 10000.0 / tested) / 100.0);
+                tested == 0 ? 0 : Math.round((tested - bad) * 10000.0 / tested) / 100.0);
         }).sorted(Comparator.comparing(Summary::inspectionDate).reversed().thenComparing(Summary::workOrderNo)).toList();
     }
 
@@ -360,7 +360,7 @@ public class FinishedTestDeviceSummaryService {
                 StringUtils.hasText(assetNo) ? assetNo : Objects.toString(sample.equipmentId(), "未关联设备"),
                 item.order().getWorkOrderNo(),
                 item.order().getInternalProductNo(), sample.materialNo(), tested, tested - bad, bad,
-                Math.round((tested - bad) * 10000.0 / tested) / 100.0);
+                tested == 0 ? 0 : Math.round((tested - bad) * 10000.0 / tested) / 100.0);
         }).sorted(Comparator.comparing(DeviceSummary::inspectionDate).reversed()
             .thenComparing(DeviceSummary::equipmentCode).thenComparing(DeviceSummary::workOrderNo)).toList();
     }
@@ -430,7 +430,7 @@ public class FinishedTestDeviceSummaryService {
             long tested = entry.getValue()[0];
             long bad = entry.getValue()[1];
             return new ModelMetric(entry.getKey(), tested, tested - bad, bad,
-                Math.round((tested - bad) * 10000.0 / tested) / 100.0);
+                tested == 0 ? 0 : Math.round((tested - bad) * 10000.0 / tested) / 100.0);
         }).sorted(Comparator.comparingLong(ModelMetric::totalCount).reversed().thenComparing(ModelMetric::model)).toList();
         List<InternalDefectMetric> topInternal = byInternal.entrySet().stream()
             .map(entry -> new InternalDefectMetric(entry.getKey(), entry.getValue()))
@@ -452,12 +452,13 @@ public class FinishedTestDeviceSummaryService {
             if (sample.cumulative()) {
                 String counterKey = sample.equipmentId() + "\u0000" + materialKey(sample.materialNo());
                 long[] last = previous.put(counterKey, new long[] {tested, bad});
-                if (last != null) {
-                    tested = sample.tested() >= last[0] ? sample.tested() - last[0] : sample.tested();
-                    bad = sample.bad() >= last[1] ? sample.bad() - last[1] : sample.bad();
+                if (last != null && sample.tested() >= last[0]) {
+                    tested = sample.tested() - last[0];
+                    // A lower bad count can reclassify an earlier board without resetting the tested counter.
+                    bad = sample.bad() - last[1];
                 }
             }
-            if (bad > tested || tested == 0) continue;
+            if (tested == 0 && bad == 0) continue;
             WorkOrder order = StringUtils.hasText(sample.workOrderNo())
                 ? byNumber.get(sample.workOrderNo()) : resolveOrder(sample, orders);
             if (order == null && !includeUnbound) continue;

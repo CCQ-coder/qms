@@ -259,6 +259,30 @@ class FinishedTestDeviceSummaryServiceTest {
     }
 
     @Test
+    void zhongboBadBoardCorrectionsDoNotCountAsNewDefects() {
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("26100900");
+        LocalDateTime previousDay = LocalDateTime.of(2026, 11, 15, 23, 24);
+        var samples = List.of(
+            new FinishedTestDeviceSummaryService.Sample("1", "ZBX-2", "42946", "26100900", previousDay, 16, 3, true),
+            new FinishedTestDeviceSummaryService.Sample("2", "ZBX-2", "42946", "26100900", previousDay.plusHours(2), 17, 4, true),
+            new FinishedTestDeviceSummaryService.Sample("3", "ZBX-2", "42946", "26100900", previousDay.plusHours(2).plusMinutes(5), 17, 3, true),
+            new FinishedTestDeviceSummaryService.Sample("4", "ZBX-2", "42946", "26100900", previousDay.plusHours(3), 18, 4, true),
+            new FinishedTestDeviceSummaryService.Sample("5", "ZBX-2", "42946", "26100900", previousDay.plusHours(3).plusMinutes(5), 18, 3, true),
+            new FinishedTestDeviceSummaryService.Sample("6", "ZBX-2", "42946", "26100900", previousDay.plusHours(10), 26, 5, true)
+        );
+
+        assertThat(FinishedTestDeviceSummaryService.aggregateByDevice(samples, List.of(order), Map.of("ZBX-2", "ZBX-2")))
+            .filteredOn(row -> row.inspectionDate().equals(LocalDate.of(2026, 11, 16)))
+            .singleElement().satisfies(row -> {
+                assertThat(row.totalCount()).isEqualTo(10);
+                assertThat(row.goodCount()).isEqualTo(8);
+                assertThat(row.badCount()).isEqualTo(2);
+                assertThat(row.passRate()).isEqualTo(80.0);
+            });
+    }
+
+    @Test
     void ambiguousLatestProductionOrderIsNotGuessed() {
         WorkOrder first = new WorkOrder();
         first.setWorkOrderNo("WO-1");
