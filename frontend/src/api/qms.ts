@@ -239,11 +239,6 @@ export const qmsApi = {
     return data.data
   },
 
-  async listScrapImports() {
-    const { data } = await http.get<ApiResponse<ScrapImportJob[]>>('/api/v1/nonconformities/scrap-imports')
-    return data.data
-  },
-
   async getScrapImport(id: string) {
     const { data } = await http.get<ApiResponse<ScrapImportJob>>(`/api/v1/nonconformities/scrap-imports/${encodeURIComponent(id)}`)
     return data.data

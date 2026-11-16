@@ -11,18 +11,19 @@ const visible = ref(false)
 const uploading = ref(false)
 const selectedFile = ref<File>()
 const jobs = ref<ScrapImportJob[]>([])
-const knownStatuses = new Map<string, string>()
 let timer: number | undefined
 
 async function loadJobs() {
-  if (!canImport.value) return
+  const pending = jobs.value.filter((job) => ['PENDING', 'PROCESSING'].includes(job.status))
+  if (!canImport.value || !pending.length) return
   try {
-    const result = await qmsApi.listScrapImports()
+    const result = await Promise.all(pending.map((job) => qmsApi.getScrapImport(job.id)))
     for (const job of result) {
-      if (['PENDING', 'PROCESSING'].includes(knownStatuses.get(job.id) ?? '') && job.status === 'COMPLETED') emit('imported')
-      knownStatuses.set(job.id, job.status)
+      const index = jobs.value.findIndex((current) => current.id === job.id)
+      if (index < 0) continue
+      if (['PENDING', 'PROCESSING'].includes(jobs.value[index].status) && job.status === 'COMPLETED') emit('imported')
+      jobs.value[index] = job
     }
-    jobs.value = result
   } catch { ElMessage.error('导入任务读取失败') }
 }
 
@@ -33,6 +34,7 @@ async function upload() {
     const job = await qmsApi.uploadScrapImport(selectedFile.value)
     ElMessage.success(job.status === 'COMPLETED' ? '该文件已导入，无需重复上传' : '文件已提交，后台正在导入')
     selectedFile.value = undefined
+    jobs.value = [job, ...jobs.value.filter((current) => current.id !== job.id)]
     await loadJobs()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '报废明细上传失败')
@@ -51,9 +53,9 @@ async function downloadTemplate() {
   } catch { ElMessage.error('模板下载失败') }
 }
 
-async function open() {
+function open() {
+  jobs.value = []
   visible.value = true
-  await loadJobs()
 }
 
 onMounted(async () => {
@@ -67,7 +69,7 @@ onBeforeUnmount(() => { if (timer != null) window.clearInterval(timer) })
 
 <template>
   <div v-if="canImport" class="scrap-import-actions"><el-button type="primary" @click="open">批量导入报废明细</el-button><el-button @click="downloadTemplate">下载模板</el-button></div>
-  <el-dialog v-model="visible" title="批量导入报废明细" width="min(900px, 94vw)">
+  <el-dialog v-model="visible" title="批量导入报废明细" width="min(900px, 94vw)" @closed="jobs = []">
     <p class="helper-text">按十列模板填写。上传后后台逐行导入；未找到唯一合适生产指令的明细可在报废明细表手工关联。</p>
     <div class="task-queue-actions">
       <el-button @click="downloadTemplate">下载空白模板</el-button>
