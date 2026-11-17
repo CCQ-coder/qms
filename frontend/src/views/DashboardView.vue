@@ -61,6 +61,9 @@ async function load() {
   dailyBadError.value = ''
   businessUpdatedAt.value = undefined
   renderCharts()
+  const qualityRequest = Promise.allSettled([
+    qmsApi.getQualitySummary(), qmsApi.getTodayBadBoardsByMaterial()
+  ])
   try {
     const [dashboardResult, probeResult] = await Promise.allSettled([
       qmsApi.getDashboardSummary(),
@@ -83,9 +86,7 @@ async function load() {
     probeError.value = '飞针机采集状态处理失败，请刷新重试。'
   } finally { if (version === loadVersion) loading.value = false }
   try {
-    const [qualityResult, dailyBadResult] = await Promise.allSettled([
-      qmsApi.getQualitySummary(), qmsApi.getTodayBadBoardsByMaterial()
-    ])
+    const [qualityResult, dailyBadResult] = await qualityRequest
     if (version !== loadVersion) return
     quality.value = qualityResult.status === 'fulfilled' ? qualityResult.value : undefined
     dailyBad.value = dailyBadResult.status === 'fulfilled' ? dailyBadResult.value : undefined

@@ -342,13 +342,14 @@ async function approveSelected() {
   }
 }
 
-onMounted(async () => {
+onMounted(() => {
   void loadMenuAccess()
-  await load()
-  try { processes.value = (await qmsApi.listProcesses()).filter((process) => process.status === 'ACTIVE') }
-  catch { ElMessage.warning('工序选项读取失败') }
-  await loadDepartments()
-  await loadScrapReasons()
+  void load()
+  void qmsApi.listProcesses()
+    .then((data) => { processes.value = data.filter((process) => process.status === 'ACTIVE') })
+    .catch(() => ElMessage.warning('工序选项读取失败'))
+  void loadDepartments()
+  void loadScrapReasons()
 })
 </script>
 

@@ -63,7 +63,8 @@ public class FinishedTestDeviceSummaryService {
     }
 
     public List<Summary> summariesForCurrentTenant() {
-        return aggregate(samples(), workOrders());
+        List<Sample> samples = samples();
+        return aggregate(samples, workOrdersForSamples(samples));
     }
 
     public List<DeviceSummary> listDeviceSummary() {
@@ -75,7 +76,8 @@ public class FinishedTestDeviceSummaryService {
                 while (rs.next()) result.put(rs.getString("id"), rs.getString("asset_no"));
                 return result;
             }, TenantContext.tenantCode());
-        return aggregateByDevice(samples(), workOrders(), equipmentCodes);
+        List<Sample> samples = samples();
+        return aggregateByDevice(samples, workOrdersForSamples(samples), equipmentCodes);
     }
 
     public List<SettlementSnapshot> listSettlementSnapshots() {
@@ -155,7 +157,8 @@ public class FinishedTestDeviceSummaryService {
                 while (rs.next()) result.put(rs.getString("id"), rs.getString("model_name"));
                 return result;
             }, TenantContext.tenantCode());
-        return aggregateMonthly(samples(), workOrders(), models, YearMonth.now());
+        List<Sample> samples = samples();
+        return aggregateMonthly(samples, workOrdersForSamples(samples), models, YearMonth.now());
     }
 
     public DailyMaterialBadBoards todayBadBoards() {
@@ -283,6 +286,16 @@ public class FinishedTestDeviceSummaryService {
     private List<WorkOrder> workOrders() {
         return workOrderMapper.selectList(Wrappers.query(WorkOrder.class)
             .eq("tenant_code", TenantContext.tenantCode())
+            .select("work_order_no", "customer_order_no", "internal_product_no", "material_no", "released_at"));
+    }
+
+    private List<WorkOrder> workOrdersForSamples(List<Sample> samples) {
+        if (samples.stream().anyMatch(sample -> !StringUtils.hasText(sample.workOrderNo()))) return workOrders();
+        List<String> numbers = samples.stream().map(Sample::workOrderNo).distinct().toList();
+        if (numbers.isEmpty()) return List.of();
+        return workOrderMapper.selectList(Wrappers.query(WorkOrder.class)
+            .eq("tenant_code", TenantContext.tenantCode())
+            .in("work_order_no", numbers)
             .select("work_order_no", "customer_order_no", "internal_product_no", "material_no", "released_at"));
     }
 

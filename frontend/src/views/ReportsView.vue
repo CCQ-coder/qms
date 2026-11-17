@@ -12,6 +12,7 @@ import { summarizeFinishedTestDevices } from './finishedTestSummary'
 import type { FinishedTestDeviceSummary, FinishedTestMonthlyAnalytics, QualitySummary, Traceability } from '@/types/qms'
 
 const loading = ref(false)
+const deviceSummaryLoading = ref(false)
 const route = useRoute()
 const summary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
 const deviceRows = ref<FinishedTestDeviceSummary[]>([])
@@ -45,26 +46,25 @@ function reportDateParams() {
     : { from: undefined, to: undefined }
 }
 
-async function loadSummary() {
+function loadSummary() {
   if (!isAnalyticsPage.value) return
   loading.value = true
-  try {
-    const { from, to } = reportDateParams()
-    const [qualityResult, deviceResult] = await Promise.allSettled([
-      qmsApi.getQualitySummary(from, to), qmsApi.listFinishedTestDeviceSummary()
-    ])
-    if (qualityResult.status === 'fulfilled') summary.value = qualityResult.value
-    else ElMessage.error('检验记录汇总读取失败')
-    if (deviceResult.status === 'fulfilled') {
-      deviceRows.value = deviceResult.value
+  deviceSummaryLoading.value = true
+  const { from, to } = reportDateParams()
+  void qmsApi.getQualitySummary(from, to)
+    .then((result) => { summary.value = result })
+    .catch(() => ElMessage.error('检验记录汇总读取失败'))
+    .finally(() => { loading.value = false })
+  void qmsApi.listFinishedTestDeviceSummary()
+    .then((result) => {
+      deviceRows.value = result
       deviceSummaryError.value = ''
-    } else {
+    })
+    .catch(() => {
       deviceRows.value = []
       deviceSummaryError.value = '设备检测汇总读取失败，请重试。'
-    }
-  } finally {
-    loading.value = false
-  }
+    })
+    .finally(() => { deviceSummaryLoading.value = false })
 }
 
 async function loadMonthly() {
@@ -200,10 +200,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="page-stack" v-loading="loading">
+  <section class="page-stack">
     <template v-if="isAnalyticsPage">
-    <el-card shadow="never" class="content-card"><div class="report-filter"><span>日期</span><el-date-picker v-model="reportDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable /><el-button type="primary" :loading="loading" @click="loadSummary">查询</el-button><span class="filter-hint">当前范围：{{ dateRangeLabel }}</span></div></el-card>
+    <el-card shadow="never" class="content-card"><div class="report-filter"><span>日期</span><el-date-picker v-model="reportDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable /><el-button type="primary" :loading="loading || deviceSummaryLoading" @click="loadSummary">查询</el-button><span class="filter-hint">当前范围：{{ dateRangeLabel }}</span></div></el-card>
     <el-alert v-if="deviceSummaryError" type="error" :closable="false" :title="deviceSummaryError" />
+    <div v-loading="deviceSummaryLoading">
     <div class="metric-grid report-metrics"><article class="metric-card"><span>检测板数</span><strong>{{ deviceQuality.totalCount }}</strong><small>{{ dateRangeLabel }} · 已关联生产指令</small></article><article class="metric-card success"><span>板数合格率</span><strong>{{ deviceQuality.passRate.toFixed(2) }}%</strong><small>与设备实时监控同口径</small></article><article class="metric-card"><span>好板</span><strong>{{ deviceQuality.goodCount }}</strong><small>设备检测增量</small></article><article class="metric-card warning"><span>坏板</span><strong>{{ deviceQuality.badCount }}</strong><small>设备检测增量</small></article></div>
 
     <el-card shadow="never" class="content-card">
@@ -211,6 +212,7 @@ onBeforeUnmount(() => {
       <div v-if="deviceQuality.dailyTrend.length" ref="trendChartRef" class="quality-trend-chart" />
       <el-empty v-else description="当前日期范围暂无设备检测趋势数据" />
     </el-card>
+    </div>
 
     <el-card shadow="never" class="content-card" v-loading="monthlyLoading">
       <template #header><div class="card-header"><span>设备型号当月检测分析</span><small>{{ monthly?.month ?? '当月' }} · 按设备检测增量统计</small></div></template>
@@ -233,7 +235,7 @@ onBeforeUnmount(() => {
       <el-empty v-else-if="!monthlyError" description="当月暂无设备检测不良数据" />
     </el-card>
 
-    <el-card shadow="never" class="content-card">
+    <el-card shadow="never" class="content-card" v-loading="loading">
       <template #header><div class="card-header"><span>工序质量汇总</span><div><el-button type="primary" :loading="exportingExcel" @click="exportQualityExcel">导出 Excel</el-button><el-button plain @click="exportProcessCsv">导出 CSV</el-button></div></div></template>
       <paged-table :key="dateRangeLabel" :data="summary.byProcess" empty-text="暂无检验数据"><el-table-column prop="processCode" label="工序编码" min-width="130" /><el-table-column prop="processName" label="工序名称" min-width="150" /><el-table-column prop="totalRecords" label="检验记录" min-width="110" /><el-table-column prop="passRecords" label="合格" min-width="100" /><el-table-column prop="failRecords" label="不合格" min-width="100" /><el-table-column label="一次合格率" min-width="125"><template #default="scope"><el-progress :percentage="scope.row.passRate" :stroke-width="10" /></template></el-table-column></paged-table>
     </el-card>

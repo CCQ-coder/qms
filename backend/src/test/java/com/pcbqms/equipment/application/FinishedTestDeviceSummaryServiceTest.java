@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -29,6 +30,25 @@ import org.springframework.security.access.AccessDeniedException;
 class FinishedTestDeviceSummaryServiceTest {
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
+
+    @Test
+    void boundDeviceSummaryLoadsOnlyReferencedWorkOrders() {
+        TenantContext.set("customer-b", "admin");
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        WorkOrderMapper orders = mock(WorkOrderMapper.class);
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-1");
+        when(orders.selectList(any())).thenReturn(List.of(order));
+        when(jdbc.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<FinishedTestDeviceSummaryService.Sample>>any(),
+            eq("customer-b"))).thenReturn(List.of(new FinishedTestDeviceSummaryService.Sample("p1", "WTD-1", "PCB-1", "WO-1",
+                LocalDateTime.of(2026, 11, 10, 8, 0), 4, 1, false)), List.of());
+
+        var summary = new FinishedTestDeviceSummaryService(jdbc, orders,
+            mock(InspectionAccessScopeService.class)).listSummary();
+
+        assertThat(summary).singleElement().satisfies(row -> assertThat(row.totalCount()).isEqualTo(4));
+        verify(orders).selectList(argThat(query -> query.getSqlSegment().contains("work_order_no IN")));
+    }
 
     @Test
     void gySummaryIgnoresOldProbeSamplesButKeepsZhongboAndCutoffDay() {

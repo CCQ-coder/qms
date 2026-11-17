@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -391,15 +392,18 @@ class NonconformityApplicationServiceTest {
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("tester.a", "INSPECTOR", false, Set.of("FQC")));
         when(nonconformityMapper.selectList(any())).thenReturn(List.of(visible, hidden));
-        when(inspectionRecordMapper.selectById("record-fqc")).thenReturn(fqcRecord);
-        when(inspectionRecordMapper.selectById("record-mask")).thenReturn(maskRecord);
-        when(inspectionTaskMapper.selectById("task-fqc")).thenReturn(fqcTask);
-        when(inspectionTaskMapper.selectById("task-mask")).thenReturn(maskTask);
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(fqcRecord, maskRecord));
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(fqcTask, maskTask));
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of());
         NonconformityApplicationService service = service();
 
         var result = service.listNonconformities(null);
 
         assertThat(result).extracting(item -> item.id()).containsExactly("ncr-1");
+        verify(inspectionRecordMapper, times(1)).selectList(any());
+        verify(inspectionTaskMapper, times(1)).selectList(any());
+        verify(inspectionRecordMapper, never()).selectById(any());
+        verify(inspectionTaskMapper, never()).selectById(any());
     }
 
     @Test
@@ -495,6 +499,7 @@ class NonconformityApplicationServiceTest {
         ncr.setSourceType("EXCEL");
         ncr.setWorkOrderId("order-1");
         NonconformityDetail detail = new NonconformityDetail();
+        detail.setNonconformityId("ncr-1");
         detail.setWorkOrderId("order-1");
         detail.setInternalProductNo("43605");
         WorkOrder order = new WorkOrder();
@@ -505,13 +510,52 @@ class NonconformityApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(nonconformityMapper.selectList(any())).thenReturn(List.of(ncr));
         when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(detail));
-        when(workOrderMapper.selectById("order-1")).thenReturn(order);
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
 
         var line = service().listNonconformities(null).getFirst().details().getFirst();
 
         assertThat(line.internalProductNo()).isEqualTo("43605");
         assertThat(new ObjectMapper().valueToTree(line).path("workOrderInternalProductNo").asText())
             .isEqualTo("02PT43605A01");
+    }
+
+    @Test
+    void listsNonconformitiesWithBatchedDetailsAndOrders() {
+        TenantContext.set("customer-a", "admin");
+        Nonconformity first = nonconformity("ncr-1", null);
+        first.setWorkOrderId("order-1");
+        first.setBatchId("batch-1");
+        Nonconformity second = nonconformity("ncr-2", null);
+        second.setWorkOrderId("order-1");
+        NonconformityDetail firstLine = new NonconformityDetail();
+        firstLine.setNonconformityId("ncr-1");
+        firstLine.setWorkOrderId("order-1");
+        firstLine.setLineNo(1);
+        NonconformityDetail secondLine = new NonconformityDetail();
+        secondLine.setNonconformityId("ncr-2");
+        secondLine.setWorkOrderId("order-1");
+        secondLine.setLineNo(1);
+        WorkOrder order = new WorkOrder();
+        order.setId("order-1");
+        order.setWorkOrderNo("WO-1");
+        ProductionBatch batch = new ProductionBatch();
+        batch.setId("batch-1");
+        batch.setBatchNo("BATCH-1");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+        when(nonconformityMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(nonconformityDetailMapper.selectList(any())).thenReturn(List.of(firstLine, secondLine));
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of(batch));
+
+        var result = service().listNonconformities(null);
+
+        assertThat(result).extracting(item -> item.workOrderNo()).containsExactly("WO-1", "WO-1");
+        assertThat(result.getFirst().batchNo()).isEqualTo("BATCH-1");
+        assertThat(result).extracting(item -> item.details().size()).containsExactly(1, 1);
+        verify(nonconformityDetailMapper, times(1)).selectList(any());
+        verify(workOrderMapper, times(1)).selectList(any());
+        verify(workOrderMapper, never()).selectById(any());
     }
 
     @Test

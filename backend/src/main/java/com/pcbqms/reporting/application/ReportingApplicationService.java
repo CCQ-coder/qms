@@ -76,11 +76,14 @@ public class ReportingApplicationService {
         if (to != null) recordQuery.lt("inspected_at", to.plusDays(1).atStartOfDay());
         List<InspectionRecord> records = inspectionRecordMapper.selectList(recordQuery);
         Map<String, InspectionTask> taskById = new LinkedHashMap<>();
-        for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.query(InspectionTask.class)
-            .select("id", "process_code", "process_name", "task_type")
-            .eq("tenant_code", tenantCode))) {
-            if (access.fullDataAccess() || access.canAccess(task.getProcessCode())) {
-                taskById.put(task.getId(), task);
+        if (!records.isEmpty()) {
+            for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.query(InspectionTask.class)
+                .select("id", "process_code", "process_name", "task_type")
+                .eq("tenant_code", tenantCode)
+                .in("id", records.stream().map(InspectionRecord::getTaskId).distinct().toList()))) {
+                if (access.fullDataAccess() || access.canAccess(task.getProcessCode())) {
+                    taskById.put(task.getId(), task);
+                }
             }
         }
         Map<String, long[]> counters = new LinkedHashMap<>();

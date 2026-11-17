@@ -3,6 +3,10 @@ package com.pcbqms.reporting.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +42,34 @@ class ReportingApplicationServiceTest {
     @AfterEach
     void clearTenantContext() {
         TenantContext.clear();
+    }
+
+    @Test
+    void qualitySummaryQueriesOnlyTasksUsedByRecords() {
+        TenantContext.set("customer-a", "admin");
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(record("task-1", "PASS")));
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(task("task-1", "FQC", "成品检验")));
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+
+        service().qualitySummary();
+
+        ArgumentCaptor<QueryWrapper<InspectionTask>> query = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(inspectionTaskMapper).selectList(query.capture());
+        assertThat(query.getValue().getSqlSegment()).contains("id IN");
+        assertThat(query.getValue().getParamNameValuePairs()).containsValue("task-1");
+    }
+
+    @Test
+    void qualitySummaryWithNoRecordsSkipsTaskQuery() {
+        TenantContext.set("customer-a", "admin");
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of());
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+
+        assertThat(service().qualitySummary().totalRecords()).isZero();
+
+        verify(inspectionTaskMapper, never()).selectList(any());
     }
 
     @Test
@@ -71,6 +104,11 @@ class ReportingApplicationServiceTest {
             assertThat(workbook.getSheet("缺陷排行").getRow(0).getCell(0).getStringCellValue()).isEqualTo("缺陷说明");
             assertThat(workbook.getSheet("质量趋势").getRow(0).getCell(0).getStringCellValue()).isEqualTo("检验日期");
         }
+    }
+
+    private ReportingApplicationService service() {
+        return new ReportingApplicationService(inspectionRecordMapper, inspectionTaskMapper,
+            nonconformityMapper, productionBatchMapper, workOrderMapper, inspectionAccessScopeService);
     }
 
     @Test

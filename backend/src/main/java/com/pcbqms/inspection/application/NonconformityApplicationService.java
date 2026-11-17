@@ -30,9 +30,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.security.access.AccessDeniedException;
@@ -261,10 +263,79 @@ public class NonconformityApplicationService {
         if (StringUtils.hasText(status)) {
             query.eq(Nonconformity::getStatus, status.trim().toUpperCase());
         }
-        return nonconformityMapper.selectList(query.orderByDesc(Nonconformity::getCreatedAt)).stream()
-            .filter(ncr -> canAccessNonconformity(ncr, access))
-            .map(this::toNonconformityResponse)
+        List<Nonconformity> all = nonconformityMapper.selectList(query.orderByDesc(Nonconformity::getCreatedAt));
+        Map<String, InspectionRecord> recordsById = new HashMap<>();
+        Map<String, InspectionTask> tasksById = new HashMap<>();
+        if (!access.fullDataAccess()) {
+            List<String> recordIds = all.stream().map(Nonconformity::getInspectionRecordId)
+                .filter(StringUtils::hasText).distinct().toList();
+            if (!recordIds.isEmpty()) {
+                for (InspectionRecord record : inspectionRecordMapper.selectList(Wrappers.query(InspectionRecord.class)
+                    .select("id", "task_id").eq("tenant_code", tenantCode).in("id", recordIds))) {
+                    recordsById.put(record.getId(), record);
+                }
+                List<String> taskIds = recordsById.values().stream().map(InspectionRecord::getTaskId).distinct().toList();
+                if (!taskIds.isEmpty()) {
+                    for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.query(InspectionTask.class)
+                        .select("id", "process_code").eq("tenant_code", tenantCode).in("id", taskIds))) {
+                        tasksById.put(task.getId(), task);
+                    }
+                }
+            }
+        }
+        List<Nonconformity> visible = all.stream()
+            .filter(ncr -> {
+                if (access.fullDataAccess()) return true;
+                if (!StringUtils.hasText(ncr.getInspectionRecordId())) return access.canAccess(ncr.getProcessCode());
+                InspectionRecord record = recordsById.get(ncr.getInspectionRecordId());
+                InspectionTask task = record == null ? null : tasksById.get(record.getTaskId());
+                return task != null && access.canAccess(task.getProcessCode());
+            })
             .toList();
+        if (visible.isEmpty()) return List.of();
+        List<NonconformityDetail> details = nonconformityDetailMapper.selectList(Wrappers.lambdaQuery(NonconformityDetail.class)
+            .eq(NonconformityDetail::getTenantCode, tenantCode)
+            .in(NonconformityDetail::getNonconformityId, visible.stream().map(Nonconformity::getId).toList())
+            .orderByAsc(NonconformityDetail::getLineNo));
+        Map<String, List<NonconformityDetail>> detailsByNcr = new HashMap<>();
+        for (NonconformityDetail detail : details) {
+            detailsByNcr.computeIfAbsent(detail.getNonconformityId(), ignored -> new ArrayList<>()).add(detail);
+        }
+        Set<String> orderIds = new HashSet<>();
+        Set<String> batchIds = new HashSet<>();
+        for (Nonconformity ncr : visible) {
+            if (StringUtils.hasText(ncr.getWorkOrderId())) orderIds.add(ncr.getWorkOrderId());
+            if (StringUtils.hasText(ncr.getBatchId()) && !StringUtils.hasText(ncr.getBatchNo())) batchIds.add(ncr.getBatchId());
+        }
+        for (NonconformityDetail detail : details) {
+            if (StringUtils.hasText(detail.getWorkOrderId())) orderIds.add(detail.getWorkOrderId());
+        }
+        Map<String, WorkOrder> ordersById = new HashMap<>();
+        if (!orderIds.isEmpty()) {
+            for (WorkOrder order : workOrderMapper.selectList(Wrappers.query(WorkOrder.class)
+                .select("id", "work_order_no", "internal_product_no", "material_no", "layer_count")
+                .eq("tenant_code", tenantCode).in("id", orderIds))) {
+                ordersById.put(order.getId(), order);
+            }
+        }
+        Map<String, ProductionBatch> batchesById = new HashMap<>();
+        if (!batchIds.isEmpty()) {
+            for (ProductionBatch batch : productionBatchMapper.selectList(Wrappers.query(ProductionBatch.class)
+                .select("id", "batch_no")
+                .eq("tenant_code", tenantCode).in("id", batchIds))) {
+                batchesById.put(batch.getId(), batch);
+            }
+        }
+        return visible.stream().map(ncr -> {
+            WorkOrder order = ordersById.get(ncr.getWorkOrderId());
+            ProductionBatch batch = batchesById.get(ncr.getBatchId());
+            List<NonconformityDetailResponse> lines = detailsByNcr.getOrDefault(ncr.getId(), List.of()).stream()
+                .map(detail -> NonconformityDetailResponse.from(detail, ordersById.get(detail.getWorkOrderId())))
+                .toList();
+            return NonconformityResponse.from(ncr, order == null
+                    ? (ncr.getWorkOrderId() == null ? null : "已删除工单") : order.getWorkOrderNo(),
+                StringUtils.hasText(ncr.getBatchNo()) ? ncr.getBatchNo() : batch == null ? null : batch.getBatchNo(), lines);
+        }).toList();
     }
 
     public List<CapaResponse> listCapas(String status) {

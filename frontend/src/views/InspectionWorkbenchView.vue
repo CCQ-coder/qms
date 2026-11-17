@@ -35,6 +35,7 @@ const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
 const activePanel = ref<'monitor' | 'records' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
 const monitoringCoreLoading = ref(false)
+const summaryLoading = ref(true)
 const equipment = ref<Equipment[]>([])
 const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
@@ -473,16 +474,23 @@ async function pollRuntimeStatuses() {
 async function loadMonitoringData() {
   monitoringLoading.value = true
   monitoringCoreLoading.value = true
+  summaryLoading.value = true
+  summaryError.value = ''
   monitoringVersion++
   try {
-    const [summaryResult, equipmentResult, runtimeResult, hostResult, thresholdResult] = await Promise.allSettled([
-      qmsApi.listFinishedTestDeviceSummary(),
+    const summaryLoaded = qmsApi.listFinishedTestDeviceSummary().then((summary) => {
+      deviceSummary.value = summary
+      return true
+    }).catch(() => {
+      summaryError.value = '设备检测汇总读取失败，请重试。'
+      return false
+    }).finally(() => { summaryLoading.value = false })
+    const [equipmentResult, runtimeResult, hostResult, thresholdResult] = await Promise.allSettled([
       qmsApi.listEquipment(),
       qmsApi.listEquipmentRuntimeStatuses(),
       qmsApi.listGatewayHostStatuses(),
       qmsApi.getTenantParameter('equipment.monitor.offline-after-seconds')
     ])
-    summaryError.value = summaryResult.status === 'rejected' ? '设备检测汇总读取失败，请重试。' : ''
     equipmentError.value = equipmentResult.status === 'rejected' ? '成品测试设备台账读取失败，请重试。' : ''
     runtimeError.value = runtimeResult.status === 'rejected' ? '设备实时状态读取失败，请重试。' : ''
     hostStatuses.value = hostResult.status === 'fulfilled' ? hostResult.value : []
@@ -491,7 +499,6 @@ async function loadMonitoringData() {
       const seconds = Number.parseInt(thresholdResult.value.value, 10)
       offlineAfterSeconds.value = Number.isFinite(seconds) ? Math.min(86_400, Math.max(30, seconds)) : 300
     }
-    if (summaryResult.status === 'fulfilled') deviceSummary.value = summaryResult.value
     if (equipmentResult.status === 'fulfilled') equipment.value = equipmentResult.value
     else equipment.value = []
     if (runtimeResult.status === 'fulfilled') runtimeStatuses.value = runtimeResult.value
@@ -505,7 +512,8 @@ async function loadMonitoringData() {
       probeFailedEquipmentIds.value = new Set()
       probeSnapshotsError.value = ''
     }
-    if (probesLoaded && [summaryResult, equipmentResult, runtimeResult, hostResult].every((result) => result.status === 'fulfilled')) {
+    const summarySucceeded = await summaryLoaded
+    if (probesLoaded && summarySucceeded && [equipmentResult, runtimeResult, hostResult].every((result) => result.status === 'fulfilled')) {
       updatedAt.value = new Date()
     }
   } finally {
@@ -958,7 +966,8 @@ onBeforeUnmount(() => {
             <h3>成品测试多设备实时监控</h3>
             <p>仅展示设备台账中类型为“{{ finishedTestEquipmentType }}”的设备；检测数量按已关联生产指令的设备记录统计。</p>
           </div>
-          <div v-if="!summaryError" class="shift-summary">
+          <div v-if="summaryLoading" class="shift-summary">检测汇总加载中…</div>
+          <div v-else-if="!summaryError" class="shift-summary">
             <span>检测总数 <strong>{{ fqcTotal }}</strong></span>
             <span>合格 <strong class="good-text">{{ fqcPass }}</strong></span>
             <span>不合格 <strong class="bad-text">{{ fqcFail }}</strong></span>
