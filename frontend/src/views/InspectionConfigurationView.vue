@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { qmsApi } from '@/api/qms'
 import { menuAccess } from '@/navigation/menu'
 import { statusText, taskTypeText } from '@/utils/display-text'
-import type { InspectionRule, InspectionTemplate, ProcessMaster, ProductMaster, UserAccess } from '@/types/qms'
+import type { AdministrationItem, InspectionRule, InspectionTemplate, ProcessMaster, ProductMaster, UserAccess } from '@/types/qms'
 
 type EditableItem = {
   sortOrder: number
@@ -29,6 +29,7 @@ const products = ref<ProductMaster[]>([])
 const processes = ref<ProcessMaster[]>([])
 const departments = ref<string[]>([])
 const users = ref<UserAccess[]>([])
+const roles = ref<AdministrationItem[]>([])
 const templateDialogVisible = ref(false)
 const ruleDialogVisible = ref(false)
 const productDialogVisible = ref(false)
@@ -40,7 +41,10 @@ const savingProduct = ref(false)
 const savingProcess = ref(false)
 const savingUser = ref(false)
 const platformAdministrator = computed(() => menuAccess.value?.roleCode === 'PLATFORM_ADMIN')
-const roleNames: Record<string, string> = { PLATFORM_ADMIN: '平台管理员', TENANT_ADMIN: '租户管理员', SUPERVISOR: '主管', INSPECTOR: '检验员' }
+const roleNames = computed(() => Object.fromEntries(roles.value.map((role) => [role.itemCode, role.itemName])))
+const selectableRoles = computed(() => roles.value.filter((role) =>
+  (role.status === 'ACTIVE' || role.itemCode === userForm.roleCode)
+  && (platformAdministrator.value || role.itemCode !== 'PLATFORM_ADMIN')))
 
 const newItem = (sortOrder: number): EditableItem => ({
   sortOrder, itemCode: '', itemName: '', inputType: 'TEXT', required: true,
@@ -259,9 +263,11 @@ function onProcessStatusChange(value: string | number | boolean, row: ProcessMas
 }
 
 async function handleTabChange(tabName: string | number) {
-  if (tabName !== 'users' || users.value.length) return
+  if (tabName !== 'users') return
   try {
-    users.value = await qmsApi.listUserAccesses()
+    const [loadedUsers, loadedRoles] = await Promise.all([qmsApi.listUserAccesses(), qmsApi.listAdministrationItems('ROLE')])
+    users.value = loadedUsers
+    roles.value = loadedRoles
   } catch {
     ElMessage.warning('仅租户管理员可查看和维护用户权限')
   }
@@ -280,7 +286,8 @@ async function syncTabFromRoute() {
 function openUserDialog(user?: UserAccess) {
   Object.assign(userForm, user
     ? { id: user.id, userName: user.userName, displayName: user.displayName ?? '', roleCode: user.roleCode, status: user.status, password: '', processCodes: [...user.processCodes] }
-    : { id: '', userName: '', displayName: '', roleCode: 'INSPECTOR', status: 'ACTIVE', password: '', processCodes: [] })
+    : { id: '', userName: '', displayName: '', roleCode: roles.value.find((role) => role.itemCode === 'INSPECTOR' && role.status === 'ACTIVE')?.itemCode
+      ?? roles.value.find((role) => role.status === 'ACTIVE' && role.itemCode !== 'PLATFORM_ADMIN')?.itemCode ?? '', status: 'ACTIVE', password: '', processCodes: [] })
   userDialogVisible.value = true
 }
 
@@ -297,8 +304,8 @@ async function saveUser() {
     ElMessage.warning('重置密码至少需要 10 位；如不修改密码请留空')
     return
   }
-  if (userForm.roleCode === 'INSPECTOR' && !userForm.processCodes.length) {
-    ElMessage.warning('检验员至少需要分配一个工序')
+  if (!['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(userForm.roleCode) && !userForm.processCodes.length) {
+    ElMessage.warning('该角色至少需要分配一个工序')
     return
   }
   savingUser.value = true
@@ -457,8 +464,8 @@ onMounted(async () => {
 
     <el-dialog v-model="userDialogVisible" :title="userForm.id ? '编辑用户权限' : '新增用户权限'" width="min(620px, 94vw)" destroy-on-close>
       <el-form :model="userForm" label-position="top">
-        <div class="form-grid"><el-form-item label="用户标识"><el-input v-model="userForm.userName" :disabled="Boolean(userForm.id)" placeholder="登录用户名，创建后不可修改" /></el-form-item><el-form-item label="显示名称"><el-input v-model="userForm.displayName" /></el-form-item><el-form-item :label="userForm.id ? '重置密码（留空不修改）' : '初始密码'" :required="!userForm.id"><el-input v-model="userForm.password" type="password" show-password autocomplete="new-password" placeholder="至少 10 位" /></el-form-item><el-form-item label="角色"><el-select v-model="userForm.roleCode" class="full-width"><el-option v-if="platformAdministrator" label="平台管理员" value="PLATFORM_ADMIN" /><el-option label="租户管理员" value="TENANT_ADMIN" /><el-option label="主管" value="SUPERVISOR" /><el-option label="检验员" value="INSPECTOR" /></el-select></el-form-item><el-form-item label="状态"><el-select v-model="userForm.status" class="full-width"><el-option label="启用" value="ACTIVE" /><el-option label="停用" value="INACTIVE" /></el-select></el-form-item></div>
-        <el-form-item label="授权工序"><el-select v-model="userForm.processCodes" multiple clearable filterable class="full-width" placeholder="检验员必须选择至少一个工序"><el-option v-for="process in processes.filter((item) => item.status === 'ACTIVE')" :key="process.id" :label="`${process.processCode} · ${process.processName}`" :value="process.processCode" /></el-select><div class="field-help">管理员和主管不受此限制；检验员仅可查看和提交所选工序的检验任务。</div></el-form-item>
+        <div class="form-grid"><el-form-item label="用户标识"><el-input v-model="userForm.userName" :disabled="Boolean(userForm.id)" placeholder="登录用户名，创建后不可修改" /></el-form-item><el-form-item label="显示名称"><el-input v-model="userForm.displayName" /></el-form-item><el-form-item :label="userForm.id ? '重置密码（留空不修改）' : '初始密码'" :required="!userForm.id"><el-input v-model="userForm.password" type="password" show-password autocomplete="new-password" placeholder="至少 10 位" /></el-form-item><el-form-item label="角色"><el-select v-model="userForm.roleCode" class="full-width"><el-option v-for="role in selectableRoles" :key="role.itemCode" :label="role.itemName" :value="role.itemCode" :disabled="role.status !== 'ACTIVE'" /></el-select></el-form-item><el-form-item label="状态"><el-select v-model="userForm.status" class="full-width"><el-option label="启用" value="ACTIVE" /><el-option label="停用" value="INACTIVE" /></el-select></el-form-item></div>
+        <el-form-item label="授权工序"><el-select v-model="userForm.processCodes" multiple clearable filterable class="full-width" placeholder="非管理员、主管角色至少选择一个工序"><el-option v-for="process in processes.filter((item) => item.status === 'ACTIVE')" :key="process.id" :label="`${process.processCode} · ${process.processName}`" :value="process.processCode" /></el-select><div class="field-help">管理员和主管不受此限制；其他角色仅可查看和提交所选工序的检验任务。</div></el-form-item>
       </el-form>
       <template #footer><el-button @click="userDialogVisible = false">取消</el-button><el-button type="primary" :loading="savingUser" @click="saveUser">保存</el-button></template>
     </el-dialog>

@@ -22,8 +22,8 @@ type CatalogConfiguration = {
 const configurations: Record<string, CatalogConfiguration> = {
   ROLE: {
     type: 'ROLE', title: '角色权限', eyebrow: '系统管理', noun: '角色',
-    description: '维护系统角色的数据范围和可见菜单；标准角色编码可与用户管理中的角色对应。',
-    attributes: [{ key: 'dataScope', label: '数据范围', placeholder: '例如：全部数据 / 已分配工序' }]
+    description: '维护用户管理可选的角色及其可见菜单；数据范围由角色类型决定。',
+    attributes: [{ key: 'dataScope', label: '数据范围说明', placeholder: '由角色类型决定' }]
   },
   ORGANIZATION: {
     type: 'ORGANIZATION', title: '组织机构', eyebrow: '系统管理', noun: '组织机构',
@@ -122,15 +122,21 @@ const roleMenuGroups = computed(() => menuGroups().map((group) => ({
   }))
 })))
 
-function parseMenuCodes(attributes: Record<string, string> | undefined) {
+function parseMenuCodes(attributes: Record<string, string> | undefined, roleCode?: string) {
   if (attributes?.menuCodesConfigured !== 'true') {
-    return navigationMenuDefinitions.filter((item) => item.parentCode).map((item) => item.code)
+    if (!['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR', 'INSPECTOR'].includes(roleCode ?? '')) return []
+    return navigationMenuDefinitions.filter((item) => item.parentCode
+      && (roleCode !== 'INSPECTOR' || item.code !== 'SCRAP_IMPORT')).map((item) => item.code)
   }
   return (attributes.menuCodes ?? '').split(',').map((code) => code.trim()).filter(Boolean)
 }
 
-function visibleMenuSummary(attributes: Record<string, string>) {
-  if (attributes.menuCodesConfigured !== 'true') return '全部菜单（未单独设置）'
+function visibleMenuSummary(attributes: Record<string, string>, roleCode: string) {
+  if (attributes.menuCodesConfigured !== 'true') {
+    if (roleCode === 'INSPECTOR') return '默认菜单（不含报废明细导入）'
+    return ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SUPERVISOR'].includes(roleCode)
+      ? '全部菜单（未单独设置）' : '未分配菜单'
+  }
   const labels = parseMenuCodes(attributes)
     .map((code) => menuItemByCode.value.get(code)?.itemName
       ?? navigationMenuDefinitions.find((item) => item.code === code)?.label ?? code)
@@ -177,9 +183,9 @@ function resetForm(item?: AdministrationItem) {
     description: item?.description ?? '',
     status: item?.status ?? 'ACTIVE',
     sortOrder: item?.sortOrder ?? 100,
-    attributes: { ...(item?.attributes ?? {}) }
+    attributes: { ...(item?.attributes ?? (isRole.value ? { dataScope: '已分配工序' } : {})) }
   })
-  roleMenuCodes.value = isRole.value ? parseMenuCodes(item?.attributes) : []
+  roleMenuCodes.value = isRole.value ? parseMenuCodes(item?.attributes, item?.itemCode) : []
 }
 
 async function load() {
@@ -329,7 +335,7 @@ onMounted(load)
           <el-table-column prop="itemName" label="名称" min-width="170" show-overflow-tooltip />
           <el-table-column v-if="configuration.parentLabel" prop="parentCode" :label="configuration.parentLabel" min-width="145" show-overflow-tooltip />
           <el-table-column v-for="field in configuration.attributes" :key="field.key" :label="field.label" min-width="150" show-overflow-tooltip><template #default="scope">{{ scope.row.attributes[field.key] || '—' }}</template></el-table-column>
-          <el-table-column v-if="isRole" label="可见菜单" min-width="280" show-overflow-tooltip><template #default="scope">{{ visibleMenuSummary(scope.row.attributes) }}</template></el-table-column>
+          <el-table-column v-if="isRole" label="可见菜单" min-width="280" show-overflow-tooltip><template #default="scope">{{ visibleMenuSummary(scope.row.attributes, scope.row.itemCode) }}</template></el-table-column>
           <el-table-column prop="description" label="说明" min-width="210" show-overflow-tooltip />
           <el-table-column prop="sortOrder" label="排序" width="86" />
           <el-table-column label="状态" width="124" fixed="right"><template #default="scope"><div class="table-status-control"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ scope.row.status === 'ACTIVE' ? '启用' : '停用' }}</el-tag><el-switch :model-value="scope.row.status === 'ACTIVE'" @change="changeStatus(scope.row, Boolean($event))" /></div></template></el-table-column>
@@ -344,7 +350,7 @@ onMounted(load)
             <el-form-item label="名称" required><el-input v-model="form.itemName" /></el-form-item>
             <el-form-item v-if="configuration.parentLabel" :label="configuration.parentLabel"><el-input v-model="form.parentCode" :placeholder="configuration.parentPlaceholder" /></el-form-item>
             <el-form-item label="排序"><el-input-number v-model="form.sortOrder" :min="0" :max="9999" class="full-width" /></el-form-item>
-            <el-form-item v-for="field in configuration.attributes" :key="field.key" :label="field.label" :class="{ 'form-item-wide': field.multiline }"><el-input v-model="form.attributes[field.key]" :type="field.multiline ? 'textarea' : 'text'" :rows="field.multiline ? 3 : 1" :placeholder="field.placeholder" /></el-form-item>
+            <el-form-item v-for="field in configuration.attributes" :key="field.key" :label="field.label" :class="{ 'form-item-wide': field.multiline }"><el-input v-model="form.attributes[field.key]" :disabled="isRole" :type="field.multiline ? 'textarea' : 'text'" :rows="field.multiline ? 3 : 1" :placeholder="field.placeholder" /></el-form-item>
           </div>
           <el-form-item v-if="isRole" label="可见菜单">
             <div class="role-menu-selector">

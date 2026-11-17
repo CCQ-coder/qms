@@ -5,6 +5,7 @@ import com.pcbqms.access.api.SaveUserAccessRequest;
 import com.pcbqms.access.api.UserAccessResponse;
 import com.pcbqms.access.domain.UserAccessProfile;
 import com.pcbqms.access.domain.UserProcessScope;
+import com.pcbqms.administration.application.AdministrationApplicationService;
 import com.pcbqms.access.infrastructure.persistence.UserAccessProfileMapper;
 import com.pcbqms.access.infrastructure.persistence.UserProcessScopeMapper;
 import com.pcbqms.common.tenancy.TenantContext;
@@ -23,13 +24,14 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class UserAccessAdministrationService {
-    private static final Set<String> ROLE_CODES = Set.of("PLATFORM_ADMIN", "TENANT_ADMIN", "SUPERVISOR", "INSPECTOR");
+    private static final Set<String> FULL_DATA_ROLES = Set.of("PLATFORM_ADMIN", "TENANT_ADMIN", "SUPERVISOR");
     private static final Set<String> STATUS_CODES = Set.of("ACTIVE", "INACTIVE");
     private final UserAccessProfileMapper userAccessProfileMapper;
     private final UserProcessScopeMapper userProcessScopeMapper;
     private final InspectionAccessScopeService inspectionAccessScopeService;
     private final PasswordEncoder passwordEncoder;
     private final LocalPasswordAuthenticationProperties localPasswordAuthenticationProperties;
+    private final AdministrationApplicationService administrationApplicationService;
 
     public List<UserAccessResponse> list() {
         inspectionAccessScopeService.requireTenantAdministrator();
@@ -78,8 +80,9 @@ public class UserAccessAdministrationService {
     private void apply(UserAccessProfile profile, SaveUserAccessRequest request, LocalDateTime now, boolean creating) {
         String role = request.roleCode().trim().toUpperCase(Locale.ROOT);
         String status = StringUtils.hasText(request.status()) ? request.status().trim().toUpperCase(Locale.ROOT) : "ACTIVE";
-        if (!ROLE_CODES.contains(role)) {
-            throw new IllegalArgumentException("角色不受支持");
+        if (administrationApplicationService.listItems("ROLE").stream()
+            .noneMatch(item -> role.equals(item.itemCode()) && "ACTIVE".equals(item.status()))) {
+            throw new IllegalArgumentException("角色不受支持或已停用");
         }
         boolean platformRoleChange = "PLATFORM_ADMIN".equals(role) || "PLATFORM_ADMIN".equals(profile.getRoleCode());
         if (platformRoleChange && !inspectionAccessScopeService.isPlatformAdministrator()) {
@@ -89,8 +92,8 @@ public class UserAccessAdministrationService {
             throw new IllegalArgumentException("用户状态仅支持 ACTIVE 或 INACTIVE");
         }
         List<String> processCodes = normalizedProcessCodes(request.processCodes());
-        if ("INSPECTOR".equals(role) && processCodes.isEmpty()) {
-            throw new IllegalArgumentException("检验员至少需要分配一个工序");
+        if (!FULL_DATA_ROLES.contains(role) && processCodes.isEmpty()) {
+            throw new IllegalArgumentException("该角色至少需要分配一个工序");
         }
         profile.setDisplayName(StringUtils.hasText(request.displayName()) ? request.displayName().trim() : null);
         profile.setRoleCode(role);

@@ -123,6 +123,26 @@ class AdministrationApplicationServiceTest {
     }
 
     @Test
+    void listsBuiltInRolesForCustomerTenantWithoutReplacingExistingRole() {
+        TenantContext.set("gy", "admin");
+        AdministrationItem existing = new AdministrationItem();
+        existing.setItemCode("SUPERVISOR");
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of(existing));
+        var service = new AdministrationApplicationService(administrationItemMapper,
+            administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper());
+
+        service.listItems("ROLE");
+
+        verify(administrationItemMapper, times(3)).insert(itemCaptor.capture());
+        assertThat(itemCaptor.getAllValues()).extracting(AdministrationItem::getItemCode)
+            .containsExactlyInAnyOrder("PLATFORM_ADMIN", "TENANT_ADMIN", "INSPECTOR");
+        assertThat(itemCaptor.getAllValues()).allSatisfy(item -> {
+            assertThat(item.getTenantCode()).isEqualTo("gy");
+            assertThat(item.getAttributesJson()).doesNotContain("menuCodesConfigured");
+        });
+    }
+
+    @Test
     void activeDepartmentOptionsAreAvailableWithoutAdministrationPermission() {
         TenantContext.set("customer-b", "inspector.b");
         AdministrationItem active = new AdministrationItem();
@@ -194,5 +214,21 @@ class AdministrationApplicationServiceTest {
         role.setAttributesJson("{\"menuCodesConfigured\":\"true\",\"menuCodes\":\"SCRAP_IMPORT\"}");
         when(administrationItemMapper.selectOne(any())).thenReturn(role);
         assertThat(service.menuAccess().permittedMenuCodes()).contains("SCRAP_IMPORT");
+    }
+
+    @Test
+    void customRoleNeedsExplicitMenuGrant() {
+        TenantContext.set("gy", "operator");
+        AdministrationItem menu = new AdministrationItem();
+        menu.setItemCode("DASHBOARD");
+        menu.setItemName("质量总览");
+        menu.setStatus("ACTIVE");
+        when(inspectionAccessScopeService.currentAccess())
+            .thenReturn(new InspectionAccess("operator", "CUSTOM", false, Set.of("FQC")));
+        when(administrationItemMapper.selectList(any())).thenReturn(List.of(menu));
+        var service = new AdministrationApplicationService(administrationItemMapper,
+            administrationAuditLogMapper, inspectionAccessScopeService, new ObjectMapper());
+
+        assertThat(service.menuAccess().permittedMenuCodes()).isEmpty();
     }
 }

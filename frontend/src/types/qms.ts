@@ -220,7 +220,7 @@ export type UserAccess = {
   id: string
   userName: string
   displayName?: string
-  roleCode: 'PLATFORM_ADMIN' | 'TENANT_ADMIN' | 'SUPERVISOR' | 'INSPECTOR'
+  roleCode: string
   status: 'ACTIVE' | 'INACTIVE'
   processCodes: string[]
 }
@@ -231,7 +231,7 @@ export type PasswordLogin = {
   tenantCode: string
   userName: string
   displayName: string
-  roleCode: 'PLATFORM_ADMIN' | 'TENANT_ADMIN' | 'SUPERVISOR' | 'INSPECTOR'
+  roleCode: string
 }
 
 export type LoginTenant = {

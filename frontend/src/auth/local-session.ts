@@ -4,7 +4,7 @@ export type LocalSession = {
   tenantCode: string
   actor: string
   displayName: string
-  roleCode: 'PLATFORM_ADMIN' | 'TENANT_ADMIN' | 'SUPERVISOR' | 'INSPECTOR'
+  roleCode: string
   accessToken: string
   expiresAt: number
 }

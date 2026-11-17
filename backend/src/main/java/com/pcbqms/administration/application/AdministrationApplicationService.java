@@ -37,6 +37,12 @@ public class AdministrationApplicationService {
         "ROLE", "MENU", "ORGANIZATION", "DEPARTMENT", "SCRAP_REASON", "DICTIONARY", "INTERFACE", "APPROVAL_FLOW", "EQUIPMENT_TEMPLATE"
     );
     private static final Set<String> STATUS_CODES = Set.of("ACTIVE", "INACTIVE");
+    private static final List<RoleDefinition> DEFAULT_ROLES = List.of(
+        new RoleDefinition("PLATFORM_ADMIN", "平台管理员", "全部数据", 5),
+        new RoleDefinition("TENANT_ADMIN", "租户管理员", "全部数据", 10),
+        new RoleDefinition("SUPERVISOR", "主管", "全部数据", 20),
+        new RoleDefinition("INSPECTOR", "检验员", "已分配工序", 30)
+    );
     private static final List<MenuDefinition> DEFAULT_MENU_DEFINITIONS = List.of(
         new MenuDefinition("OVERVIEW", "总览", null, 10),
         new MenuDefinition("DASHBOARD", "质量总览", "OVERVIEW", 11),
@@ -92,6 +98,8 @@ public class AdministrationApplicationService {
         String catalogType = normalizeCatalogType(requestedCatalogType);
         if ("MENU".equals(catalogType)) {
             ensureDefaultMenuItems();
+        } else if ("ROLE".equals(catalogType)) {
+            ensureDefaultRoleItems();
         }
         return listItemsForTenant(catalogType)
             .stream().map(this::toResponse).toList();
@@ -136,7 +144,8 @@ public class AdministrationApplicationService {
         boolean menuSelectionConfigured = "true".equalsIgnoreCase(roleAttributes.get("menuCodesConfigured"));
         Set<String> permittedMenuCodes = menuSelectionConfigured
             ? parseMenuCodes(roleAttributes.get("menuCodes"), knownMenuCodes)
-            : new HashSet<>(knownMenuCodes);
+            : DEFAULT_ROLES.stream().anyMatch(definition -> definition.code().equals(access.roleCode()))
+                ? new HashSet<>(knownMenuCodes) : new HashSet<>();
         if (!menuSelectionConfigured && !Set.of("PLATFORM_ADMIN", "TENANT_ADMIN", "SUPERVISOR").contains(access.roleCode())) {
             permittedMenuCodes.remove("SCRAP_IMPORT");
         }
@@ -260,6 +269,32 @@ public class AdministrationApplicationService {
             .orderByAsc(AdministrationItem::getSortOrder)
             .orderByAsc(AdministrationItem::getItemCode));
     }
+
+    private void ensureDefaultRoleItems() {
+        String tenantCode = TenantContext.tenantCode();
+        Set<String> existingCodes = listItemsForTenant("ROLE").stream()
+            .map(AdministrationItem::getItemCode).collect(java.util.stream.Collectors.toSet());
+        LocalDateTime now = LocalDateTime.now();
+        for (RoleDefinition definition : DEFAULT_ROLES) {
+            if (existingCodes.contains(definition.code())) continue;
+            AdministrationItem item = new AdministrationItem();
+            item.setId(UUID.randomUUID().toString());
+            item.setTenantCode(tenantCode);
+            item.setCatalogType("ROLE");
+            item.setItemCode(definition.code());
+            item.setItemName(definition.name());
+            item.setStatus("ACTIVE");
+            item.setSortOrder(definition.sortOrder());
+            item.setAttributesJson(writeAttributes(Map.of("dataScope", definition.dataScope())));
+            item.setCreatedBy("system");
+            item.setUpdatedBy("system");
+            item.setCreatedAt(now);
+            item.setUpdatedAt(now);
+            administrationItemMapper.insert(item);
+        }
+    }
+
+    private record RoleDefinition(String code, String name, String dataScope, int sortOrder) { }
 
     private void ensureDefaultMenuItems() {
         String tenantCode = TenantContext.tenantCode();
