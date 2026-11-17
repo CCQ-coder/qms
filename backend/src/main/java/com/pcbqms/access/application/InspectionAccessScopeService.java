@@ -6,6 +6,7 @@ import com.pcbqms.access.domain.UserProcessScope;
 import com.pcbqms.access.infrastructure.persistence.UserAccessProfileMapper;
 import com.pcbqms.access.infrastructure.persistence.UserProcessScopeMapper;
 import com.pcbqms.common.tenancy.TenantContext;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,12 @@ public class InspectionAccessScopeService {
                     .eq(UserProcessScope::getTenantCode, tenantCode)
                     .eq(UserProcessScope::getUserName, actor))
             .stream().map(UserProcessScope::getProcessCode).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        // ZSH grants test access as 001, while flying-probe records are stored as FQC.
+        if ("customer-a".equals(tenantCode) && processCodes.contains("001")) {
+            Set<String> expanded = new HashSet<>(processCodes);
+            expanded.add("FQC");
+            processCodes = Set.copyOf(expanded);
+        }
         return new InspectionAccess(actor, role, fullDataAccess, processCodes);
     }
 
