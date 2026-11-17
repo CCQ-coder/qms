@@ -51,6 +51,47 @@ class InspectionAccessScopeServiceTest {
     }
 
     @Test
+    void gyTestProcessCanReadFlyingProbeFqcTasksWithoutOpeningOtherProcesses() {
+        TenantContext.set("customer-b", "gy.inspector");
+        UserAccessProfile profile = new UserAccessProfile();
+        profile.setTenantCode("customer-b");
+        profile.setUserName("gy.inspector");
+        profile.setRoleCode("INSPECTOR");
+        profile.setStatus("ACTIVE");
+        UserProcessScope scope = new UserProcessScope();
+        scope.setProcessCode("004");
+        when(userAccessProfileMapper.selectOne(any())).thenReturn(profile);
+        when(userProcessScopeMapper.selectList(any())).thenReturn(List.of(scope));
+        InspectionAccessScopeService service = new InspectionAccessScopeService(userAccessProfileMapper, userProcessScopeMapper);
+        ReflectionTestUtils.setField(service, "developmentMode", false);
+
+        var access = service.currentAccess();
+
+        assertThat(access.fullDataAccess()).isFalse();
+        assertThat(access.processCodes()).containsExactlyInAnyOrder("004", "FQC");
+        assertThat(access.canAccess("SOLDER_MASK")).isFalse();
+        assertThatCode(() -> service.requireProcessAccess("FQC")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void otherTenantsDoNotInheritGyProcessAlias() {
+        TenantContext.set("customer-a", "inspector.a");
+        UserAccessProfile profile = new UserAccessProfile();
+        profile.setTenantCode("customer-a");
+        profile.setUserName("inspector.a");
+        profile.setRoleCode("INSPECTOR");
+        profile.setStatus("ACTIVE");
+        UserProcessScope scope = new UserProcessScope();
+        scope.setProcessCode("004");
+        when(userAccessProfileMapper.selectOne(any())).thenReturn(profile);
+        when(userProcessScopeMapper.selectList(any())).thenReturn(List.of(scope));
+        InspectionAccessScopeService service = new InspectionAccessScopeService(userAccessProfileMapper, userProcessScopeMapper);
+        ReflectionTestUtils.setField(service, "developmentMode", false);
+
+        assertThat(service.currentAccess().canAccess("FQC")).isFalse();
+    }
+
+    @Test
     void platformAdministratorCanPerformSupervisorOrAdministratorOperations() {
         TenantContext.set("customer-a", "platform.admin");
         UserAccessProfile profile = new UserAccessProfile();

@@ -6,6 +6,7 @@ import com.pcbqms.access.domain.UserProcessScope;
 import com.pcbqms.access.infrastructure.persistence.UserAccessProfileMapper;
 import com.pcbqms.access.infrastructure.persistence.UserProcessScopeMapper;
 import com.pcbqms.common.tenancy.TenantContext;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,12 @@ public class InspectionAccessScopeService {
                     .eq(UserProcessScope::getTenantCode, tenantCode)
                     .eq(UserProcessScope::getUserName, actor))
             .stream().map(UserProcessScope::getProcessCode).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        // shortcut: gy stores flying-probe tasks as FQC while its test process is 004; configure aliases if codes change.
+        if ("customer-b".equals(tenantCode) && processCodes.contains("004")) {
+            Set<String> expanded = new HashSet<>(processCodes);
+            expanded.add("FQC");
+            processCodes = Set.copyOf(expanded);
+        }
         return new InspectionAccess(actor, role, fullDataAccess, processCodes);
     }
 
