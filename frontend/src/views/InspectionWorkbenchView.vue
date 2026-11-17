@@ -34,6 +34,7 @@ const route = useRoute()
 const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
 const activePanel = ref<'monitor' | 'records' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
+const monitoringCoreLoading = ref(false)
 const equipment = ref<Equipment[]>([])
 const runtimeStatuses = ref<EquipmentRuntimeStatus[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
@@ -464,6 +465,7 @@ async function pollRuntimeStatuses() {
 
 async function loadMonitoringData() {
   monitoringLoading.value = true
+  monitoringCoreLoading.value = true
   monitoringVersion++
   try {
     const [summaryResult, equipmentResult, runtimeResult, hostResult, thresholdResult] = await Promise.allSettled([
@@ -487,6 +489,7 @@ async function loadMonitoringData() {
     else equipment.value = []
     if (runtimeResult.status === 'fulfilled') runtimeStatuses.value = runtimeResult.value
     else runtimeStatuses.value = []
+    monitoringCoreLoading.value = false
     const probesLoaded = equipmentResult.status === 'fulfilled'
       ? await loadProbeSnapshots(equipmentResult.value.filter((item) => item.equipmentType === finishedTestEquipmentType))
       : false
@@ -499,6 +502,7 @@ async function loadMonitoringData() {
       updatedAt.value = new Date()
     }
   } finally {
+    monitoringCoreLoading.value = false
     monitoringLoading.value = false
   }
 }
@@ -911,7 +915,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="page-stack finished-test-page" v-loading="monitoringLoading">
+  <section class="page-stack finished-test-page" v-loading="monitoringCoreLoading">
     <div v-if="!isSummaryRoute && offlineDrafts.length" class="offline-draft-banner">
       <el-alert type="warning" show-icon :closable="false" :title="`本机暂存 ${offlineDrafts.length} 条待补传检验记录`" description="暂存内容包含检验表单与照片，并按当前客户和用户归类；网络恢复后会自动补传。" />
       <el-button type="warning" :loading="syncingOfflineDrafts" @click="syncOfflineDrafts">立即补传</el-button>
