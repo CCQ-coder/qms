@@ -416,6 +416,13 @@ function loadDeviceRecords() {
     ...(recordKeyword.value.trim() ? { keyword: recordKeyword.value.trim() } : {}), sortOrder: recordSortOrder.value })
 }
 
+function changeRecordSort({ order }: { order: 'ascending' | 'descending' | null }) {
+  const nextOrder = order === 'ascending' ? 'asc' : 'desc'
+  if (nextOrder === recordSortOrder.value) return
+  recordSortOrder.value = nextOrder
+  void loadDeviceRecords()
+}
+
 function canManageProbeRecord(row: EquipmentTelemetryRecord) {
   return !row.workOrderNo || ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')
 }
@@ -1162,19 +1169,15 @@ onBeforeUnmount(() => {
           <el-input v-model="recordKeyword" clearable placeholder="搜索全部记录：检测设备、生产指令、订单编号、厂内编号或PCB料号" @keyup.enter="loadDeviceRecords" />
           <el-button :disabled="finishedRecordsLoading" @click="loadDeviceRecords">筛选</el-button>
           <span>共 {{ finishedRecordsTotal }} 条设备检测记录</span>
-          <el-select v-model="recordSortOrder" aria-label="检测时间排序" style="width: 170px" :disabled="finishedRecordsLoading" @change="loadDeviceRecords">
-            <el-option label="检测时间：最新在前" value="desc" />
-            <el-option label="检测时间：最早在前" value="asc" />
-          </el-select>
           <div v-if="canBindFlyingProbe" class="task-queue-actions finished-record-batch-actions">
             <el-button :type="selectedAllRecords.length ? 'primary' : 'default'" :disabled="!selectedAllRecords.length" @click="openSelectedRecordBindingDialog">批量绑定/更正（{{ selectedAllRecords.length }}）</el-button>
             <el-button :disabled="!selectedAllRecords.some((record) => record.workOrderNo)" @click="cancelSelectedRecordBindings">批量取消关联</el-button>
           </div>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap finished-records-table-wrap--all">
-          <paged-table :key="finishedRecordsUpdatedAt?.getTime()" v-loading="finishedRecordsLoading" :data="finishedTestRecords" :total="finishedRecordsTotal" :page="finishedRecordsPage" :page-size="finishedRecordsPageSize" row-key="id" size="small" empty-text="暂无设备检测记录" @page-change="loadFinishedTestPage" @selection-change="selectedAllRecords = $event">
+          <paged-table :key="finishedRecordsUpdatedAt?.getTime()" v-loading="finishedRecordsLoading" :data="finishedTestRecords" :total="finishedRecordsTotal" :page="finishedRecordsPage" :page-size="finishedRecordsPageSize" :default-sort="{ prop: 'deviceTime', order: recordSortOrder === 'asc' ? 'ascending' : 'descending' }" row-key="id" size="small" empty-text="暂无设备检测记录" @page-change="loadFinishedTestPage" @selection-change="selectedAllRecords = $event" @sort-change="changeRecordSort">
             <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => row.eventType === 'ZHONGBO_TEST_REPORT' || canManageProbeRecord(row)" />
-            <el-table-column label="检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column prop="deviceTime" label="检测时间" min-width="170" sortable="custom" :sort-orders="['ascending', 'descending']"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="130" />
             <el-table-column label="生产指令" min-width="145"><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="订单编号" min-width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
