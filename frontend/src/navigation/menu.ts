@@ -84,6 +84,11 @@ export function firstVisibleMenuPath(access = menuAccess.value) {
   return navigationMenuDefinitions.find((definition) => definition.path && isMenuVisible(definition.code, access))?.path
 }
 
+export function isMenuPathVisible(path: string, access: MenuAccess) {
+  const definition = navigationMenuDefinitions.find((item) => item.path === path)
+  return definition ? isMenuVisible(definition.code, access) : undefined
+}
+
 export async function loadMenuAccess(force = false) {
   if (!force && menuAccess.value) return menuAccess.value
   if (!force && loadingMenuAccess) return loadingMenuAccess
