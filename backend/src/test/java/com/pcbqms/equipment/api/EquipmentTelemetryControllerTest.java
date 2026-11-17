@@ -147,6 +147,7 @@ class EquipmentTelemetryControllerTest {
                 .param("page", "3")
                 .param("limit", "10")
                 .param("includeTotal", "false")
+                .param("sortOrder", "asc")
                 .param("keyword", "42946")
                 .param("workOrderNo", "WO-1")
                 .param("customerOrderNo", "ORDER-1")
@@ -160,6 +161,7 @@ class EquipmentTelemetryControllerTest {
         assertThat(json.path("page").asInt()).isEqualTo(3);
         assertThat(json.path("limit").asInt()).isEqualTo(10);
         assertThat(json.path("includeTotal").asBoolean()).isFalse();
+        assertThat(json.path("sortOrder").asText()).isEqualTo("asc");
         assertThat(json.path("keyword").asText()).isEqualTo("42946");
         assertThat(json.path("workOrderNo").asText()).isEqualTo("WO-1");
         assertThat(json.path("customerOrderNo").asText()).isEqualTo("ORDER-1");

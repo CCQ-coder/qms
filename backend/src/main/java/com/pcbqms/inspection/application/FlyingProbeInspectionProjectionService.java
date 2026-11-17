@@ -49,7 +49,7 @@ public class FlyingProbeInspectionProjectionService {
     static final String EVENT_TYPE = "FLYING_PROBE_TEST_COUNTERS";
     private static final String TEMPLATE_CODE = "FLYING_PROBE_ELECTRICAL_V1";
     private static final String MATERIAL_EXTRACT_PATTERN_KEY = "flying-probe.material-extract-pattern";
-    private static final LocalDateTime GY_WTD_FROM = LocalDate.of(2026, 10, 16).atStartOfDay();
+    private static final LocalDateTime GY_WTD_FROM = LocalDate.of(2025, 10, 15).atStartOfDay();
     private static final Pattern FIVE_DIGIT_NUMBER = Pattern.compile("(?<![0-9])[0-9]{5}(?![0-9])");
     private static final String ADMIN = "admin";
     private final FlyingProbeProjectionMapper projectionMapper;
@@ -143,6 +143,13 @@ public class FlyingProbeInspectionProjectionService {
         }
         String tenantCode = TenantContext.tenantCode();
         FlyingProbeProjection projection = projectionMapper.lockProjection(telemetryId);
+        if (projection == null) {
+            EquipmentTelemetryRecord telemetry = projectionMapper.selectTelemetryForClaim(tenantCode, telemetryId);
+            if (telemetry != null) {
+                projectionMapper.claim(telemetry);
+                projection = projectionMapper.lockProjection(telemetryId);
+            }
+        }
         if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
@@ -150,7 +157,8 @@ public class FlyingProbeInspectionProjectionService {
             throw new IllegalArgumentException("飞针记录不在有效范围");
         }
         if (!"RETRYABLE".equals(projection.getStatus()) && !"PROCESSED".equals(projection.getStatus())
-            && !"UNBOUND".equals(projection.getStatus())) {
+            && !"UNBOUND".equals(projection.getStatus()) && !"PENDING".equals(projection.getStatus())
+            && !"SKIPPED".equals(projection.getStatus())) {
             throw new IllegalArgumentException("仅待匹配或已处理的飞针记录可手动绑定");
         }
         String workOrderNo = requestedWorkOrderNo.trim();

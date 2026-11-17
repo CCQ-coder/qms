@@ -547,6 +547,7 @@ export type EquipmentTelemetryHistoryQuery = {
   page?: number
   includeTotal?: boolean
   keyword?: string
+  sortOrder?: 'asc' | 'desc'
 }
 
 export type EquipmentTelemetryHistoryPage = {

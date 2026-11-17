@@ -62,7 +62,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), eq(false), isNull(), eq(false), isNull())).thenReturn(List.of(record));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), eq(false), isNull(), eq(false), isNull(), eq(false))).thenReturn(List.of(record));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-1"))).thenReturn(List.of(projection));
         when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
 
@@ -240,7 +240,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "ZHONGBO_TEST_REPORT", null, null, null, null, null));
 
         verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), isNull(),
-            isNull(), isNull(), eq(21), eq("ZHONGBO_TEST_REPORT"), isNull(), isNull(), isNull(), isNull(), eq(false), isNull(), eq(false), isNull());
+            isNull(), isNull(), eq(21), eq("ZHONGBO_TEST_REPORT"), isNull(), isNull(), isNull(), isNull(), eq(false), isNull(), eq(false), isNull(), eq(false));
     }
 
     @Test
@@ -260,7 +260,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             "ZHONGBO_TEST_REPORT", null, " PI10102871 ", null, " 02PT42777 ", true));
 
         verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), isNull(),
-            isNull(), isNull(), eq(21), eq("ZHONGBO_TEST_REPORT"), isNull(), eq("PI10102871"), isNull(), eq("02PT42777"), eq(true), isNull(), eq(false), isNull());
+            isNull(), isNull(), eq(21), eq("ZHONGBO_TEST_REPORT"), isNull(), eq("PI10102871"), isNull(), eq("02PT42777"), eq(true), isNull(), eq(false), isNull(), eq(false));
     }
 
     @Test
@@ -281,7 +281,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null, from, to, null, 20, "FINISHED_TEST", null, null, null, null, null));
 
         verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), eq(from), eq(to),
-            isNull(), isNull(), eq(21), eq("FINISHED_TEST"), isNull(), isNull(), isNull(), isNull(), eq(false), isNull(), eq(false), isNull());
+            isNull(), isNull(), eq(21), eq("FINISHED_TEST"), isNull(), isNull(), isNull(), isNull(), eq(false), isNull(), eq(false), isNull(), eq(false));
     }
 
     @Test
@@ -299,7 +299,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), isNull(),
-            isNull(), isNull(), eq(10), eq("ZHONGBO_TEST_REPORT"), isNull(), isNull(), isNull(), isNull(), eq(false), eq(20L), eq(true), isNull()))
+            isNull(), isNull(), eq(10), eq("ZHONGBO_TEST_REPORT"), isNull(), isNull(), isNull(), isNull(), eq(false), eq(20L), eq(true), isNull(), eq(false)))
             .thenReturn(List.of(record));
 
         var service = new EquipmentTelemetryQueryApplicationService(telemetryRecordMapper, equipmentMapper,
@@ -316,7 +316,30 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             "ZHONGBO_TEST_REPORT", null, null, null, null, null, 3, false));
         assertThat(laterPage.total()).isNull();
         verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), isNull(),
-            isNull(), isNull(), eq(10), eq("ZHONGBO_TEST_REPORT"), isNull(), isNull(), isNull(), isNull(), eq(false), eq(20L), eq(false), isNull());
+            isNull(), isNull(), eq(10), eq("ZHONGBO_TEST_REPORT"), isNull(), isNull(), isNull(), isNull(), eq(false), eq(20L), eq(false), isNull(), eq(false));
+    }
+
+    @Test
+    void combinedHistoryPassesAscendingOrderToDatabasePagination() {
+        TenantContext.set("customer-b", "admin");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "TENANT_ADMIN", true, Set.of()));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
+        when(telemetryRecordMapper.selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), isNull(),
+            isNull(), isNull(), eq(10), eq("FINISHED_TEST"), isNull(), isNull(), isNull(), isNull(),
+            eq(false), eq(0L), eq(true), isNull(), eq(true))).thenReturn(List.of());
+
+        var service = new EquipmentTelemetryQueryApplicationService(telemetryRecordMapper, equipmentMapper,
+            inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules(), workOrderMapper);
+        service.pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 10,
+            "FINISHED_TEST", null, null, null, null, null, 1, true, null, "asc"));
+
+        verify(telemetryRecordMapper).selectHistory(eq("customer-b"), isNull(), isNull(), isNull(), isNull(),
+            isNull(), isNull(), eq(10), eq("FINISHED_TEST"), isNull(), isNull(), isNull(), isNull(),
+            eq(false), eq(0L), eq(true), isNull(), eq(true));
     }
 
     @Test
@@ -341,7 +364,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), eq(false), isNull(), eq(false), isNull())).thenReturn(List.of(latest, older));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), eq(false), isNull(), eq(false), isNull(), eq(false))).thenReturn(List.of(latest, older));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-latest")))
             .thenReturn(List.of());
 
@@ -374,7 +397,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
         when(telemetryRecordMapper.selectHistory(eq("customer-b"), any(), any(), any(), any(), any(), any(), anyInt(),
-            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), eq(false), isNull(), eq(false), isNull())).thenReturn(List.of(record));
+            eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), eq(false), isNull(), eq(false), isNull(), eq(false))).thenReturn(List.of(record));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("telemetry-1")))
             .thenReturn(List.of(projection));
 

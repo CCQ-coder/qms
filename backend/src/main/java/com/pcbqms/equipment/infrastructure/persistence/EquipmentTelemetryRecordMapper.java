@@ -46,7 +46,7 @@ public interface EquipmentTelemetryRecordMapper {
         FROM qms_equipment_telemetry
         WHERE tenant_code = #{tenantCode}
           AND (tenant_code <> 'customer-b' OR event_type NOT IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')
-               OR device_time >= '2026-10-16')
+               OR device_time >= '2025-10-15')
         ORDER BY received_at DESC
         LIMIT #{limit}
         """)
@@ -65,7 +65,7 @@ public interface EquipmentTelemetryRecordMapper {
                       WHERE equipment.id = qms_equipment_telemetry.equipment_id
                         AND equipment.tenant_code = qms_equipment_telemetry.tenant_code)
           AND (tenant_code &lt;&gt; 'customer-b' OR event_type NOT IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')
-               OR device_time >= '2026-10-16')
+               OR device_time >= '2025-10-15')
         <if test="eventType == 'FINISHED_TEST'">
             AND event_type IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')
         </if>
@@ -175,7 +175,7 @@ public interface EquipmentTelemetryRecordMapper {
         </if>
         <if test="cursorTime != null">
             <choose>
-                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS'">
+                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'FINISHED_TEST'">
                     AND (device_time &lt; #{cursorTime}
                          OR (device_time = #{cursorTime} AND id &lt; #{cursorId}))
                 </when>
@@ -186,7 +186,10 @@ public interface EquipmentTelemetryRecordMapper {
             </choose>
         </if>
         <choose>
-            <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS'">
+            <when test="eventType == 'FINISHED_TEST' and ascending">
+                ORDER BY device_time ASC, id ASC
+            </when>
+            <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'FINISHED_TEST'">
                 ORDER BY device_time DESC, id DESC
             </when>
             <otherwise>
@@ -216,7 +219,8 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("unmatchedOnly") boolean unmatchedOnly,
         @Param("offset") Long offset,
         @Param("includeTotal") boolean includeTotal,
-        @Param("keyword") String keyword
+        @Param("keyword") String keyword,
+        @Param("ascending") boolean ascending
     );
 
     @Select("""

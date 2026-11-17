@@ -142,6 +142,7 @@ public class EquipmentTelemetryController {
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) Integer page,
         @RequestParam(required = false) Boolean includeTotal,
+        @RequestParam(required = false) String sortOrder,
         @RequestParam(required = false) String keyword,
         @RequestParam(required = false) String eventType,
         @RequestParam(required = false) String workOrderNo,
@@ -152,7 +153,7 @@ public class EquipmentTelemetryController {
     ) {
         return ApiResponse.of(telemetryQueryApplicationService.pageHistory(
             new EquipmentTelemetryHistoryQuery(equipmentId, fromTime, toTime, cursor, limit, eventType,
-                workOrderNo, customerOrderNo, internalProductNo, factoryInternalNo, unmatchedOnly, page, includeTotal, keyword)
+                workOrderNo, customerOrderNo, internalProductNo, factoryInternalNo, unmatchedOnly, page, includeTotal, keyword, sortOrder)
         ));
     }
 

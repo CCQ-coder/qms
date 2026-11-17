@@ -20,7 +20,7 @@ export function useTelemetryHistory(
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
-  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime' | 'keyword'> = {}
+  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime' | 'keyword' | 'sortOrder'> = {}
 
   async function load(nextPage: number, nextSize: number, includeTotal = false) {
     if (loading.value) return
@@ -49,7 +49,7 @@ export function useTelemetryHistory(
 
   return {
     records, total, page, pageSize, loading, loaded, error, updatedAt,
-    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime' | 'keyword'> = search) => {
+    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo' | 'factoryInternalNo' | 'unmatchedOnly' | 'fromTime' | 'toTime' | 'keyword' | 'sortOrder'> = search) => {
       search = filters
       return load(1, pageSize.value, true)
     },

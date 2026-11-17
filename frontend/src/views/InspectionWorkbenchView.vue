@@ -138,6 +138,7 @@ const taskListDeviceAssetNo = ref('')
 const recordEquipmentAssetNo = ref('')
 const taskKeyword = ref('')
 const recordKeyword = ref('')
+const recordSortOrder = ref<'asc' | 'desc'>('desc')
 const updatedAt = ref<Date>()
 const finishedTestEquipmentType = '成品测试设备'
 
@@ -409,8 +410,13 @@ function refreshFilteredZhongboReports() {
 }
 
 function loadDeviceRecords() {
+  selectedAllRecords.value = []
   return refreshFinishedTestRecords({ ...appliedRecordSearch.value, ...recordTimeFilter(),
-    ...(recordKeyword.value.trim() ? { keyword: recordKeyword.value.trim() } : {}) })
+    ...(recordKeyword.value.trim() ? { keyword: recordKeyword.value.trim() } : {}), sortOrder: recordSortOrder.value })
+}
+
+function canManageProbeRecord(row: EquipmentTelemetryRecord) {
+  return !row.workOrderNo || ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')
 }
 
 async function loadRetryableProjections(page = retryablePage.value) {
@@ -1040,7 +1046,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
           <paged-table :key="flyingProbeUpdatedAt?.getTime()" v-loading="flyingProbeLoading" :data="flyingProbeRecords" :total="flyingProbeTotal" :page="flyingProbePage" :page-size="flyingProbePageSize" row-key="id" size="small" empty-text="暂无飞针机采集记录" @page-change="loadFlyingProbePage" @selection-change="selectedProbeRecords = $event">
-            <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')" />
+            <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="canManageProbeRecord" />
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
@@ -1063,7 +1069,7 @@ onBeforeUnmount(() => {
             </el-table-column>
             <el-table-column label="操作" min-width="120" fixed="right">
               <template #default="scope">
-                <el-button v-if="canBindFlyingProbe && ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(scope.row.fqcProjectionStatus)" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button>
+                <el-button v-if="canBindFlyingProbe && canManageProbeRecord(scope.row)" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button>
               </template>
             </el-table-column>
           </paged-table>
@@ -1148,10 +1154,14 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
-        <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
+        <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar" style="flex-wrap: wrap">
           <el-input v-model="recordKeyword" clearable placeholder="搜索全部记录：检测设备、生产指令、订单编号、厂内编号或PCB料号" @keyup.enter="loadDeviceRecords" />
           <el-button :disabled="finishedRecordsLoading" @click="loadDeviceRecords">筛选</el-button>
           <span>共 {{ finishedRecordsTotal }} 条设备检测记录</span>
+          <el-select v-model="recordSortOrder" aria-label="检测时间排序" style="width: 170px" :disabled="finishedRecordsLoading" @change="loadDeviceRecords">
+            <el-option label="检测时间：最新在前" value="desc" />
+            <el-option label="检测时间：最早在前" value="asc" />
+          </el-select>
           <div v-if="canBindFlyingProbe" class="task-queue-actions finished-record-batch-actions">
             <el-button :type="selectedAllRecords.length ? 'primary' : 'default'" :disabled="!selectedAllRecords.length" @click="openSelectedRecordBindingDialog">批量绑定/更正（{{ selectedAllRecords.length }}）</el-button>
             <el-button :disabled="!selectedAllRecords.some((record) => record.workOrderNo)" @click="cancelSelectedRecordBindings">批量取消关联</el-button>
@@ -1159,7 +1169,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap finished-records-table-wrap--all">
           <paged-table :key="finishedRecordsUpdatedAt?.getTime()" v-loading="finishedRecordsLoading" :data="finishedTestRecords" :total="finishedRecordsTotal" :page="finishedRecordsPage" :page-size="finishedRecordsPageSize" row-key="id" size="small" empty-text="暂无设备检测记录" @page-change="loadFinishedTestPage" @selection-change="selectedAllRecords = $event">
-            <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => row.eventType === 'ZHONGBO_TEST_REPORT' || ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(row.fqcProjectionStatus || '')" />
+            <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="(row: EquipmentTelemetryRecord) => row.eventType === 'ZHONGBO_TEST_REPORT' || canManageProbeRecord(row)" />
             <el-table-column label="检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="130" />
             <el-table-column label="生产指令" min-width="145"><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
@@ -1169,7 +1179,7 @@ onBeforeUnmount(() => {
             <el-table-column label="检测总数" min-width="105" align="right"><template #default="scope">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.panelsTested ?? '—') : (scope.row.machiningCount ?? '—') }}</template></el-table-column>
             <el-table-column label="好板" min-width="90" align="right"><template #default="scope"><span class="good-text">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.panelsTested != null && scope.row.zhongboTestReport?.errorTested != null ? Math.max(0, scope.row.zhongboTestReport.panelsTested - scope.row.zhongboTestReport.errorTested) : '—') : (scope.row.goodBoardCount ?? '—') }}</span></template></el-table-column>
             <el-table-column label="坏板" min-width="90" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.eventType === 'ZHONGBO_TEST_REPORT' ? (scope.row.zhongboTestReport?.errorTested ?? '—') : (scope.row.badBoardCount ?? '—') }}</span></template></el-table-column>
-            <el-table-column label="操作" width="115" fixed="right"><template #default="scope"><el-button v-if="canBindFlyingProbe && (scope.row.eventType === 'ZHONGBO_TEST_REPORT' || ['RETRYABLE', 'PROCESSED', 'UNBOUND'].includes(scope.row.fqcProjectionStatus))" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button></template></el-table-column>
+            <el-table-column label="操作" width="115" fixed="right"><template #default="scope"><el-button v-if="canBindFlyingProbe && (scope.row.eventType === 'ZHONGBO_TEST_REPORT' || canManageProbeRecord(scope.row))" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更正关联' : '手动绑定' }}</el-button></template></el-table-column>
           </paged-table>
         </div>
       </template>

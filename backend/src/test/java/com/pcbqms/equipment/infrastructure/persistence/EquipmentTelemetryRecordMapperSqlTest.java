@@ -45,7 +45,14 @@ class EquipmentTelemetryRecordMapperSqlTest {
         String sql = historySql("FINISHED_TEST");
 
         assertThat(sql).contains("event_type IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT')")
+            .contains("ORDER BY device_time DESC, id DESC")
             .doesNotContain("event_type = ?");
+    }
+
+    @Test
+    void combinedFinishedTestHistoryCanPageFromOldestDetectionTime() {
+        String sql = historySql("FINISHED_TEST", null, null, false, null, true, null, true);
+        assertThat(sql).contains("ORDER BY device_time ASC, id ASC", "LIMIT ? OFFSET ?");
     }
 
     @Test
@@ -69,7 +76,7 @@ class EquipmentTelemetryRecordMapperSqlTest {
     @Test
     void gyHistoryAndRecentListsExcludePreCutoffFinishedTestRecordsBeforePaging() {
         String condition = "tenant_code <> 'customer-b' OR event_type NOT IN ('FLYING_PROBE_TEST_COUNTERS', 'ZHONGBO_TEST_REPORT') "
-            + "OR device_time >= '2026-10-16'";
+            + "OR device_time >= '2025-10-15'";
         assertThat(historySql("FINISHED_TEST")).contains(condition);
         assertThat(historySql("ZHONGBO_TEST_REPORT")).contains(condition);
 
@@ -117,6 +124,11 @@ class EquipmentTelemetryRecordMapperSqlTest {
 
     private String historySql(String eventType, String workOrderNo, String internalProductNo,
                               boolean withDates, String customerOrderNo, boolean includeTotal, String keyword) {
+        return historySql(eventType, workOrderNo, internalProductNo, withDates, customerOrderNo, includeTotal, keyword, false);
+    }
+
+    private String historySql(String eventType, String workOrderNo, String internalProductNo,
+                              boolean withDates, String customerOrderNo, boolean includeTotal, String keyword, boolean ascending) {
         Configuration configuration = new Configuration();
         configuration.addMapper(EquipmentTelemetryRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
@@ -135,6 +147,7 @@ class EquipmentTelemetryRecordMapperSqlTest {
         parameters.put("offset", 20L);
         parameters.put("includeTotal", includeTotal);
         parameters.put("keyword", keyword);
+        parameters.put("ascending", ascending);
         return configuration.getMappedStatement(EquipmentTelemetryRecordMapper.class.getName() + ".selectHistory")
             .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
     }

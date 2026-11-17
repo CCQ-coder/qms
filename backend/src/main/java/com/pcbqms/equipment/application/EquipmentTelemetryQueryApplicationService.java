@@ -86,7 +86,15 @@ public class EquipmentTelemetryQueryApplicationService {
         if (fromTime != null && toTime != null && fromTime.isAfter(toTime)) {
             throw new IllegalArgumentException("遥测历史开始时间不能晚于结束时间");
         }
-        boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType);
+        boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType) || "FINISHED_TEST".equals(eventType);
+        if (StringUtils.hasText(query.sortOrder()) && !"asc".equalsIgnoreCase(query.sortOrder())
+            && !"desc".equalsIgnoreCase(query.sortOrder())) {
+            throw new IllegalArgumentException("检测时间排序方式无效");
+        }
+        boolean ascending = "FINISHED_TEST".equals(eventType) && "asc".equalsIgnoreCase(query.sortOrder());
+        if (ascending && query.page() == null) {
+            throw new IllegalArgumentException("升序查询需要指定页码");
+        }
         Cursor cursor = query.page() == null ? decodeCursor(query.cursor()) : null;
         int pageSize = query.resolvedLimit();
         // shortcut: offset pages may shift as telemetry arrives; add a snapshot boundary if stable exports are needed.
@@ -109,7 +117,8 @@ public class EquipmentTelemetryQueryApplicationService {
             Boolean.TRUE.equals(query.unmatchedOnly()) && "ZHONGBO_TEST_REPORT".equals(eventType),
             offset,
             includeTotal,
-            StringUtils.hasText(query.keyword()) ? query.keyword().trim() : null
+            StringUtils.hasText(query.keyword()) ? query.keyword().trim() : null,
+            ascending
         );
         boolean hasMore = offset == null && rows.size() > pageSize;
         List<EquipmentTelemetryRecord> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
