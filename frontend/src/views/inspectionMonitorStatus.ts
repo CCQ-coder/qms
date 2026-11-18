@@ -21,7 +21,7 @@ export function sortInspectionMonitorDevices<T extends { status: string }>(
   })
 }
 
-const ACTIVE_WINDOW_MS = 7 * 60 * 1000
+const ACTIVE_WINDOW_MS = 40 * 60 * 1000
 const DEFAULT_OFFLINE_AFTER_SECONDS = 300
 
 export function deriveInspectionMonitorStatus(

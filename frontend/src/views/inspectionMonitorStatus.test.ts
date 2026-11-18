@@ -28,10 +28,10 @@ test('fresh computer heartbeat without probe data is 空闲', () => {
   assert.equal(deriveInspectionMonitorStatus('2026-10-29T07:59:00.000Z', undefined, NOW_MS, 300), '空闲')
 })
 
-test('fresh computer heartbeat with probe data inside seven minutes is 测试中', () => {
+test('fresh computer heartbeat remains 测试中 during a 31-minute gap between boards', () => {
   assert.equal(deriveInspectionMonitorStatus(
     '2026-10-29T07:59:00.000Z',
-    '2026-10-29T07:54:00.000Z',
+    '2026-10-29T07:29:00.000Z',
     NOW_MS,
     300
   ), '测试中')
@@ -41,19 +41,19 @@ test('heartbeat exactly at the offline threshold remains online', () => {
   assert.equal(deriveInspectionMonitorStatus('2026-10-29T07:55:00.000Z', undefined, NOW_MS, 300), '空闲')
 })
 
-test('online computer with probe data exactly seven minutes old is 测试中', () => {
+test('online computer with probe data exactly 40 minutes old is 测试中', () => {
   assert.equal(deriveInspectionMonitorStatus(
     '2026-10-29T07:59:00.000Z',
-    '2026-10-29T07:53:00.000Z',
+    '2026-10-29T07:20:00.000Z',
     NOW_MS,
     300
   ), '测试中')
 })
 
-test('online computer with probe data one millisecond older than seven minutes is 空闲', () => {
+test('online computer with probe data one millisecond older than 40 minutes is 空闲', () => {
   assert.equal(deriveInspectionMonitorStatus(
     '2026-10-29T07:59:00.000Z',
-    '2026-10-29T07:52:59.999Z',
+    '2026-10-29T07:19:59.999Z',
     NOW_MS,
     300
   ), '空闲')
