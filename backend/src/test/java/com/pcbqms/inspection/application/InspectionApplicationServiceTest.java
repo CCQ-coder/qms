@@ -116,6 +116,7 @@ class InspectionApplicationServiceTest {
         WorkOrder workOrder = new WorkOrder();
         workOrder.setId("work-order-1");
         workOrder.setWorkOrderNo("WO-260909-001");
+        workOrder.setCustomerOrderNo("SO-260909-001");
         workOrder.setInternalProductNo("02PT41351A01");
         workOrder.setProductCode("PCB-4L-001");
         ProductionBatch batch = new ProductionBatch();
@@ -135,6 +136,7 @@ class InspectionApplicationServiceTest {
         assertThat(results).singleElement().satisfies(item -> {
             assertThat(item.equipmentAssetNo()).isEqualTo("FQC-01");
             assertThat(item.workOrderNo()).isEqualTo("WO-260909-001");
+            assertThat(item.customerOrderNo()).isEqualTo("SO-260909-001");
             assertThat(item.batchNo()).isEqualTo("BATCH-260909-A01");
             assertThat(item.inspectionQuantity()).isEqualTo(120);
             assertThat(item.goodQuantity()).isEqualTo(117);

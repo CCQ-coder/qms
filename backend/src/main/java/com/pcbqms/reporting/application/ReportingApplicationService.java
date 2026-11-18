@@ -6,6 +6,7 @@ import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.inspection.domain.InspectionRecord;
 import com.pcbqms.inspection.domain.InspectionTask;
 import com.pcbqms.inspection.domain.Nonconformity;
+import com.pcbqms.inspection.application.StandardBoardService;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionRecordMapper;
 import com.pcbqms.inspection.infrastructure.persistence.InspectionTaskMapper;
 import com.pcbqms.inspection.infrastructure.persistence.NonconformityMapper;
@@ -25,6 +26,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.io.ByteArrayOutputStream;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ public class ReportingApplicationService {
     private final ProductionBatchMapper productionBatchMapper;
     private final WorkOrderMapper workOrderMapper;
     private final InspectionAccessScopeService inspectionAccessScopeService;
+    private final StandardBoardService standardBoardService;
 
     public QualitySummaryResponse qualitySummary() {
         return qualitySummary(null, null);
@@ -71,6 +74,7 @@ public class ReportingApplicationService {
         var access = inspectionAccessScopeService.currentAccess();
         List<InspectionRecord> records = inspectionRecordMapper.selectList(Wrappers.lambdaQuery(InspectionRecord.class)
             .eq(InspectionRecord::getTenantCode, tenantCode));
+        Set<String> excludedRecordIds = standardBoardService.inspectionRecordIds();
         Map<String, InspectionTask> taskById = new LinkedHashMap<>();
         for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)
             .eq(InspectionTask::getTenantCode, tenantCode))) {
@@ -86,6 +90,7 @@ public class ReportingApplicationService {
         long passCount = 0;
         long totalCount = 0;
         for (InspectionRecord record : records) {
+            if (record.getId() != null && excludedRecordIds.contains(record.getId())) continue;
             if (!isInDateRange(record, from, to)) {
                 continue;
             }

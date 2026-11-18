@@ -33,6 +33,7 @@ class ReportingApplicationServiceTest {
     @Mock private ProductionBatchMapper productionBatchMapper;
     @Mock private WorkOrderMapper workOrderMapper;
     @Mock private InspectionAccessScopeService inspectionAccessScopeService;
+    @Mock private com.pcbqms.inspection.application.StandardBoardService standardBoardService;
 
     @AfterEach
     void clearTenantContext() {
@@ -58,7 +59,7 @@ class ReportingApplicationServiceTest {
 
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         byte[] content = service.exportQualitySummaryExcel();
 
@@ -80,13 +81,16 @@ class ReportingApplicationServiceTest {
         InspectionTask maskTask = task("task-mask", "SOLDER_MASK", "阻焊");
         InspectionRecord passRecord = record("task-fqc", "PASS");
         InspectionRecord failRecord = record("task-mask", "FAIL");
+        InspectionRecord standardRecord = record("task-fqc", "FAIL");
+        standardRecord.setId("standard-record");
         when(inspectionTaskMapper.selectList(any())).thenReturn(List.of(fqcTask, maskTask));
-        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(passRecord, failRecord));
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of(passRecord, failRecord, standardRecord));
+        when(standardBoardService.inspectionRecordIds()).thenReturn(Set.of("standard-record"));
         when(inspectionAccessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("tester.a", "INSPECTOR", false, Set.of("FQC")));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary();
 
@@ -113,7 +117,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary();
 
@@ -138,7 +142,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1));
 
@@ -159,7 +163,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary(null, null, "fqc");
 
@@ -190,7 +194,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary(null, null, "FQC");
 
@@ -228,7 +232,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1), null, true);
 
@@ -254,7 +258,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("tester.a", "INSPECTOR", false, Set.of("FQC")));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary(null, null, null, true);
 
@@ -278,7 +282,7 @@ class ReportingApplicationServiceTest {
             new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
         ReportingApplicationService service = new ReportingApplicationService(
             inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
-            inspectionAccessScopeService);
+            inspectionAccessScopeService, standardBoardService);
 
         var summary = service.qualitySummary(null, null, null, true);
 

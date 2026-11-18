@@ -1,7 +1,9 @@
 """Smoke test the Windows JAR's built-in web frontend without a database."""
 
 import base64
+import gzip
 import os
+import re
 import socket
 import subprocess
 import tempfile
@@ -9,7 +11,7 @@ import time
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +69,15 @@ class WindowsWebTest(unittest.TestCase):
                     self.fail("API exited before web check:\n" + output.read().decode(errors="replace")[-4000:])
                 with urlopen(base_url + "/", timeout=5) as response:
                     self.assertEqual(response.status, 200)
-                    self.assertIn('<div id="app"></div>', response.read().decode())
+                    html = response.read().decode()
+                    self.assertIn('<div id="app"></div>', html)
+                    self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+                asset = re.search(r'src="(/assets/[^"]+\.js)"', html)
+                self.assertIsNotNone(asset)
+                with urlopen(Request(base_url + asset.group(1), headers={"Accept-Encoding": "gzip"}), timeout=5) as response:
+                    self.assertIn("immutable", response.headers.get("Cache-Control", ""))
+                    self.assertEqual(response.headers.get("Content-Encoding"), "gzip")
+                    self.assertGreater(len(gzip.decompress(response.read())), 1000)
                 with urlopen(base_url + "/runtime-config.js", timeout=5) as response:
                     self.assertEqual(response.status, 200)
             finally:

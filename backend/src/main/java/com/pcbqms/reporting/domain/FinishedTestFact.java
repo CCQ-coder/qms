@@ -5,6 +5,7 @@ import lombok.Data;
 
 @Data
 public class FinishedTestFact {
+    private String inspectionRecordId;
     private LocalDateTime inspectedAt;
     private String workOrderNo;
     private String materialNo;

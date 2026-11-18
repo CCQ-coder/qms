@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,26 @@ class EquipmentTelemetryRecordMapperSqlTest {
         assertThat(firstPageSql).contains("COUNT(*) OVER()", "LIMIT ? OFFSET ?");
         assertThat(firstPageSql.indexOf("material_no LIKE")).isLessThan(firstPageSql.indexOf("ORDER BY device_time"));
         assertThat(laterPageSql).contains("LIMIT ? OFFSET ?").doesNotContain("COUNT(*) OVER()");
+    }
+
+    @Test
+    void latestFlyingProbeSnapshotsSelectOneRecordPerEquipmentWithinRetention() {
+        Configuration configuration = new Configuration();
+        configuration.addMapper(EquipmentTelemetryRecordMapper.class);
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("tenantCode", "customer-b");
+        parameters.put("equipmentIds", List.of("equipment-1", "equipment-2"));
+        parameters.put("dataStart", LocalDateTime.of(2026, 10, 20, 0, 0));
+        parameters.put("fromTime", LocalDateTime.of(2026, 11, 1, 0, 0));
+        parameters.put("toTime", LocalDateTime.of(2026, 11, 10, 0, 0));
+
+        String sql = configuration.getMappedStatement(EquipmentTelemetryRecordMapper.class.getName()
+                + ".selectLatestFlyingProbeByEquipment")
+            .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
+
+        assertThat(sql).contains("PARTITION BY equipment_id ORDER BY device_time DESC, id DESC",
+            "event_type = 'FLYING_PROBE_TEST_COUNTERS'", "equipment_id IN ( ? , ? )",
+            "device_time >= ?", "received_at >= ?", "received_at <= ?", "WHERE latest.row_no = 1");
     }
 
     private String historySql(String eventType) {

@@ -1,7 +1,7 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { accessToken } from '@/auth/oidc'
 import { localSession } from '@/auth/local-session'
-import { firstVisibleMenuPath, loadMenuAccess } from '@/navigation/menu'
+import { firstVisibleMenuPath, isMenuPathVisible, loadMenuAccess } from '@/navigation/menu'
 import { clearChunkLoadRecovery, recoverFromChunkLoadError } from './chunkLoadRecovery'
 
 const router = createRouter({
@@ -51,13 +51,17 @@ router.beforeEach(async (to) => {
   if (!accessToken() && !localSession()) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
+  const access = await loadMenuAccess(Boolean(to.meta.platformOnly))
   if (to.meta.platformOnly) {
     // Local accounts can be switched without reloading the module graph. Always reload
     // access here so a prior platform administrator's cached menu cannot grant a stale route.
-    const access = await loadMenuAccess(true)
     if (access?.roleCode !== 'PLATFORM_ADMIN') {
       return { path: firstVisibleMenuPath(access) ?? '/dashboard' }
     }
+  }
+  if (access && isMenuPathVisible(to.path, access) === false) {
+    const first = firstVisibleMenuPath(access)
+    if (first && first !== to.path) return { path: first }
   }
   return true
 })

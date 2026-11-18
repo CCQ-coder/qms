@@ -47,6 +47,7 @@ function changePage(page: number) {
         :page-size="selectedSize"
         :page-sizes="[10, 20, 50, 100]"
         :total="total"
+        :pager-count="11"
         background
         layout="sizes, prev, pager, next, jumper"
         @size-change="changePageSize"

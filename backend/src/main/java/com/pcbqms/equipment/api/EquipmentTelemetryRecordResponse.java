@@ -55,7 +55,8 @@ public record EquipmentTelemetryRecordResponse(
         String screenText,
         Integer goodBoardCount,
         Integer badBoardCount,
-        EquipmentTelemetryProjectionStatus projection
+        EquipmentTelemetryProjectionStatus projection,
+        String customerOrderNo
     ) {
         return new EquipmentTelemetryRecordResponse(
             record.getId(), record.getEquipmentId(), equipment.getAssetNo(), equipment.getName(), record.getSourceUsername(),
@@ -64,7 +65,7 @@ public record EquipmentTelemetryRecordResponse(
             record.getAlarmMessage(), record.getMachiningCount()
             , legacyState, legacyId, legacyMachineType, runtimeSeconds, routeLength, screenText,
             record.getSourceRecordNo(), record.getRawPayload(),
-            record.getMaterialNo(), record.getWorkOrderNo(), record.getCustomerOrderNo(), record.getBatchNo(), goodBoardCount, badBoardCount,
+            record.getMaterialNo(), record.getWorkOrderNo(), customerOrderNo, record.getBatchNo(), goodBoardCount, badBoardCount,
             projection == null ? null : projection.getStatus(),
             projection == null ? null : projection.getReason(),
             projection == null ? null : projection.getInspectionRecordId(),

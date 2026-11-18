@@ -20,12 +20,14 @@ class FlyingProbeProjectionMapperSqlTest {
         parameters.put("internalProductNo", "P2L018680B");
         parameters.put("pageSize", 50);
         parameters.put("offset", 0L);
+        parameters.put("excludedMaterialNos", java.util.List.of("FZV1", "STD-2"));
 
         for (String statement : new String[] { "selectRetryableGroups", "countRetryableGroups" }) {
             String sql = configuration.getMappedStatement(FlyingProbeProjectionMapper.class.getName() + "." + statement)
                 .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
             assertThat(sql).contains("material_no LIKE CONCAT('%', ?, '%')");
             assertThat(sql).contains("COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', ?, '%')");
+            assertThat(sql).contains("UPPER(TRIM(material_no)) NOT IN ( ? , ? )");
         }
     }
 }

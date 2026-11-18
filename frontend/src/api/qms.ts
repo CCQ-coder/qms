@@ -3,7 +3,7 @@ import type {
   ApiResponse, Capa, DashboardSummary, Equipment, EquipmentAlert, EquipmentMaintenance, EquipmentMaintenanceItem, EquipmentMaintenanceTemplateItem, FinishedTestInspectionRecord, InspectionTask, ProcessInspectionRecord,
   InspectionRule, InspectionTemplate, ManualNonconformityInput, Nonconformity, ProcessMaster, ProductMaster, QualitySummary, FinishedTestAnalysis,
   ScanLookup, Traceability, UserAccess, PasswordLogin, LoginTenant, TenantManagement, WorkOrder, WorkOrderPage, WorkOrderQuery, AdministrationAuditLog, AdministrationAuditLogPage, AdministrationCatalogType, AdministrationItem, EquipmentType, EquipmentQuery, EquipmentPage, EquipmentGatewayMapping, EquipmentGatewayUnmatchedMessage, EquipmentRuntimeStatus, EquipmentTelemetryRecord, EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, FlyingProbeRetryableProjectionPage
-  , MenuAccess, GatewayHostStatus, DailyMaterialBadBoards
+  , MenuAccess, GatewayHostStatus, DailyMaterialBadBoards, FinishedTestDeviceSummary, FinishedTestSettlement, FinishedTestMonthlyAnalytics
 } from '@/types/qms'
 
 export const qmsApi = {
@@ -305,6 +305,26 @@ export const qmsApi = {
 
   async listEquipmentTelemetryHistory(query: EquipmentTelemetryHistoryQuery = {}) {
     const { data } = await http.get<ApiResponse<EquipmentTelemetryHistoryPage>>('/api/v1/equipment/telemetry/history', { params: query })
+    return data.data
+  },
+
+  async listLatestFlyingProbeSnapshots() {
+    const { data } = await http.get<ApiResponse<EquipmentTelemetryRecord[]>>('/api/v1/equipment/telemetry/flying-probe/latest')
+    return data.data
+  },
+
+  async listFinishedTestDeviceSummary() {
+    const { data } = await http.get<ApiResponse<FinishedTestDeviceSummary[]>>('/api/v1/equipment/telemetry/finished-test-summary/by-device')
+    return data.data
+  },
+
+  async listFinishedTestSettlements() {
+    const { data } = await http.get<ApiResponse<FinishedTestSettlement[]>>('/api/v1/equipment/telemetry/finished-test-settlements')
+    return data.data
+  },
+
+  async getFinishedTestMonthlyAnalytics() {
+    const { data } = await http.get<ApiResponse<FinishedTestMonthlyAnalytics>>('/api/v1/equipment/telemetry/finished-test-monthly-analytics')
     return data.data
   },
 

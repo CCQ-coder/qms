@@ -3,6 +3,7 @@ package com.pcbqms.equipment.api;
 import com.pcbqms.common.api.ApiResponse;
 import com.pcbqms.equipment.application.EquipmentTelemetryApplicationService;
 import com.pcbqms.equipment.application.EquipmentTelemetryQueryApplicationService;
+import com.pcbqms.equipment.application.FinishedTestDeviceReportService;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
@@ -24,10 +25,31 @@ public class EquipmentTelemetryController {
     private final GatewayIntegrationAuthentication gatewayIntegrationAuthentication;
     private final EquipmentTelemetryApplicationService telemetryApplicationService;
     private final EquipmentTelemetryQueryApplicationService telemetryQueryApplicationService;
+    private final FinishedTestDeviceReportService finishedTestDeviceReportService;
+
+    @GetMapping("/finished-test-summary/by-device")
+    public ApiResponse<List<FinishedTestDeviceReportService.DeviceSummary>> finishedTestSummaryByDevice() {
+        return ApiResponse.of(finishedTestDeviceReportService.listDeviceSummary());
+    }
+
+    @GetMapping("/finished-test-settlements")
+    public ApiResponse<List<FinishedTestDeviceReportService.Settlement>> finishedTestSettlements() {
+        return ApiResponse.of(finishedTestDeviceReportService.listSettlements());
+    }
+
+    @GetMapping("/finished-test-monthly-analytics")
+    public ApiResponse<FinishedTestDeviceReportService.MonthlyAnalytics> finishedTestMonthlyAnalytics() {
+        return ApiResponse.of(finishedTestDeviceReportService.monthlyAnalytics());
+    }
 
     @GetMapping
     public ApiResponse<List<EquipmentTelemetryRecordResponse>> listRecent(@RequestParam(required = false) Integer limit) {
         return ApiResponse.of(telemetryQueryApplicationService.listRecent(limit));
+    }
+
+    @GetMapping("/flying-probe/latest")
+    public ApiResponse<List<EquipmentTelemetryRecordResponse>> latestFlyingProbeSnapshots() {
+        return ApiResponse.of(telemetryQueryApplicationService.latestFlyingProbeSnapshots());
     }
 
     @GetMapping("/history")

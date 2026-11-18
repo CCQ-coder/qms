@@ -361,6 +361,7 @@ public class InspectionApplicationService {
         return new FinishedTestInspectionRecordResponse(
             record.getId(), task == null ? "已删除任务" : task.getTaskNo(), record.getInspectedAt(),
             record.getEquipmentAssetNo(), workOrder == null ? "已删除工单" : workOrder.getWorkOrderNo(),
+            workOrder == null ? null : workOrder.getCustomerOrderNo(),
             batch == null ? null : batch.getBatchNo(), workOrder == null ? null : workOrder.getInternalProductNo(),
             workOrder == null ? null : firstNonBlank(workOrder.getCustomerPartNo(), workOrder.getProductCode()),
             inspectionQuantity, Math.max(inspectionQuantity - defectiveQuantity, 0), defectiveQuantity,

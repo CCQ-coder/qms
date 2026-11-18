@@ -66,7 +66,7 @@ function renderChart() {
   chart = init(chartRef.value)
   const dates = [...analysis.value.byDate].reverse()
   chart.setOption({
-    grid: { top: 38, right: 24, bottom: 28, left: 45 },
+    grid: { top: 38, right: 24, bottom: 28, left: 45, containLabel: true },
     tooltip: { trigger: 'axis' },
     legend: { data: ['板数合格率', '坏板数'] },
     xAxis: { type: 'category', data: dates.map(item => item.key) },

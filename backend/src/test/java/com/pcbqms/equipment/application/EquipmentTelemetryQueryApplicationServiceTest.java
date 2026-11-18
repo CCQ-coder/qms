@@ -20,6 +20,8 @@ import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
+import com.pcbqms.workorder.domain.WorkOrder;
+import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -36,6 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class EquipmentTelemetryQueryApplicationServiceTest {
     @Mock private EquipmentTelemetryRecordMapper telemetryRecordMapper;
     @Mock private EquipmentMapper equipmentMapper;
+    @Mock private WorkOrderMapper workOrderMapper;
     @Mock private InspectionAccessScopeService inspectionAccessScopeService;
 
     @AfterEach
@@ -68,7 +71,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         when(equipmentMapper.selectById("equipment-1")).thenReturn(equipment);
 
         var result = new EquipmentTelemetryQueryApplicationService(
-            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
         ).listRecent(999);
 
         assertThat(result).singleElement().satisfies(item -> {
@@ -102,7 +105,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         when(equipmentMapper.selectById("equipment-1")).thenReturn(equipment);
 
         var item = new EquipmentTelemetryQueryApplicationService(
-            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
         ).listRecent(10).getFirst();
         var json = new ObjectMapper().findAndRegisterModules().valueToTree(item);
 
@@ -125,7 +128,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
 
         new EquipmentTelemetryQueryApplicationService(
-            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20,
             "FLYING_PROBE_TEST_COUNTERS", " 26100985 ", " SO-456 ", " P2L018680B ", null, null));
 
@@ -154,7 +157,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             .thenReturn(List.of(record));
 
         var service = new EquipmentTelemetryQueryApplicationService(telemetryRecordMapper, equipmentMapper,
-            inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules());
+            workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules());
         var result = service.pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 10,
             "FLYING_PROBE_TEST_COUNTERS", null, null, 3, true));
 
@@ -193,7 +196,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             .thenReturn(List.of());
 
         var page = new EquipmentTelemetryQueryApplicationService(
-            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 1, "FLYING_PROBE_TEST_COUNTERS", null, null));
 
         String cursor = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
@@ -211,7 +214,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment));
 
         new EquipmentTelemetryQueryApplicationService(
-            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper()
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper()
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null,
             LocalDateTime.of(2024, 1, 1, 0, 0), null, null, 20, "FLYING_PROBE_TEST_COUNTERS", null, null));
 
@@ -230,7 +233,11 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         record.setId("telemetry-1");
         record.setEquipmentId("equipment-1");
         record.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        record.setWorkOrderNo("WO-123");
         record.setReceivedAt(LocalDateTime.of(2026, 10, 22, 9, 30));
+        WorkOrder workOrder = new WorkOrder();
+        workOrder.setWorkOrderNo("WO-123");
+        workOrder.setCustomerOrderNo("SO-456");
         EquipmentTelemetryProjectionStatus projection = new EquipmentTelemetryProjectionStatus();
         projection.setTelemetryId("telemetry-1");
         projection.setStatus("RETRYABLE");
@@ -243,15 +250,48 @@ class EquipmentTelemetryQueryApplicationServiceTest {
             eq("FLYING_PROBE_TEST_COUNTERS"), any(), any(), any(), any(), anyBoolean())).thenReturn(List.of(record));
         when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("telemetry-1")))
             .thenReturn(List.of(projection));
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(workOrder));
 
         var page = new EquipmentTelemetryQueryApplicationService(
-            telemetryRecordMapper, equipmentMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 20, "FLYING_PROBE_TEST_COUNTERS", null, null));
 
         assertThat(page.items()).singleElement().satisfies(item -> {
             assertThat(item.fqcProjectionStatus()).isEqualTo("RETRYABLE");
             assertThat(item.fqcProjectionReason()).contains("匹配生产指令数量为 0");
             assertThat(item.fqcInspectionRecordId()).isNull();
+            assertThat(item.customerOrderNo()).isEqualTo("SO-456");
         });
+    }
+
+    @Test
+    void latestFlyingProbeSnapshotsOnlyIncludeAccessibleFinishedTestEquipment() {
+        TenantContext.set("customer-b", "inspector");
+        Equipment visible = new Equipment();
+        visible.setId("visible");
+        visible.setTenantCode("customer-b");
+        visible.setAssetNo("WTD-1");
+        visible.setEquipmentType("成品测试设备");
+        visible.setProcessCode("FQC");
+        Equipment hidden = new Equipment();
+        hidden.setId("hidden");
+        hidden.setEquipmentType("成品测试设备");
+        hidden.setProcessCode("OTHER");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("inspector", "INSPECTOR", false, Set.of("FQC")));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(visible, hidden));
+        EquipmentTelemetryRecord record = new EquipmentTelemetryRecord();
+        record.setId("probe-1");
+        record.setEquipmentId("visible");
+        record.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        when(telemetryRecordMapper.selectLatestFlyingProbeByEquipment(eq("customer-b"), eq(List.of("visible")), any(), any(), any()))
+            .thenReturn(List.of(record));
+        when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-1"))).thenReturn(List.of());
+
+        var result = new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+        ).latestFlyingProbeSnapshots();
+
+        assertThat(result).singleElement().satisfies(item -> assertThat(item.equipmentCode()).isEqualTo("WTD-1"));
     }
 }

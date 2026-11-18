@@ -13,6 +13,7 @@ public record FinishedTestInspectionRecordResponse(
     LocalDateTime inspectedAt,
     String equipmentAssetNo,
     String workOrderNo,
+    String customerOrderNo,
     String batchNo,
     String internalProductNo,
     String productCode,

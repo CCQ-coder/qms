@@ -1,22 +1,21 @@
 <script setup lang="ts">
 import { isAxiosError } from 'axios'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadUserFile } from 'element-plus'
 import { qmsApi } from '@/api/qms'
-import FinishedTestAnalysis from '@/components/FinishedTestAnalysis.vue'
 import { loadMenuAccess, menuAccess } from '@/navigation/menu'
-import { equipmentStatusTagType, formatDate, formatDateTime, taskTypeText } from '@/utils/display-text'
+import { equipmentStatusTagType, formatDate, formatDateTime } from '@/utils/display-text'
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
 import { flyingProbePassRate, useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
+const FinishedTestDeviceSummary = defineAsyncComponent(() => import('@/components/FinishedTestDeviceSummary.vue'))
+
 const networkOnline = ref(navigator.onLine)
 const backendReachable = ref(true)
-const tasks = ref<InspectionTask[]>([])
-const loading = ref(false)
 const recordDialog = ref(false)
 const selectedTask = ref<InspectionTask>()
 const selectedTemplate = ref<InspectionTemplate>()
@@ -31,7 +30,7 @@ const offlineDrafts = ref<OfflineInspectionDraft[]>([])
 const syncingOfflineDrafts = ref(false)
 const route = useRoute()
 const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
-const activePanel = ref<'monitor' | 'records' | 'tasks' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
+const activePanel = ref<'monitor' | 'records' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
 const equipment = ref<Equipment[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
@@ -88,15 +87,14 @@ const recordPanelUpdatedAt = computed(() => recordSource.value === 'probe' ? fly
   : recordSource.value === 'retryable' ? retryableUpdatedAt.value : finishedRecordsUpdatedAt.value)
 const recordPanelLoading = computed(() => recordSource.value === 'probe' ? flyingProbeLoading.value
   : recordSource.value === 'retryable' ? retryableLoading.value : finishedRecordsLoading.value)
-watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel]) => {
+watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel], [wasSummaryRoute]) => {
   activePanel.value = summaryRoute ? 'summary' : panel === 'records' ? 'records' : 'monitor'
+  if (wasSummaryRoute && !summaryRoute) void refreshWorkbench()
   if (activePanel.value === 'records' && !flyingProbeLoaded.value) void refreshFlyingProbeRecords()
 })
 const qualitySummary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
 const selectedDeviceId = ref('')
-const taskListDeviceAssetNo = ref('')
 const recordEquipmentAssetNo = ref('')
-const taskKeyword = ref('')
 const recordKeyword = ref('')
 const updatedAt = ref<Date>()
 const finishedTestEquipmentType = '成品测试设备'
@@ -110,9 +108,6 @@ const recordRules: FormRules = {
   verdict: [{ required: true, message: '请选择结论', trigger: 'change' }],
   defectiveQuantity: [{ required: true, type: 'number', min: 0, message: '请输入不良数量', trigger: 'change' }]
 }
-
-const fqcTasks = computed(() => tasks.value.filter((task) =>
-  task.taskType?.toUpperCase() === 'FINISHED' || task.processCode?.toUpperCase() === 'FQC'))
 
 const monitorDevices = computed<MonitorDevice[]>(() => {
   const hostByEquipmentId = new Map<string, GatewayHostStatus>()
@@ -149,24 +144,18 @@ const selectedProbeRecord = computed(() => selectedDevice.value?.probe)
 const selectedAssociation = computed(() => {
   const probe = selectedProbeRecord.value
   return probe?.fqcProjectionStatus === 'PROCESSED'
-    ? `${probe.workOrderNo || '未关联'} / ${probe.batchNo || '未关联'}`
-    : '未关联 / 未关联'
+    ? probe.workOrderNo || '未关联'
+    : '未关联'
 })
 const fqcTotal = computed(() => qualitySummary.value.totalRecords)
 const fqcPass = computed(() => qualitySummary.value.passRecords)
 const fqcFail = computed(() => qualitySummary.value.failRecords)
 const fqcPassRate = computed(() => qualitySummary.value.firstPassRate)
-const filteredTasks = computed(() => {
-  const keyword = taskKeyword.value.trim().toLowerCase()
-  if (!keyword) return fqcTasks.value
-  return fqcTasks.value.filter((task) => [task.taskNo, task.workOrderNo, task.processName, task.assigneeName]
-    .some((value) => String(value ?? '').toLowerCase().includes(keyword)))
-})
 const filteredFinishedTestRecords = computed(() => {
   const keyword = recordKeyword.value.trim().toLowerCase()
   if (!keyword) return finishedTestRecords.value
   return finishedTestRecords.value.filter((record) => [
-    record.equipmentAssetNo, record.workOrderNo, record.internalProductNo,
+    record.equipmentAssetNo, record.workOrderNo, record.customerOrderNo, record.internalProductNo,
     record.productCode, record.taskNo, record.inspectedBy, record.defectSummary
   ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
 })
@@ -299,39 +288,6 @@ function handleOffline() {
   backendReachable.value = false
 }
 
-async function loadTasks() {
-  loading.value = true
-  try {
-    tasks.value = await qmsApi.listInspectionTasks('PENDING')
-    backendReachable.value = true
-  } catch {
-    backendReachable.value = false
-    ElMessage.error('待检任务读取失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadProbeSnapshots(devices: Equipment[]) {
-  const snapshots: Record<string, EquipmentTelemetryRecord> = {}
-  const failedIds = new Set<string>()
-  for (let index = 0; index < devices.length; index += 4) {
-    const batch = devices.slice(index, index + 4)
-    const results = await Promise.allSettled(batch.map((device) => qmsApi.listEquipmentTelemetryHistory({
-      equipmentId: device.id, eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1
-    })))
-    results.forEach((result, offset) => {
-      const equipmentId = batch[offset].id
-      if (result.status === 'rejected') failedIds.add(equipmentId)
-      else if (result.value.items[0]) snapshots[equipmentId] = result.value.items[0]
-    })
-  }
-  probeSnapshots.value = snapshots
-  probeFailedEquipmentIds.value = failedIds
-  probeSnapshotsError.value = failedIds.size ? `${failedIds.size} 台设备的飞针计数快照读取失败，请刷新重试。` : ''
-  return failedIds.size === 0
-}
-
 async function loadCompletedFinishedRecords(page = 1, pageSize = finishedRecordPageSize.value, includeTotal = true) {
   if (finishedRecordsLoading.value) return false
   finishedRecordsLoading.value = true
@@ -380,7 +336,7 @@ let hostStatusPollTimer: number | undefined
 let componentMounted = false
 
 async function pollHostStatuses() {
-  if (monitoringLoading.value || hostStatusPollInFlight) return
+  if (activePanel.value === 'summary' || monitoringLoading.value || hostStatusPollInFlight) return
   hostStatusPollInFlight = true
   const version = monitoringVersion
   try {
@@ -401,13 +357,15 @@ async function loadMonitoringData() {
   monitoringLoading.value = true
   monitoringVersion++
   try {
-    const [summaryResult, equipmentResult, hostStatusResult, recordsResult, offlineThresholdResult] = await Promise.allSettled([
+    const [summaryResult, equipmentResult, hostStatusResult, snapshotsResult, offlineThresholdResult] = await Promise.allSettled([
       qmsApi.getQualitySummary('2026-10-20', undefined, undefined, true),
       qmsApi.listEquipment(),
       qmsApi.listGatewayHostStatuses(),
-      loadCompletedFinishedRecords(),
+      qmsApi.listLatestFlyingProbeSnapshots(),
       qmsApi.getTenantParameter('equipment.monitor.offline-after-seconds')
     ])
+    backendReachable.value = [summaryResult, equipmentResult, hostStatusResult, snapshotsResult]
+      .some((result) => result.status === 'fulfilled')
     summaryError.value = summaryResult.status === 'rejected' ? 'FQC 质量汇总读取失败，请重试。' : ''
     equipmentError.value = equipmentResult.status === 'rejected' ? '成品测试设备台账读取失败，请重试。' : ''
     hostStatusError.value = hostStatusResult.status === 'rejected' ? '设备电脑心跳读取失败，请重试。' : ''
@@ -420,19 +378,12 @@ async function loadMonitoringData() {
       const configured = Number.parseInt(offlineThresholdResult.value.value, 10)
       if (Number.isFinite(configured)) hostOfflineAfterSeconds.value = Math.min(86_400, Math.max(30, configured))
     }
-    if (recordsResult.status === 'rejected') {
-      finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
-    }
-    const probesLoaded = equipmentResult.status === 'fulfilled'
-      ? await loadProbeSnapshots(equipmentResult.value.filter((item) => item.equipmentType === finishedTestEquipmentType))
-      : false
-    if (equipmentResult.status === 'rejected') {
-      probeSnapshots.value = {}
-      probeFailedEquipmentIds.value = new Set()
-      probeSnapshotsError.value = ''
-    }
-    if (probesLoaded && recordsResult.status === 'fulfilled' && recordsResult.value
-      && [summaryResult, equipmentResult, hostStatusResult].every((result) => result.status === 'fulfilled')) {
+    probeSnapshots.value = snapshotsResult.status === 'fulfilled'
+      ? Object.fromEntries(snapshotsResult.value.map((record) => [record.equipmentId, record])) : {}
+    probeFailedEquipmentIds.value = snapshotsResult.status === 'rejected'
+      ? new Set(equipment.value.map((device) => device.id)) : new Set()
+    probeSnapshotsError.value = snapshotsResult.status === 'rejected' ? '飞针计数快照读取失败，请刷新重试。' : ''
+    if ([summaryResult, equipmentResult, hostStatusResult, snapshotsResult].every((result) => result.status === 'fulfilled')) {
       updatedAt.value = new Date()
     }
   } finally {
@@ -442,15 +393,14 @@ async function loadMonitoringData() {
 
 async function refreshWorkbench() {
   if (monitoringLoading.value) return
-  await Promise.all([loadTasks(), loadMonitoringData(), loadOfflineDrafts()])
+  await Promise.all([loadMonitoringData(), loadOfflineDrafts()])
   if (!monitorDevices.value.some((device) => device.assetNo === selectedDeviceId.value)) {
     selectedDeviceId.value = monitorDevices.value[0]?.assetNo ?? ''
   }
 }
 
-function showPanel(panel: 'monitor' | 'records' | 'tasks') {
+function showPanel(panel: 'monitor' | 'records') {
   activePanel.value = panel
-  taskListDeviceAssetNo.value = ''
   if (panel === 'records') {
     recordSource.value = 'probe'
     if (!flyingProbeLoaded.value) void refreshFlyingProbeRecords()
@@ -462,6 +412,7 @@ function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
   recordSource.value = source
   if (source === 'probe') void refreshFlyingProbeRecords(appliedProbeSearch.value)
   if (source === 'retryable') void loadRetryableProjections(1)
+  if (source === 'fqc' && !finishedRecordsUpdatedAt.value) void loadCompletedFinishedRecords()
 }
 
 function searchProbeRecords() {
@@ -591,22 +542,8 @@ async function submitBinding() {
   }
 }
 
-function openSelectedDeviceTask() {
-  taskListDeviceAssetNo.value = selectedDevice.value?.assetNo ?? ''
-  activePanel.value = 'tasks'
-}
-
 function selectDevice(assetNo: string) {
   selectedDeviceId.value = assetNo
-}
-
-function openNextTask() {
-  const nextTask = filteredTasks.value[0]
-  if (!nextTask) {
-    ElMessage.info('当前没有待处理的成品测试任务。')
-    return
-  }
-  void openRecord(nextTask)
 }
 
 function handleKeyboardShortcut(event: KeyboardEvent) {
@@ -618,7 +555,7 @@ function handleKeyboardShortcut(event: KeyboardEvent) {
 
 async function openRecord(task: InspectionTask) {
   selectedTask.value = task
-  recordEquipmentAssetNo.value = taskListDeviceAssetNo.value
+  recordEquipmentAssetNo.value = ''
   selectedTemplate.value = undefined
   Object.assign(recordForm, { verdict: 'PASS', defectiveQuantity: 0, defectSummary: '', defectLocation: '', measurement: '', lowerLimit: '', upperLimit: '' })
   Object.keys(recordValues).forEach((key) => delete recordValues[key])
@@ -709,6 +646,7 @@ async function submitRecord() {
 onMounted(async () => {
   componentMounted = true
   void loadMenuAccess()
+  if (activePanel.value === 'summary') return
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('keydown', handleKeyboardShortcut)
@@ -801,40 +739,15 @@ onBeforeUnmount(() => {
           <div><span>当前设备</span><strong>{{ selectedDevice.name }}（{{ selectedDevice.assetNo }}）</strong></div>
           <div v-if="selectedDevice.probeError"><span>飞针计数快照</span><strong>读取失败，请刷新重试</strong></div>
           <template v-else>
-            <div><span>最新飞针料号</span><strong>{{ selectedProbeRecord?.materialNo || (selectedProbeRecord ? '未上报料号' : '暂无飞针采集') }}</strong></div>
-            <div><span>飞针已测 / 好板 / 坏板</span><strong>{{ selectedProbeRecord?.machiningCount ?? '—' }} / {{ selectedProbeRecord?.goodBoardCount ?? '—' }} / {{ selectedProbeRecord?.badBoardCount ?? '—' }}</strong></div>
+            <div><span>最新料号</span><strong>{{ selectedProbeRecord?.materialNo || (selectedProbeRecord ? '未上报料号' : '暂无飞针采集') }}</strong></div>
+            <div><span>已测 / 好板 / 坏板</span><strong>{{ selectedProbeRecord?.machiningCount ?? '—' }} / {{ selectedProbeRecord?.goodBoardCount ?? '—' }} / {{ selectedProbeRecord?.badBoardCount ?? '—' }}</strong></div>
             <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
-            <div><span>关联生产指令 / 批次</span><strong>{{ selectedAssociation }}</strong></div>
+            <div><span>关联生产指令</span><strong>{{ selectedAssociation }}</strong></div>
           </template>
-          <div><span>FQC 待检任务</span><strong>未关联待检任务，请从列表选择</strong></div>
-          <el-button type="primary" @click="openSelectedDeviceTask">查看待检任务</el-button>
         </div>
       </section>
 
     </template>
-
-    <el-card v-if="activePanel === 'tasks'" shadow="never" class="content-card task-queue-card">
-      <template #header>
-        <div class="card-header">
-          <div><span>成品测试待检任务</span></div>
-          <div class="task-queue-actions"><el-button link type="primary" @click="refreshWorkbench">刷新</el-button><el-button type="primary" size="small" :disabled="!filteredTasks.length" @click="openNextTask">处理下一条</el-button></div>
-        </div>
-      </template>
-      <div class="task-queue-toolbar">
-        <el-input v-model="taskKeyword" clearable placeholder="任务号、工单号或检验员" />
-        <span>共 {{ filteredTasks.length }} 条待处理任务</span>
-      </div>
-      <el-alert v-if="taskListDeviceAssetNo" type="info" :closable="false" :title="`从设备 ${taskListDeviceAssetNo} 进入：选择任务后将预填检测设备；任务未与设备绑定，请提交前核对。`" style="margin-bottom: 12px" />
-      <paged-table :key="taskKeyword" v-loading="loading" :data="filteredTasks" size="small" empty-text="暂无成品测试待检任务" @row-dblclick="openRecord">
-        <el-table-column prop="taskNo" label="任务号" min-width="150" />
-        <el-table-column prop="workOrderNo" label="工单号" min-width="145" />
-        <el-table-column prop="processName" label="工序" min-width="130" />
-        <el-table-column label="类型" min-width="100"><template #default="scope">{{ taskTypeText(scope.row.taskType) }}</template></el-table-column>
-        <el-table-column prop="assigneeName" label="检验员" min-width="110" />
-        <el-table-column label="计划完成" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.dueAt) }}</template></el-table-column>
-        <el-table-column label="操作" width="120" fixed="right"><template #default="scope"><el-button type="primary" link @click="openRecord(scope.row)">填写检验</el-button></template></el-table-column>
-      </paged-table>
-    </el-card>
 
     <el-card v-if="activePanel === 'records'" shadow="never" class="content-card finished-records-card">
       <template #header>
@@ -865,7 +778,7 @@ onBeforeUnmount(() => {
             <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
-            <el-table-column label="订单编号" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="销售订单号" min-width="150" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="厂内编号" min-width="155" show-overflow-tooltip><template #default="scope">{{ scope.row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="已测" min-width="100" align="right"><template #default="scope">{{ scope.row.machiningCount ?? '—' }}</template></el-table-column>
             <el-table-column label="好板" min-width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
@@ -895,7 +808,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选当前页：设备、工单、料号、任务号或检验员" />
+          <el-input v-model="recordKeyword" clearable placeholder="筛选当前页：设备、工单、销售订单号、料号、任务号或检验员" />
           <span>共 {{ finishedRecordTotal }} 条{{ recordKeyword.trim() ? `，当前页匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
@@ -903,6 +816,7 @@ onBeforeUnmount(() => {
             <el-table-column label="检验时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
             <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />
+            <el-table-column label="销售订单号" min-width="150" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
             <el-table-column prop="internalProductNo" label="厂内编号" min-width="150"><template #default="scope">{{ scope.row.internalProductNo || '—' }}</template></el-table-column>
             <el-table-column prop="productCode" label="料号" min-width="140"><template #default="scope">{{ scope.row.productCode || '—' }}</template></el-table-column>
             <el-table-column prop="inspectionQuantity" label="检验数量" min-width="105" align="right" />
@@ -914,7 +828,7 @@ onBeforeUnmount(() => {
       </template>
     </el-card>
 
-    <FinishedTestAnalysis v-if="activePanel === 'summary'" initial-dimension="date" />
+    <FinishedTestDeviceSummary v-if="activePanel === 'summary'" />
 
     <el-dialog v-model="bindingDialog" title="手动绑定飞针工单" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
       <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>

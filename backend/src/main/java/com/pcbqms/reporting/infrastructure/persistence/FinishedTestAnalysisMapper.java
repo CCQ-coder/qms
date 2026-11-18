@@ -11,7 +11,7 @@ import org.apache.ibatis.annotations.Select;
 public interface FinishedTestAnalysisMapper {
     @Select("""
         <script>
-        SELECT record.inspected_at, work_order.work_order_no,
+        SELECT record.id AS inspection_record_id, record.inspected_at, work_order.work_order_no,
                work_order.internal_product_no AS material_no, record.equipment_asset_no,
                record.defective_quantity, record.results_json
         FROM qms_inspection_record record

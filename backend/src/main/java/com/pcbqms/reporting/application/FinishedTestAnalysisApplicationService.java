@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
 import com.pcbqms.equipment.domain.FinishedTestDataWindow;
+import com.pcbqms.inspection.application.StandardBoardService;
 import com.pcbqms.reporting.api.FinishedTestAnalysisResponse;
 import com.pcbqms.reporting.api.FinishedTestGroupMetric;
 import com.pcbqms.reporting.domain.FinishedTestFact;
@@ -17,6 +18,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -29,9 +31,12 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class FinishedTestAnalysisApplicationService {
+    private static final String UNLINKED_WORK_ORDER = "未关联生产指令";
+
     private final FinishedTestAnalysisMapper mapper;
     private final InspectionAccessScopeService accessScopeService;
     private final ObjectMapper objectMapper;
+    private final StandardBoardService standardBoardService;
 
     public FinishedTestAnalysisResponse analyze(LocalDate from, LocalDate to) {
         if (from != null && to != null && from.isAfter(to)) {
@@ -48,7 +53,10 @@ public class FinishedTestAnalysisApplicationService {
         if (!accessScopeService.currentAccess().canAccess("FQC") || (toExclusive != null && !toExclusive.isAfter(fromTime))) {
             return response(total, byDate, byWorkOrder, byMaterial, byEquipment);
         }
+        Set<String> excludedRecordIds = standardBoardService.inspectionRecordIds();
         for (FinishedTestFact fact : mapper.selectFacts(TenantContext.tenantCode(), fromTime, toExclusive)) {
+            if (fact.getInspectionRecordId() != null
+                && excludedRecordIds.contains(fact.getInspectionRecordId())) continue;
             if (fact.getInspectedAt() == null || fact.getInspectedAt().isBefore(fromTime)
                 || (toExclusive != null && !fact.getInspectedAt().isBefore(toExclusive))) {
                 continue;
@@ -58,7 +66,7 @@ public class FinishedTestAnalysisApplicationService {
             boolean quantified = boards != null && bad != null && bad >= 0 && bad <= boards;
             total.add(quantified ? boards : null, quantified ? bad : null);
             add(byDate, fact.getInspectedAt().toLocalDate().toString(), boards, bad, quantified);
-            add(byWorkOrder, label(fact.getWorkOrderNo(), "未关联生产指令"), boards, bad, quantified);
+            add(byWorkOrder, label(fact.getWorkOrderNo(), UNLINKED_WORK_ORDER), boards, bad, quantified);
             add(byMaterial, label(fact.getMaterialNo(), "未关联料号"), boards, bad, quantified);
             add(byEquipment, label(fact.getEquipmentAssetNo(), "未关联设备"), boards, bad, quantified);
         }
@@ -129,9 +137,11 @@ public class FinishedTestAnalysisApplicationService {
                                                    Map<String, Accumulator> byWorkOrder,
                                                    Map<String, Accumulator> byMaterial,
                                                    Map<String, Accumulator> byEquipment) {
+        List<FinishedTestGroupMetric> workOrders = metrics(byWorkOrder, false);
+        workOrders.sort(Comparator.comparing(metric -> metric.key().equals(UNLINKED_WORK_ORDER)));
         return new FinishedTestAnalysisResponse(total.recordCount, total.totalBoards, total.goodBoards,
             total.badBoards, total.unknownQuantityRecords, total.passRate(),
-            metrics(byDate, true), metrics(byWorkOrder, false), metrics(byMaterial, false), metrics(byEquipment, false));
+            metrics(byDate, true), workOrders, metrics(byMaterial, false), metrics(byEquipment, false));
     }
 
     private List<FinishedTestGroupMetric> metrics(Map<String, Accumulator> groups, boolean dateOrder) {

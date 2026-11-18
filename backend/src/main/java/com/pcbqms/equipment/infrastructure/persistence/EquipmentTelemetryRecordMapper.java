@@ -144,6 +144,41 @@ public interface EquipmentTelemetryRecordMapper {
 
     @Select("""
         <script>
+        SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.source_username,
+               telemetry.machine_name, telemetry.device_time, telemetry.received_at, telemetry.event_type,
+               telemetry.equipment_status, telemetry.program_no, telemetry.program_version, telemetry.material_no,
+               telemetry.work_order_no, telemetry.batch_no, telemetry.operator_name, telemetry.progress_percent,
+               telemetry.spindle_status, telemetry.alarm_code, telemetry.alarm_message, telemetry.machining_count,
+               telemetry.source_record_no, telemetry.deduplication_key, telemetry.raw_payload, telemetry.created_at
+        FROM qms_equipment_telemetry telemetry
+        JOIN (
+            SELECT id, ROW_NUMBER() OVER (
+                PARTITION BY equipment_id ORDER BY device_time DESC, id DESC
+            ) AS row_no
+            FROM qms_equipment_telemetry
+            WHERE tenant_code = #{tenantCode}
+              AND event_type = 'FLYING_PROBE_TEST_COUNTERS'
+              AND equipment_id IN
+              <foreach collection="equipmentIds" item="equipmentId" open="(" separator="," close=")">
+                  #{equipmentId}
+              </foreach>
+              AND device_time &gt;= #{dataStart}
+              AND received_at &gt;= #{fromTime}
+              AND received_at &lt;= #{toTime}
+        ) latest ON telemetry.id = latest.id
+        WHERE latest.row_no = 1
+        </script>
+        """)
+    List<EquipmentTelemetryRecord> selectLatestFlyingProbeByEquipment(
+        @Param("tenantCode") String tenantCode,
+        @Param("equipmentIds") List<String> equipmentIds,
+        @Param("dataStart") LocalDateTime dataStart,
+        @Param("fromTime") LocalDateTime fromTime,
+        @Param("toTime") LocalDateTime toTime
+    );
+
+    @Select("""
+        <script>
         SELECT telemetry_id, status, reason, inspection_record_id, delta_tested
         FROM qms_flying_probe_projection
         WHERE tenant_code = #{tenantCode}

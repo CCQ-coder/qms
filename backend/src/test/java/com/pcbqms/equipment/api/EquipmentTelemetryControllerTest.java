@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.equipment.application.EquipmentTelemetryApplicationService;
 import com.pcbqms.equipment.application.EquipmentTelemetryQueryApplicationService;
+import com.pcbqms.equipment.application.FinishedTestDeviceReportService;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -19,11 +20,47 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class EquipmentTelemetryControllerTest {
     @Test
+    void exposesDeviceSummaryAndSettlementLists() throws Exception {
+        var reports = mock(FinishedTestDeviceReportService.class);
+        when(reports.listDeviceSummary()).thenReturn(List.of());
+        when(reports.listSettlements()).thenReturn(List.of());
+        var controller = new EquipmentTelemetryController(
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
+            mock(EquipmentTelemetryQueryApplicationService.class), reports
+        );
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+
+        mvc.perform(get("/api/v1/equipment/telemetry/finished-test-summary/by-device"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/equipment/telemetry/finished-test-settlements"))
+            .andExpect(status().isOk());
+        verify(reports).listDeviceSummary();
+        verify(reports).listSettlements();
+    }
+
+    @Test
+    void exposesLatestFlyingProbeSnapshotsInOneRequest() throws Exception {
+        var queryService = mock(EquipmentTelemetryQueryApplicationService.class);
+        when(queryService.latestFlyingProbeSnapshots()).thenReturn(List.of());
+        var controller = new EquipmentTelemetryController(
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class), queryService,
+            mock(FinishedTestDeviceReportService.class)
+        );
+
+        MockMvcBuilders.standaloneSetup(controller).build()
+            .perform(get("/api/v1/equipment/telemetry/flying-probe/latest"))
+            .andExpect(status().isOk());
+
+        verify(queryService).latestFlyingProbeSnapshots();
+    }
+
+    @Test
     void forwardsOptionalEventTypeFromHistoryRequest() throws Exception {
         var queryService = mock(EquipmentTelemetryQueryApplicationService.class);
         when(queryService.pageHistory(any())).thenReturn(new EquipmentTelemetryHistoryPageResponse(List.of(), null, 100));
         var controller = new EquipmentTelemetryController(
-            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class), queryService
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class), queryService,
+            mock(FinishedTestDeviceReportService.class)
         );
         var mvc = MockMvcBuilders.standaloneSetup(controller).build();
 

@@ -51,10 +51,44 @@ class FlyingProbeInspectionProjectionServiceTest {
     @Mock private InspectionApplicationService inspectionApplicationService;
     @Mock private InspectionTemplateApplicationService templateApplicationService;
     @Mock private InspectionAccessScopeService accessScopeService;
+    @Mock private StandardBoardService standardBoardService;
 
     @AfterEach
     void clearTenant() {
         TenantContext.clear();
+    }
+
+    @Test
+    void standardBoardIsNotMatchedOrCounted() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("standard", now.minusHours(1), now.minusMinutes(1), 3, 3, 0);
+        telemetry.setMaterialNo(" fzv1 ");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("standard")).thenReturn(projection);
+        when(standardBoardService.contains(" fzv1 ")).thenReturn(true);
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("SKIPPED");
+        verify(workOrderMapper, never()).selectList(any());
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void standardBoardCannotBeBoundManually() {
+        TenantContext.set("tenant-a", "supervisor");
+        var now = LocalDateTime.now();
+        var telemetry = event("standard-manual", now.minusHours(1), now.minusMinutes(1), 3, 3, 0);
+        telemetry.setMaterialNo("FZV1");
+        var projection = projection(telemetry);
+        projection.setStatus("RETRYABLE");
+        when(projectionMapper.lockProjection("standard-manual")).thenReturn(projection);
+        when(standardBoardService.contains("FZV1")).thenReturn(true);
+
+        assertThatThrownBy(() -> service().bindManually("standard-manual", "WO-1"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("标准板");
+        verify(workOrderMapper, never()).selectOne(any());
     }
 
     @Test
@@ -178,8 +212,8 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START, null, null)).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L, null, null))
+        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START, null, null, List.of())).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L, null, null, List.of()))
             .thenReturn(List.of(record));
 
         var page = service().listRetryable(1, 50, null, null);
@@ -193,13 +227,13 @@ class FlyingProbeInspectionProjectionServiceTest {
     void searchesRetryableFilesAcrossAllPagesUsingBothFields() {
         TenantContext.set("tenant-a", "supervisor");
         when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START,
-            "26100985", "P2L018680B")).thenReturn(1L);
+            "26100985", "P2L018680B", List.of())).thenReturn(1L);
 
         var page = service().listRetryable(1, 50, " 26100985 ", " P2L018680B ");
 
         assertThat(page.total()).isEqualTo(1);
         verify(projectionMapper).selectRetryableGroups("tenant-a", FinishedTestDataWindow.START,
-            50, 0L, "26100985", "P2L018680B");
+            50, 0L, "26100985", "P2L018680B", List.of());
     }
 
     @Test
@@ -302,9 +336,214 @@ class FlyingProbeInspectionProjectionServiceTest {
         service().projectNew(telemetry);
 
         assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
-        assertThat(projection.getReason()).contains("必须恰好为 1");
+        assertThat(projection.getReason()).contains("多个生产指令").doesNotContain("必须恰好为 1");
         verify(taskMapper, never()).insert(any(InspectionTask.class));
         verify(projectionMapper, never()).linkTelemetry(any());
+    }
+
+    @Test
+    void hpVersionFallsBackToCombinedPanelAndProjectsUnderItsProductionOrder() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("hp-panel", now.minusHours(1), now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("hp009570a-1");
+        var projection = projection(telemetry);
+        var combinedOrder = releasedOrder("26101152", "P2L015440B", now.toLocalDate().minusDays(10));
+        when(projectionMapper.lockProjection("hp-panel")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        when(workOrderMapper.selectList(any())).thenReturn(List.of());
+        when(workOrderMapper.findByCombinedPanelNo("tenant-a", "HP009570A")).thenReturn(List.of(combinedOrder));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        AtomicReference<FlyingProbeRun> savedRun = new AtomicReference<>();
+        when(projectionMapper.lockRun(any())).thenAnswer(call -> savedRun.get());
+        when(projectionMapper.insertRunIfAbsent(any())).thenAnswer(call -> {
+            FlyingProbeRun inserted = call.getArgument(0);
+            inserted.setStatus("ACTIVE");
+            inserted.setTestedCount(0);
+            inserted.setGoodCount(0);
+            inserted.setBadCount(0);
+            savedRun.set(inserted);
+            return 1;
+        });
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26101152");
+        assertThat(savedRun.get().getBindingSource()).isEqualTo("AUTO_COMBINED");
+        verify(workOrderMapper).findByCombinedPanelNo("tenant-a", "HP009570A");
+    }
+
+    @Test
+    void boundCombinedPanelRunAcceptsItsNextSnapshot() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("hp-next", now.minusHours(1), now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("HP009570A-1");
+        var projection = projection(telemetry);
+        var combinedOrder = releasedOrder("26101152", "P2L015440B", now.toLocalDate().minusDays(10));
+        FlyingProbeRun existing = run();
+        existing.setMaterialNo("HP009570A-1");
+        existing.setWorkOrderNo("26101152");
+        existing.setBindingSource("AUTO_COMBINED");
+        when(projectionMapper.lockProjection("hp-next")).thenReturn(projection);
+        when(projectionMapper.lockRun(any())).thenReturn(existing);
+        when(workOrderMapper.selectOne(any())).thenReturn(combinedOrder);
+        when(workOrderMapper.findByCombinedPanelNo("tenant-a", "HP009570A")).thenReturn(List.of(combinedOrder));
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        validEquipmentAndTemplate();
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("26101152");
+    }
+
+    @Test
+    void versionedMaterialUsesLatestBaseOrderReleasedBeforeTheFileStarted() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var start = now.minusHours(1);
+        var telemetry = event("versioned", start, now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("p2e046928a-1");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("versioned")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(), List.of(
+            releasedOrder("WO-OLD", "P2E046928A", start.toLocalDate().minusDays(10)),
+            releasedOrder("WO-NEW", "P2E046928A", start.toLocalDate().minusDays(1)),
+            releasedOrder("WO-FUTURE", "P2E046928A", start.toLocalDate().plusDays(1))));
+        AtomicReference<FlyingProbeRun> savedRun = new AtomicReference<>();
+        when(projectionMapper.lockRun(any())).thenAnswer(call -> savedRun.get());
+        when(projectionMapper.insertRunIfAbsent(any())).thenAnswer(call -> {
+            FlyingProbeRun inserted = call.getArgument(0);
+            inserted.setStatus("ACTIVE");
+            inserted.setTestedCount(0);
+            inserted.setGoodCount(0);
+            inserted.setBadCount(0);
+            savedRun.set(inserted);
+            return 1;
+        });
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-NEW");
+        assertThat(savedRun.get().getBindingSource()).isEqualTo("AUTO_VERSION");
+    }
+
+    @Test
+    void boundVersionedRunAcceptsItsNextSnapshot() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("versioned-next", now.minusHours(1), now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("P2E046928A-1");
+        var projection = projection(telemetry);
+        var order = releasedOrder("WO-NEW", "P2E046928A", now.toLocalDate().minusDays(1));
+        FlyingProbeRun existing = run();
+        existing.setMaterialNo("P2E046928A-1");
+        existing.setWorkOrderNo("WO-NEW");
+        existing.setBindingSource("AUTO_VERSION");
+        when(projectionMapper.lockProjection("versioned-next")).thenReturn(projection);
+        when(projectionMapper.lockRun(any())).thenReturn(existing);
+        when(workOrderMapper.selectOne(any())).thenReturn(order);
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        validEquipmentAndTemplate();
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-NEW");
+    }
+
+    @Test
+    void minorVersionWithoutHyphenMatchesOnlyItsMajorVersionAndLatestOrder() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var start = now.minusDays(3);
+        var telemetry = event("minor-a1", start, now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("p1l032679a1");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("minor-a1")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(), List.of(
+            releasedOrder("WO-A-OLD", "P1L032679A2", start.toLocalDate().minusDays(10)),
+            releasedOrder("WO-A-NEW", "P1L032679A2", start.toLocalDate().minusDays(1)),
+            releasedOrder("WO-B", "P1L032679B2", start.toLocalDate()),
+            releasedOrder("WO-A-FUTURE", "P1L032679A2", start.toLocalDate().plusDays(1))));
+        AtomicReference<FlyingProbeRun> savedRun = new AtomicReference<>();
+        when(projectionMapper.lockRun(any())).thenAnswer(call -> savedRun.get());
+        when(projectionMapper.insertRunIfAbsent(any())).thenAnswer(call -> {
+            FlyingProbeRun inserted = call.getArgument(0);
+            inserted.setStatus("ACTIVE");
+            inserted.setTestedCount(0);
+            inserted.setGoodCount(0);
+            inserted.setBadCount(0);
+            savedRun.set(inserted);
+            return 1;
+        });
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-A-NEW");
+        assertThat(savedRun.get().getBindingSource()).isEqualTo("AUTO_VERSION");
+    }
+
+    @Test
+    void minorVersionWithHyphenCanMatchDifferentMinorVersionOfSameMajor() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("minor-a-hyphen", now.minusHours(1), now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("P1L032679A-1");
+        var projection = projection(telemetry);
+        when(projectionMapper.lockProjection("minor-a-hyphen")).thenReturn(projection);
+        validEquipmentAndTemplate();
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(), List.of(), List.of(
+            releasedOrder("WO-A2", "P1L032679A2", now.toLocalDate().minusDays(1))));
+        AtomicReference<FlyingProbeRun> savedRun = new AtomicReference<>();
+        when(projectionMapper.lockRun(any())).thenAnswer(call -> savedRun.get());
+        when(projectionMapper.insertRunIfAbsent(any())).thenAnswer(call -> {
+            FlyingProbeRun inserted = call.getArgument(0);
+            inserted.setStatus("ACTIVE");
+            inserted.setTestedCount(0);
+            inserted.setGoodCount(0);
+            inserted.setBadCount(0);
+            savedRun.set(inserted);
+            return 1;
+        });
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-A2");
+    }
+
+    @Test
+    void boundMinorVersionRunAcceptsItsNextSnapshot() {
+        TenantContext.set("tenant-a", "admin");
+        var now = LocalDateTime.now();
+        var telemetry = event("minor-next", now.minusHours(1), now.minusMinutes(1), 0, 0, 0);
+        telemetry.setMaterialNo("P1L032679A1");
+        var projection = projection(telemetry);
+        var order = releasedOrder("WO-A2", "P1L032679A2", now.toLocalDate().minusDays(1));
+        FlyingProbeRun existing = run();
+        existing.setMaterialNo("P1L032679A1");
+        existing.setWorkOrderNo("WO-A2");
+        existing.setBindingSource("AUTO_VERSION");
+        when(projectionMapper.lockProjection("minor-next")).thenReturn(projection);
+        when(projectionMapper.lockRun(any())).thenReturn(existing);
+        when(workOrderMapper.selectOne(any())).thenReturn(order);
+        when(productionBatchMapper.selectList(any())).thenReturn(List.of());
+        validEquipmentAndTemplate();
+
+        service().projectNew(telemetry);
+
+        assertThat(projection.getStatus()).isEqualTo("PROCESSED");
+        assertThat(projection.getWorkOrderNo()).isEqualTo("WO-A2");
     }
 
     @Test
@@ -379,7 +618,7 @@ class FlyingProbeInspectionProjectionServiceTest {
         service().projectNew(telemetry);
 
         assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
-        assertThat(projection.getReason()).contains("数量为 2");
+        assertThat(projection.getReason()).contains("多个生产指令").doesNotContain("必须恰好为 1");
         verify(taskMapper, never()).insert(any(InspectionTask.class));
     }
 
@@ -399,7 +638,7 @@ class FlyingProbeInspectionProjectionServiceTest {
         service().projectNew(telemetry);
 
         assertThat(projection.getStatus()).isEqualTo("RETRYABLE");
-        assertThat(projection.getReason()).contains("数量为 0");
+        assertThat(projection.getReason()).contains("未找到对应生产指令").doesNotContain("必须恰好为 1");
         verify(taskMapper, never()).insert(any(InspectionTask.class));
     }
 
@@ -516,7 +755,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     private FlyingProbeInspectionProjectionService service() {
         return new FlyingProbeInspectionProjectionService(projectionMapper, equipmentMapper, workOrderMapper,
             productionBatchMapper, templateMapper, taskMapper, inspectionApplicationService,
-            templateApplicationService, accessScopeService, new ObjectMapper());
+            templateApplicationService, accessScopeService, new ObjectMapper(), standardBoardService);
     }
 
     private WorkOrder releasedOrder(String orderNo, String internalProductNo, LocalDate releasedAt) {

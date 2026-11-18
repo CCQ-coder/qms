@@ -147,6 +147,7 @@ export type FinishedTestInspectionRecord = {
   inspectedAt?: string
   equipmentAssetNo?: string
   workOrderNo: string
+  customerOrderNo?: string
   batchNo?: string
   internalProductNo?: string
   productCode?: string
@@ -474,6 +475,37 @@ export type EquipmentTelemetryHistoryPage = {
   nextCursor?: string
   pageSize: number
   total?: number | null
+}
+
+export type FinishedTestDeviceSummary = {
+  inspectionDate: string
+  equipmentCode: string
+  workOrderNo: string
+  internalProductNo?: string
+  pcbMaterialNo?: string
+  totalCount: number
+  goodCount: number
+  badCount: number
+  passRate: number
+}
+
+export type FinishedTestMonthlyAnalytics = {
+  month: string
+  byModel: Array<{ model: string; totalCount: number; goodCount: number; badCount: number; passRate: number }>
+  topInternalDefects: Array<{ internalProductNo: string; badCount: number }>
+}
+
+export type FinishedTestSettlement = {
+  materialKey: string
+  workOrderNo: string
+  internalProductNo?: string
+  firstDetectionAt: string
+  lastDetectionAt: string
+  settledAt: string
+  equipmentCount: number
+  tested: number
+  good: number
+  bad: number
 }
 
 export type FlyingProbeRetryableProjection = {

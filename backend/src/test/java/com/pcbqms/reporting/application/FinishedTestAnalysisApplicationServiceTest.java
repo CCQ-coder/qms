@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class FinishedTestAnalysisApplicationServiceTest {
     @Mock private FinishedTestAnalysisMapper mapper;
     @Mock private InspectionAccessScopeService accessScopeService;
+    @Mock private com.pcbqms.inspection.application.StandardBoardService standardBoardService;
 
     @AfterEach
     void clearTenant() {
@@ -38,13 +39,16 @@ class FinishedTestAnalysisApplicationServiceTest {
         TenantContext.set("tenant-a", "supervisor");
         when(accessScopeService.currentAccess()).thenReturn(
             new InspectionAccessScopeService.InspectionAccess("supervisor", "SUPERVISOR", true, Set.of()));
+        FinishedTestFact standard = fact("2026-10-21T11:00:00", "WO-3", "FZV1", "WTD-22", 100, 5);
+        standard.setInspectionRecordId("standard-record");
+        when(standardBoardService.inspectionRecordIds()).thenReturn(Set.of("standard-record"));
         when(mapper.selectFacts(eq("tenant-a"), eq(LocalDateTime.of(2026, 10, 20, 0, 0)), any()))
             .thenReturn(List.of(
                 fact("2026-10-20T08:00:00", "WO-1", "M-1", "WTD-21", 10, 2),
                 fact("2026-10-21T09:00:00", "WO-1", "M-1", "WTD-22", 5, 0),
-                fact("2026-10-21T10:00:00", "WO-2", "M-2", "WTD-21", 4, 1)));
+                fact("2026-10-21T10:00:00", "WO-2", "M-2", "WTD-21", 4, 1), standard));
 
-        var result = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper())
+        var result = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper(), standardBoardService)
             .analyze(null, null);
 
         assertThat(result.totalBoards()).isEqualTo(19);
@@ -59,6 +63,24 @@ class FinishedTestAnalysisApplicationServiceTest {
     }
 
     @Test
+    void putsUnlinkedProductionOrderAfterLinkedOrders() {
+        TenantContext.set("tenant-a", "supervisor");
+        when(accessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor", "SUPERVISOR", true, Set.of()));
+        when(mapper.selectFacts(eq("tenant-a"), eq(LocalDateTime.of(2026, 10, 20, 0, 0)), any()))
+            .thenReturn(List.of(
+                fact("2026-10-20T08:00:00", null, "M-1", "WTD-21", 20, 2),
+                fact("2026-10-20T09:00:00", "WO-2", "M-1", "WTD-21", 5, 0),
+                fact("2026-10-20T10:00:00", "WO-1", "M-1", "WTD-21", 10, 1)));
+
+        var result = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper(), standardBoardService)
+            .analyze(null, null);
+
+        assertThat(result.byWorkOrder()).extracting(item -> item.key())
+            .containsExactly("WO-1", "WO-2", "未关联生产指令");
+    }
+
+    @Test
     void excludesUnknownQuantitiesFromBoardRateAndClampsDateStart() {
         TenantContext.set("tenant-a", "supervisor");
         when(accessScopeService.currentAccess()).thenReturn(
@@ -68,7 +90,7 @@ class FinishedTestAnalysisApplicationServiceTest {
                 fact("2026-10-20T08:00:00", "WO-1", "M-1", "WTD-21", 4, 1),
                 fact("2026-10-20T09:00:00", "WO-1", "M-1", "WTD-21", null, 0)));
 
-        var result = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper())
+        var result = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper(), standardBoardService)
             .analyze(LocalDate.of(2024, 1, 1), null);
 
         assertThat(result.totalBoards()).isEqualTo(4);
@@ -86,7 +108,7 @@ class FinishedTestAnalysisApplicationServiceTest {
         when(mapper.selectFacts(eq("tenant-a"), eq(LocalDateTime.of(2026, 10, 20, 0, 0)), any()))
             .thenReturn(List.of(fact("2026-10-20T08:00:00", "WO-1", "M-1", "WTD-21", 10, 2)));
 
-        byte[] content = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper())
+        byte[] content = new FinishedTestAnalysisApplicationService(mapper, accessScopeService, new ObjectMapper(), standardBoardService)
             .exportExcel(null, null);
 
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {

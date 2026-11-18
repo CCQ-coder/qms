@@ -56,6 +56,7 @@ public class FlyingProbeInspectionProjectionService {
     private final InspectionTemplateApplicationService templateApplicationService;
     private final InspectionAccessScopeService accessScopeService;
     private final ObjectMapper objectMapper;
+    private final StandardBoardService standardBoardService;
 
     @Value("${qms.equipment-telemetry.retention.raw-days:7}")
     private int rawRetentionDays = 7;
@@ -90,12 +91,14 @@ public class FlyingProbeInspectionProjectionService {
         String tenantCode = TenantContext.tenantCode();
         String workOrderNo = StringUtils.hasText(requestedWorkOrderNo) ? requestedWorkOrderNo.trim() : null;
         String internalProductNo = StringUtils.hasText(requestedInternalProductNo) ? requestedInternalProductNo.trim() : null;
+        List<String> excludedMaterialNos = List.copyOf(standardBoardService.materialNumbers());
         long total = projectionMapper.countRetryableGroups(
-            tenantCode, FinishedTestDataWindow.START, workOrderNo, internalProductNo);
+            tenantCode, FinishedTestDataWindow.START, workOrderNo, internalProductNo, excludedMaterialNos);
         long offset = (page - 1) * pageSize;
         List<FlyingProbeRetryableRecordResponse> records = offset < total
             ? projectionMapper.selectRetryableGroups(
-                tenantCode, FinishedTestDataWindow.START, pageSize, offset, workOrderNo, internalProductNo)
+                tenantCode, FinishedTestDataWindow.START, pageSize, offset, workOrderNo, internalProductNo,
+                excludedMaterialNos)
             : List.of();
         return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
     }
@@ -124,6 +127,9 @@ public class FlyingProbeInspectionProjectionService {
                 && !"RETRYABLE".equals(projection.getStatus())
                 && !"SKIPPED".equals(projection.getStatus()))) {
             throw new IllegalArgumentException("仅未绑定生产指令的飞针记录可手动绑定");
+        }
+        if (standardBoardService.contains(projection.getMaterialNo())) {
+            throw new IllegalArgumentException("标准板不参与生产指令绑定");
         }
         Snapshot snapshot = parse(projection);
         String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
@@ -235,6 +241,10 @@ public class FlyingProbeInspectionProjectionService {
             skip(projection, exception.getMessage(), now);
             return;
         }
+        if (standardBoardService.contains(projection.getMaterialNo())) {
+            skip(projection, "标准板不参与生产指令绑定和成品测试统计", now);
+            return;
+        }
         projection.setSourceFile(snapshot.sourceFile());
         projection.setSourceStartTime(snapshot.startTime());
         projection.setRunKey(runKey(projection.getTenantCode(), projection.getEquipmentId(), snapshot));
@@ -253,15 +263,36 @@ public class FlyingProbeInspectionProjectionService {
             return;
         }
         String materialKey = normalizeMaterialKey(projection.getMaterialNo());
+        String baseMaterialKey = materialKey.replaceFirst("-\\d+$", "");
+        String majorKey = majorMaterialKey(materialKey);
+        String combinedPanelNo = materialKey.startsWith("HP") ? baseMaterialKey : null;
         FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
         boolean manuallyBound = run != null && "MANUAL".equals(run.getBindingSource());
+        boolean combinedPanelMatch = false;
+        boolean versionMatch = false;
+        String versionLookupKey = null;
         WorkOrder workOrder;
         if (run == null) {
-            List<WorkOrder> candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
-                    .eq(WorkOrder::getTenantCode, projection.getTenantCode())
-                    .apply("internal_product_no_match_key = {0}", materialKey)).stream()
-                .filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
-                .toList();
+            List<WorkOrder> candidates = findByInternalProductNo(projection.getTenantCode(), materialKey);
+            if (candidates.isEmpty() && combinedPanelNo != null) {
+                candidates = workOrderMapper.findByCombinedPanelNo(projection.getTenantCode(), combinedPanelNo);
+                combinedPanelMatch = true;
+            } else if (candidates.isEmpty() && !baseMaterialKey.equals(materialKey)) {
+                candidates = findByInternalProductNo(projection.getTenantCode(), baseMaterialKey);
+                versionMatch = true;
+                versionLookupKey = baseMaterialKey;
+            }
+            if (candidates.isEmpty() && combinedPanelNo == null && !majorKey.equals(materialKey)) {
+                LocalDate fileDate = snapshot.startTime().toLocalDate();
+                candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+                        .eq(WorkOrder::getTenantCode, projection.getTenantCode())
+                        .apply("internal_product_no_match_key LIKE {0}", majorKey + "%")).stream()
+                    .filter(order -> majorKey.equals(majorMaterialKey(normalizeMaterialKey(order.getInternalProductNo()))))
+                    .filter(order -> order.getReleasedAt() != null && !order.getReleasedAt().isAfter(fileDate))
+                    .toList();
+                versionMatch = true;
+                versionLookupKey = majorKey;
+            }
             if (candidates.size() > 1 && candidates.stream().allMatch(order -> order.getReleasedAt() != null)) {
                 // The file may outlive a newer order, so compare releases with its start date.
                 LocalDate fileDate = snapshot.startTime().toLocalDate();
@@ -272,7 +303,9 @@ public class FlyingProbeInspectionProjectionService {
                 }
             }
             if (candidates.size() != 1) {
-                retryLater(projection, "厂内编号精确匹配生产指令数量为 " + candidates.size() + "，必须恰好为 1", now);
+                String label = combinedPanelMatch ? "合拼编号 " + combinedPanelNo
+                    : "厂内编号 " + (versionMatch ? versionLookupKey : materialKey);
+                retryLater(projection, label + (candidates.isEmpty() ? " 未找到对应生产指令" : " 对应多个生产指令，需人工核对"), now);
                 return;
             }
             workOrder = candidates.getFirst();
@@ -291,7 +324,13 @@ public class FlyingProbeInspectionProjectionService {
                 .eq(WorkOrder::getTenantCode, projection.getTenantCode())
                 .eq(WorkOrder::getWorkOrderNo, run.getWorkOrderNo()));
             if (workOrder == null || (!manuallyBound
-                && !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo())))) {
+                && !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))
+                && !("AUTO_VERSION".equals(run.getBindingSource())
+                    && (baseMaterialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))
+                        || majorKey.equals(majorMaterialKey(normalizeMaterialKey(workOrder.getInternalProductNo())))))
+                && !("AUTO_COMBINED".equals(run.getBindingSource()) && combinedPanelNo != null
+                    && workOrderMapper.findByCombinedPanelNo(projection.getTenantCode(), combinedPanelNo).stream()
+                        .anyMatch(order -> order.getId().equals(workOrder.getId()))))) {
                 retryLater(projection, "文件批次工单映射发生变化，需人工核对", now);
                 return;
             }
@@ -320,7 +359,7 @@ public class FlyingProbeInspectionProjectionService {
             newRun.setSourceStartTime(snapshot.startTime());
             newRun.setMaterialNo(projection.getMaterialNo());
             newRun.setWorkOrderNo(workOrder.getWorkOrderNo());
-            newRun.setBindingSource("AUTO");
+            newRun.setBindingSource(combinedPanelMatch ? "AUTO_COMBINED" : versionMatch ? "AUTO_VERSION" : "AUTO");
             newRun.setUpdatedAt(now);
             projectionMapper.insertRunIfAbsent(newRun);
             run = projectionMapper.lockRun(projection.getRunKey());
@@ -497,6 +536,18 @@ public class FlyingProbeInspectionProjectionService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 不可用", exception);
         }
+    }
+
+    private List<WorkOrder> findByInternalProductNo(String tenantCode, String materialKey) {
+        return workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+                .eq(WorkOrder::getTenantCode, tenantCode)
+                .apply("internal_product_no_match_key = {0}", materialKey)).stream()
+            .filter(order -> materialKey.equals(normalizeMaterialKey(order.getInternalProductNo())))
+            .toList();
+    }
+
+    private String majorMaterialKey(String materialKey) {
+        return materialKey.replaceFirst("(?<=\\d[A-Z])-?\\d+$", "");
     }
 
     private String normalizeMaterialKey(String materialNo) {

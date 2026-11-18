@@ -59,15 +59,22 @@ const userForm = reactive({ id: '', userName: '', displayName: '', roleCode: 'IN
 async function load() {
   loading.value = true
   try {
-    const [templateData, ruleData, productData, processData] = await Promise.all([
-      qmsApi.listInspectionTemplates(), qmsApi.listInspectionRules(), qmsApi.listProducts(), qmsApi.listProcesses()
+    const tab = activeTab.value
+    const [templateData, ruleData, productData, processData, userData] = await Promise.all([
+      tab === 'templates' || tab === 'rules' ? qmsApi.listInspectionTemplates() : null,
+      tab === 'rules' ? qmsApi.listInspectionRules() : null,
+      tab !== 'users' ? qmsApi.listProducts() : null,
+      qmsApi.listProcesses(),
+      tab === 'users' ? qmsApi.listUserAccesses() : null
     ])
-    templates.value = templateData
-    rules.value = ruleData
-    products.value = productData
+    if (templateData) templates.value = templateData
+    if (ruleData) rules.value = ruleData
+    if (productData) products.value = productData
     processes.value = processData
+    if (userData) users.value = userData
   } catch {
-    ElMessage.error('检验标准配置读取失败')
+    if (activeTab.value === 'users') ElMessage.warning('仅租户管理员可查看和维护用户权限')
+    else ElMessage.error('检验标准配置读取失败')
   } finally {
     loading.value = false
   }
@@ -245,12 +252,8 @@ function onProcessStatusChange(value: string | number | boolean, row: ProcessMas
 }
 
 async function handleTabChange(tabName: string | number) {
-  if (tabName !== 'users' || users.value.length) return
-  try {
-    users.value = await qmsApi.listUserAccesses()
-  } catch {
-    ElMessage.warning('仅租户管理员可查看和维护用户权限')
-  }
+  activeTab.value = String(tabName)
+  await load()
 }
 
 function configuredTab() {
@@ -304,7 +307,6 @@ async function saveUser() {
 
 watch(() => route.fullPath, () => { void syncTabFromRoute() })
 onMounted(async () => {
-  await load()
   await syncTabFromRoute()
 })
 </script>

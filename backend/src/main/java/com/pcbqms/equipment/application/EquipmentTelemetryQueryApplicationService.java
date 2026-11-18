@@ -15,6 +15,8 @@ import com.pcbqms.equipment.domain.FinishedTestDataWindow;
 import com.pcbqms.equipment.domain.EquipmentTelemetryProjectionStatus;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentTelemetryRecordMapper;
+import com.pcbqms.workorder.domain.WorkOrder;
+import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -37,6 +39,7 @@ public class EquipmentTelemetryQueryApplicationService {
 
     private final EquipmentTelemetryRecordMapper telemetryRecordMapper;
     private final EquipmentMapper equipmentMapper;
+    private final WorkOrderMapper workOrderMapper;
     private final InspectionAccessScopeService inspectionAccessScopeService;
     private final ObjectMapper objectMapper;
     @Value("${qms.equipment-telemetry.retention.raw-days:7}")
@@ -49,6 +52,31 @@ public class EquipmentTelemetryQueryApplicationService {
         return telemetryRecordMapper.selectRecentByTenant(tenantCode, limit).stream()
             .map(record -> toResponse(record, tenantCode, access))
             .filter(java.util.Objects::nonNull)
+            .toList();
+    }
+
+    public List<EquipmentTelemetryRecordResponse> latestFlyingProbeSnapshots() {
+        String tenantCode = TenantContext.tenantCode();
+        var access = inspectionAccessScopeService.currentAccess();
+        Map<String, Equipment> visibleEquipment = equipmentMapper.selectList(Wrappers.lambdaQuery(Equipment.class)
+                .eq(Equipment::getTenantCode, tenantCode)
+                .eq(Equipment::getEquipmentType, "成品测试设备"))
+            .stream()
+            .filter(equipment -> access.fullDataAccess() || (StringUtils.hasText(equipment.getProcessCode())
+                && access.canAccess(equipment.getProcessCode())))
+            .collect(Collectors.toMap(Equipment::getId, equipment -> equipment));
+        if (visibleEquipment.isEmpty()) return List.of();
+        LocalDateTime now = LocalDateTime.now();
+        List<EquipmentTelemetryRecord> records = telemetryRecordMapper.selectLatestFlyingProbeByEquipment(
+            tenantCode, List.copyOf(visibleEquipment.keySet()), FinishedTestDataWindow.START,
+            now.minusDays(Math.max(rawRetentionDays, 1)), now);
+        List<String> ids = records.stream().map(EquipmentTelemetryRecord::getId).toList();
+        Map<String, EquipmentTelemetryProjectionStatus> projections = ids.isEmpty() ? Map.of()
+            : telemetryRecordMapper.selectProjectionStatuses(tenantCode, ids).stream()
+                .collect(Collectors.toMap(EquipmentTelemetryProjectionStatus::getTelemetryId, item -> item));
+        return records.stream()
+            .map(record -> toResponse(record, visibleEquipment.get(record.getEquipmentId()), projections.get(record.getId()), null))
+            .filter(Objects::nonNull)
             .toList();
     }
 
@@ -111,9 +139,17 @@ public class EquipmentTelemetryQueryApplicationService {
             ? Map.of()
             : telemetryRecordMapper.selectProjectionStatuses(tenantCode, flyingProbeIds).stream()
                 .collect(Collectors.toMap(EquipmentTelemetryProjectionStatus::getTelemetryId, item -> item));
+        List<String> workOrderNos = pageRows.stream().map(EquipmentTelemetryRecord::getWorkOrderNo)
+            .filter(StringUtils::hasText).distinct().toList();
+        Map<String, String> customerOrderNos = workOrderNos.isEmpty() ? Map.of()
+            : workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+                .eq(WorkOrder::getTenantCode, tenantCode).in(WorkOrder::getWorkOrderNo, workOrderNos)).stream()
+                .filter(order -> StringUtils.hasText(order.getCustomerOrderNo()))
+                .collect(Collectors.toMap(WorkOrder::getWorkOrderNo, WorkOrder::getCustomerOrderNo));
         List<EquipmentTelemetryRecordResponse> items = pageRows.stream()
             .map(record -> toResponse(record, accessibleEquipment.get(record.getEquipmentId()),
-                projections.get(record.getId())))
+                projections.get(record.getId()), StringUtils.hasText(record.getWorkOrderNo())
+                    ? customerOrderNos.get(record.getWorkOrderNo()) : null))
             .filter(Objects::nonNull)
             .toList();
         String nextCursor = hasMore && !pageRows.isEmpty() ? encodeCursor(pageRows.getLast(), sortByDeviceTime) : null;
@@ -132,11 +168,12 @@ public class EquipmentTelemetryQueryApplicationService {
                 || !access.canAccess(equipment.getProcessCode())))) {
             return null;
         }
-        return toResponse(record, equipment, null);
+        return toResponse(record, equipment, null, null);
     }
 
     private EquipmentTelemetryRecordResponse toResponse(
-        EquipmentTelemetryRecord record, Equipment equipment, EquipmentTelemetryProjectionStatus projection
+        EquipmentTelemetryRecord record, Equipment equipment, EquipmentTelemetryProjectionStatus projection,
+        String customerOrderNo
     ) {
         if (equipment == null) return null;
         JsonNode attributes = attributesOf(record);
@@ -152,7 +189,8 @@ public class EquipmentTelemetryQueryApplicationService {
                 ? textAttribute(attributes, "legacyScreenText") : record.getAlarmMessage(),
             integerAttribute(attributes, "goodBoardCount"),
             integerAttribute(attributes, "badBoardCount"),
-            projection
+            projection,
+            customerOrderNo
         );
     }
 

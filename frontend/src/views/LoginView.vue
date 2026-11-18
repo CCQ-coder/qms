@@ -6,6 +6,7 @@ import { ElMessage } from 'element-plus'
 import { isOidcEnabled, startLogin } from '@/auth/oidc'
 import { signInWithPassword } from '@/auth/local-session'
 import { qmsApi } from '@/api/qms'
+import { firstVisibleMenuPath, isMenuPathVisible, refreshMenuAccess } from '@/navigation/menu'
 
 const router = useRouter()
 const route = useRoute()
@@ -43,9 +44,12 @@ async function signIn() {
     }
     const session = await qmsApi.loginWithPassword({ tenantCode: tenantCode.value, userName: userName.value, password: password.value })
     signInWithPassword(session)
-    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
-      ? route.query.redirect : '/dashboard'
-    await router.replace(redirect)
+    const access = await refreshMenuAccess()
+    const requested = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+      ? route.query.redirect : undefined
+    const destination = requested && (!access || isMenuPathVisible(router.resolve(requested).path, access) !== false)
+      ? requested : (access && firstVisibleMenuPath(access)) || '/dashboard'
+    await router.replace(destination)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '登录失败')
   } finally {

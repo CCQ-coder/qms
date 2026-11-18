@@ -18,8 +18,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,9 +50,18 @@ public class WorkOrderApplicationService {
         long pageSize = request.resolvedPageSize();
         long offset = (page - 1) * pageSize;
         List<WorkOrder> rows = offset >= total ? List.of() : workOrderMapper.selectList(query
-            .orderByDesc(WorkOrder::getUpdatedAt)
-            .last("LIMIT " + pageSize + " OFFSET " + offset));
-        return new WorkOrderPageResponse(rows.stream().map(this::toResponse).toList(), total, page, pageSize);
+            .last("ORDER BY COALESCE(material_input_date, released_at) DESC, updated_at DESC, id DESC"
+                + " LIMIT " + pageSize + " OFFSET " + offset));
+        if (rows.isEmpty()) return new WorkOrderPageResponse(List.of(), total, page, pageSize);
+        Map<String, List<ProductionBatch>> batchesByWorkOrder = productionBatchMapper.selectList(
+                Wrappers.lambdaQuery(ProductionBatch.class)
+                    .eq(ProductionBatch::getTenantCode, TenantContext.tenantCode())
+                    .in(ProductionBatch::getWorkOrderId, rows.stream().map(WorkOrder::getId).toList())
+                    .orderByAsc(ProductionBatch::getBatchNo))
+            .stream().collect(Collectors.groupingBy(ProductionBatch::getWorkOrderId));
+        return new WorkOrderPageResponse(rows.stream()
+            .map(row -> WorkOrderResponse.from(row, batchesByWorkOrder.getOrDefault(row.getId(), List.of())))
+            .toList(), total, page, pageSize);
     }
 
     private List<WorkOrder> findMatchingWorkOrders(
@@ -120,7 +131,16 @@ public class WorkOrderApplicationService {
         }
         if (StringUtils.hasText(status)) query.eq(WorkOrder::getStatus, status.trim());
         if (StringUtils.hasText(qualityStatus)) query.eq(WorkOrder::getQualityStatus, qualityStatus.trim());
-        if (StringUtils.hasText(warehouseStatus)) query.eq(WorkOrder::getWarehouseStatus, warehouseStatus.trim());
+        if (StringUtils.hasText(warehouseStatus)) {
+            List<String> statuses = switch (warehouseStatus.trim()) {
+                case "PENDING" -> List.of("PENDING", "未入库", "待入库");
+                case "PARTIAL" -> List.of("PARTIAL", "部分入库");
+                case "RECEIVED" -> List.of("RECEIVED", "已入库");
+                case "CLOSED" -> List.of("CLOSED", "已结批");
+                default -> List.of(warehouseStatus.trim());
+            };
+            query.in(WorkOrder::getWarehouseStatus, statuses);
+        }
         if (StringUtils.hasText(priority)) query.eq(WorkOrder::getPriority, priority.trim());
         if (inputDateFrom != null) query.ge(WorkOrder::getInputDate, inputDateFrom);
         if (inputDateTo != null) query.le(WorkOrder::getInputDate, inputDateTo);

@@ -26,6 +26,10 @@ public interface FlyingProbeProjectionMapper {
             FROM qms_flying_probe_projection
             WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
               AND device_time >= #{dataStart}
+            <if test="excludedMaterialNos != null and excludedMaterialNos.size() > 0">
+              AND (material_no IS NULL OR UPPER(TRIM(material_no)) NOT IN
+                <foreach collection="excludedMaterialNos" item="material" open="(" separator="," close=")">#{material}</foreach>)
+            </if>
         )
         SELECT p.telemetry_id AS id, e.asset_no AS equipment_code, p.machine_name, p.material_no,
                p.device_time, p.source_file, p.source_start_time, p.reason,
@@ -49,7 +53,8 @@ public interface FlyingProbeProjectionMapper {
     List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
         @Param("tenantCode") String tenantCode, @Param("dataStart") LocalDateTime dataStart,
         @Param("pageSize") int pageSize, @Param("offset") long offset,
-        @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo);
+        @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo,
+        @Param("excludedMaterialNos") List<String> excludedMaterialNos);
 
     @Select("""
         <script>
@@ -60,6 +65,10 @@ public interface FlyingProbeProjectionMapper {
             FROM qms_flying_probe_projection
             WHERE tenant_code = #{tenantCode} AND status = 'RETRYABLE'
               AND device_time >= #{dataStart}
+            <if test="excludedMaterialNos != null and excludedMaterialNos.size() > 0">
+              AND (material_no IS NULL OR UPPER(TRIM(material_no)) NOT IN
+                <foreach collection="excludedMaterialNos" item="material" open="(" separator="," close=")">#{material}</foreach>)
+            </if>
         )
         SELECT COUNT(*) FROM ranked p
         LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
@@ -75,7 +84,19 @@ public interface FlyingProbeProjectionMapper {
     long countRetryableGroups(@Param("tenantCode") String tenantCode,
                               @Param("dataStart") LocalDateTime dataStart,
                               @Param("workOrderNo") String workOrderNo,
-                              @Param("internalProductNo") String internalProductNo);
+                              @Param("internalProductNo") String internalProductNo,
+                              @Param("excludedMaterialNos") List<String> excludedMaterialNos);
+
+    @Select("""
+        <script>
+        SELECT inspection_record_id FROM qms_flying_probe_projection
+        WHERE tenant_code = #{tenantCode} AND inspection_record_id IS NOT NULL
+          AND UPPER(TRIM(material_no)) IN
+          <foreach collection="materialNos" item="material" open="(" separator="," close=")">#{material}</foreach>
+        </script>
+        """)
+    List<String> selectInspectionRecordIdsByMaterials(@Param("tenantCode") String tenantCode,
+                                                      @Param("materialNos") List<String> materialNos);
 
     @Select("""
         SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.machine_name,
