@@ -122,19 +122,14 @@ public class FlyingProbeInspectionProjectionService {
         if (projection == null || !tenantCode.equals(projection.getTenantCode())) {
             throw new IllegalArgumentException("当前租户不存在此飞针记录");
         }
-        if (StringUtils.hasText(projection.getWorkOrderNo())
-            || (!"PENDING".equals(projection.getStatus())
-                && !"RETRYABLE".equals(projection.getStatus())
-                && !"SKIPPED".equals(projection.getStatus()))) {
-            throw new IllegalArgumentException("仅未绑定生产指令的飞针记录可手动绑定");
+        if (!"PENDING".equals(projection.getStatus())
+            && !"RETRYABLE".equals(projection.getStatus())
+            && !"SKIPPED".equals(projection.getStatus())
+            && !"PROCESSED".equals(projection.getStatus())) {
+            throw new IllegalArgumentException("仅待处理或已处理的飞针记录可手动绑定");
         }
         if (standardBoardService.contains(projection.getMaterialNo())) {
             throw new IllegalArgumentException("标准板不参与生产指令绑定");
-        }
-        Snapshot snapshot = parse(projection);
-        String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
-        if (projection.getRunKey() != null && !runKey.equals(projection.getRunKey())) {
-            throw new IllegalArgumentException("飞针文件身份已变化，无法手动绑定");
         }
         String workOrderNo = requestedWorkOrderNo.trim();
         WorkOrder workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
@@ -142,6 +137,14 @@ public class FlyingProbeInspectionProjectionService {
             .eq(WorkOrder::getWorkOrderNo, workOrderNo));
         if (workOrder == null) {
             throw new IllegalArgumentException("当前租户不存在所选生产指令");
+        }
+        if ("PROCESSED".equals(projection.getStatus())) {
+            return rebindRun(projection, projection.getRunKey(), workOrder);
+        }
+        Snapshot snapshot = parse(projection);
+        String runKey = runKey(tenantCode, projection.getEquipmentId(), snapshot);
+        if (projection.getRunKey() != null && !runKey.equals(projection.getRunKey())) {
+            throw new IllegalArgumentException("飞针文件身份已变化，无法手动绑定");
         }
         LocalDateTime now = LocalDateTime.now();
         FlyingProbeRun run = projectionMapper.lockRun(runKey);
@@ -168,7 +171,9 @@ public class FlyingProbeInspectionProjectionService {
             throw new IllegalArgumentException("飞针文件状态已变化，无法手动绑定");
         }
         if (!workOrderNo.equals(run.getWorkOrderNo())) {
-            throw new IllegalArgumentException("同一飞针文件已绑定其他生产指令，不能改绑已处理的 FQC");
+            projection.setRunKey(runKey);
+            projectionMapper.updateProjection(projection);
+            return rebindRun(projection, runKey, workOrder);
         }
         if (!"MANUAL".equals(run.getBindingSource())) {
             run.setBindingSource("MANUAL");
@@ -188,6 +193,36 @@ public class FlyingProbeInspectionProjectionService {
         projection.setRetryAfter(now);
         projection.setProcessedAt(now);
         projectionMapper.updateProjection(projection);
+        return runKey;
+    }
+
+    private String rebindRun(FlyingProbeProjection projection, String runKey, WorkOrder target) {
+        String tenantCode = TenantContext.tenantCode();
+        if (!StringUtils.hasText(runKey)) {
+            throw new IllegalArgumentException("飞针文件缺少关联信息，无法更正");
+        }
+        FlyingProbeRun run = projectionMapper.lockRun(runKey);
+        if (run == null || !tenantCode.equals(run.getTenantCode())
+            || !projection.getEquipmentId().equals(run.getEquipmentId())
+            || !normalizeMaterialKey(projection.getMaterialNo()).equals(normalizeMaterialKey(run.getMaterialNo()))
+            || !"ACTIVE".equals(run.getStatus())) {
+            throw new IllegalArgumentException("飞针文件状态已变化，无法更正关联");
+        }
+        if (target.getWorkOrderNo().equals(run.getWorkOrderNo())) return runKey;
+        if (projectionMapper.countRunNonconformities(tenantCode, runKey) > 0
+            || projectionMapper.countRunSettlements(tenantCode, runKey, run.getWorkOrderNo()) > 0) {
+            throw new IllegalArgumentException("该飞针文件已有处置单或结算数据，不能更正关联");
+        }
+        projectionMapper.rebindRunTasks(tenantCode, runKey, target.getId());
+        projectionMapper.rebindRunTelemetry(tenantCode, runKey, target.getWorkOrderNo());
+        projectionMapper.rebindRunRuntime(tenantCode, runKey, target.getWorkOrderNo());
+        projectionMapper.rebindRunProjections(tenantCode, runKey, target.getWorkOrderNo());
+        run.setWorkOrderNo(target.getWorkOrderNo());
+        run.setBindingSource("MANUAL");
+        run.setBoundBy(TenantContext.actor());
+        run.setBoundAt(LocalDateTime.now());
+        run.setUpdatedAt(run.getBoundAt());
+        projectionMapper.updateRun(run);
         return runKey;
     }
 

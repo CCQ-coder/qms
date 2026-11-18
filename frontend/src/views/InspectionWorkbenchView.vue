@@ -496,9 +496,17 @@ async function searchBindingWorkOrders() {
   }
 }
 
-function openBindingDialog(record: FlyingProbeRetryableProjection) {
+function canManageProbeRecord(record: EquipmentTelemetryRecord) {
+  return !record.workOrderNo || ['RETRYABLE', 'PROCESSED', 'SKIPPED'].includes(record.fqcProjectionStatus || '')
+}
+
+function openBindingDialog(record: FlyingProbeRetryableProjection | EquipmentTelemetryRecord) {
   bindingSearchVersion++
-  bindingRecord.value = record
+  bindingRecord.value = {
+    id: record.id, equipmentCode: record.equipmentCode, machineName: record.machineName,
+    materialNo: record.materialNo, deviceTime: record.deviceTime, workOrderNo: record.workOrderNo,
+    sourceFile: 'sourceFile' in record ? record.sourceFile : undefined
+  }
   bindingKeyword.value = record.workOrderNo || record.materialNo || ''
   bindingWorkOrders.value = []
   bindingWorkOrderNo.value = ''
@@ -512,15 +520,12 @@ async function submitBinding() {
   const record = bindingRecord.value
   const selected = bindingWorkOrders.value.find((order) => order.workOrderNo === bindingWorkOrderNo.value)
   if (!record || !selected || bindingSaving.value) return
-  if (record.workOrderNo && record.workOrderNo !== selected.workOrderNo) {
-    ElMessage.warning(`该文件已绑定生产指令 ${record.workOrderNo}，不能改绑。`)
-    return
-  }
+  const correcting = Boolean(record.workOrderNo && record.workOrderNo !== selected.workOrderNo)
   try {
     await ElMessageBox.confirm(
-      `${record.workOrderNo ? '按已绑定工单重新处理' : '将这条飞针记录绑定到'}生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。同一飞针文件将固定使用该工单，之后不能改绑其他工单；待匹配快照会尝试生成 FQC。确定继续吗？`,
-      '确认手动绑定',
-      { confirmButtonText: '确认绑定', cancelButtonText: '取消', type: 'warning' }
+      `${correcting ? `将同一飞针文件从生产指令 ${record.workOrderNo} 更正到` : record.workOrderNo ? '按原生产指令重新处理：' : '将这条飞针记录绑定到'}生产指令 ${selected.workOrderNo}（厂内编号 ${selected.internalProductNo || '—'}，下达日期 ${formatDate(selected.releasedAt)}）。${correcting ? '同文件的历史 FQC 和设备记录将同步更正；已有处置单或结算数据时会拒绝更正。' : '待匹配快照会尝试生成 FQC。'}确定继续吗？`,
+      correcting ? '确认更正关联' : '确认手动绑定',
+      { confirmButtonText: correcting ? '确认更正' : '确认绑定', cancelButtonText: '取消', type: 'warning' }
     )
   } catch {
     return
@@ -529,7 +534,7 @@ async function submitBinding() {
   try {
     await qmsApi.bindFlyingProbeWorkOrder(record.id, selected.workOrderNo)
     bindingDialog.value = false
-    ElMessage.success('已提交绑定，FQC 正在处理')
+    ElMessage.success(correcting ? '关联及历史 FQC 已更正' : '已提交绑定，FQC 正在处理')
     await Promise.all([
       refreshFlyingProbeRecords(),
       loadCompletedFinishedRecords(),
@@ -784,7 +789,7 @@ onBeforeUnmount(() => {
             <el-table-column label="好板" min-width="100" align="right"><template #default="scope"><span class="good-text">{{ scope.row.goodBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="坏板" min-width="100" align="right"><template #default="scope"><span class="bad-text">{{ scope.row.badBoardCount ?? '—' }}</span></template></el-table-column>
             <el-table-column label="实时合格率" min-width="120" align="right"><template #default="scope">{{ flyingProbePassRate(scope.row) }}</template></el-table-column>
-            <el-table-column v-if="canBindFlyingProbe" label="操作" min-width="110" fixed="right"><template #default="scope"><el-button v-if="!scope.row.workOrderNo" link type="primary" @click="openBindingDialog(scope.row)">手动绑定</el-button></template></el-table-column>
+            <el-table-column v-if="canBindFlyingProbe" label="操作" min-width="110" fixed="right"><template #default="scope"><el-button v-if="canManageProbeRecord(scope.row)" link type="primary" @click="openBindingDialog(scope.row)">{{ scope.row.workOrderNo ? '更换绑定' : '手动绑定' }}</el-button></template></el-table-column>
           </paged-table>
         </div>
       </template>
@@ -798,7 +803,7 @@ onBeforeUnmount(() => {
             <el-table-column label="生产指令" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="厂内编号" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.materialNo || '—' }}</template></el-table-column>
             <el-table-column label="待匹配原因" min-width="280" show-overflow-tooltip><template #default="{ row }">{{ row.reason || '—' }}</template></el-table-column>
-            <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openBindingDialog(row)">{{ row.workOrderNo ? '重试处理' : '手动绑定' }}</el-button></template></el-table-column>
+            <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openBindingDialog(row)">{{ row.workOrderNo ? '更换绑定' : '手动绑定' }}</el-button></template></el-table-column>
           </el-table>
         </div>
         <div v-if="retryableLoaded && retryableTotal > retryablePageSize" class="task-queue-toolbar">
@@ -832,21 +837,21 @@ onBeforeUnmount(() => {
 
     <el-dialog v-model="bindingDialog" title="手动绑定飞针工单" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
       <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
-      <el-alert type="warning" :closable="false" title="同一飞针文件绑定后不能改绑其他工单；再次选择原工单可重试处理。已生成的 FQC 记录不会改动。" />
-      <el-alert v-if="bindingRecord?.workOrderNo" type="info" :closable="false" :title="`该文件已绑定工单 ${bindingRecord.workOrderNo}，只能按此工单重试处理。`" style="margin-top: 10px" />
+      <el-alert type="warning" :closable="false" title="更换绑定会同步同一飞针文件的历史 FQC；已有处置单或结算数据的文件不能更正。" />
+      <el-alert v-if="bindingRecord?.workOrderNo" type="info" :closable="false" :title="`该文件当前绑定生产指令 ${bindingRecord.workOrderNo}。`" style="margin-top: 10px" />
       <div class="binding-order-search">
         <el-input v-model="bindingKeyword" clearable placeholder="输入生产指令号或厂内编号" @keyup.enter="searchBindingWorkOrders" />
         <el-button :loading="bindingSearchLoading" @click="searchBindingWorkOrders">查询工单</el-button>
       </div>
       <el-alert v-if="bindingError" type="error" :closable="false" :title="bindingError" />
       <el-table v-loading="bindingSearchLoading" :data="bindingWorkOrders" size="small" max-height="300" empty-text="未找到工单，请输入准确的生产指令号或厂内编号">
-        <el-table-column label="选择" width="70"><template #default="{ row }"><el-radio v-model="bindingWorkOrderNo" :value="row.workOrderNo" :disabled="Boolean(bindingRecord?.workOrderNo && bindingRecord.workOrderNo !== row.workOrderNo)" :aria-label="`选择工单 ${row.workOrderNo}`" /></template></el-table-column>
+        <el-table-column label="选择" width="70"><template #default="{ row }"><el-radio v-model="bindingWorkOrderNo" :value="row.workOrderNo" :aria-label="`选择工单 ${row.workOrderNo}`" /></template></el-table-column>
         <el-table-column prop="workOrderNo" label="生产指令号" min-width="145" />
         <el-table-column label="厂内编号" min-width="180"><template #default="{ row }">{{ row.internalProductNo || '—' }}</template></el-table-column>
         <el-table-column label="下达日期" min-width="130"><template #default="{ row }">{{ formatDate(row.releasedAt) }}</template></el-table-column>
       </el-table>
       <p class="summary-footnote">最多显示前 50 条；如未看到目标工单，请输入更完整的工单号查询。</p>
-      <template #footer><el-button :disabled="bindingSaving" @click="bindingDialog = false">取消</el-button><el-button type="primary" :loading="bindingSaving" :disabled="!bindingWorkOrderNo" @click="submitBinding">{{ bindingRecord?.workOrderNo ? '重试处理' : '确认绑定' }}</el-button></template>
+      <template #footer><el-button :disabled="bindingSaving" @click="bindingDialog = false">取消</el-button><el-button type="primary" :loading="bindingSaving" :disabled="!bindingWorkOrderNo" @click="submitBinding">{{ bindingRecord?.workOrderNo ? (bindingRecord.workOrderNo === bindingWorkOrderNo ? '重试处理' : '更换绑定') : '确认绑定' }}</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="recordDialog" class="inspection-record-dialog" title="提交检验记录" width="min(920px, 94vw)" :close-on-click-modal="false">

@@ -3,6 +3,7 @@ package com.pcbqms.inspection.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -168,7 +169,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void manualBindingCannotChangeTheOrderOfAnExistingFile() {
+    void manualBindingCorrectsExistingFileAndItsHistoricalFqc() {
         TenantContext.set("tenant-a", "supervisor");
         var telemetry = event("already-bound", LocalDateTime.now().minusHours(1),
             LocalDateTime.now().minusMinutes(1), 3, 3, 0);
@@ -178,11 +179,72 @@ class FlyingProbeInspectionProjectionServiceTest {
         when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-OTHER", "PART-1", LocalDate.now()));
         when(projectionMapper.lockRun(any())).thenReturn(run());
 
-        assertThatThrownBy(() -> service().bindManually("already-bound", "WO-OTHER"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("已绑定");
+        service().bindManually("already-bound", "WO-OTHER");
+
+        verify(projectionMapper).rebindRunTasks(eq("tenant-a"), any(), eq("WO-OTHER"));
+        verify(projectionMapper).rebindRunTelemetry(eq("tenant-a"), any(), eq("WO-OTHER"));
+        verify(projectionMapper).rebindRunProjections(eq("tenant-a"), any(), eq("WO-OTHER"));
+        verify(projectionMapper).updateProjection(projection);
         verify(projectionMapper, never()).insertRunIfAbsent(any());
-        verify(projectionMapper, never()).wakeRetryableRun(any(), any());
+    }
+
+    @Test
+    void processedProjectionCanBeCorrectedWithoutCreatingNewFqc() {
+        TenantContext.set("tenant-a", "supervisor");
+        var telemetry = event("processed", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 3, 3, 0);
+        var projection = projection(telemetry);
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-key");
+        projection.setWorkOrderNo("WO-1");
+        projection.setInspectionTaskId("task-1");
+        projection.setInspectionRecordId("record-1");
+        when(projectionMapper.lockProjection("processed")).thenReturn(projection);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-OTHER", "PART-1", LocalDate.now()));
+        when(projectionMapper.lockRun("run-key")).thenReturn(run());
+
+        service().bindManually("processed", "WO-OTHER");
+
+        verify(projectionMapper).rebindRunTasks("tenant-a", "run-key", "WO-OTHER");
+        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-key", "WO-OTHER");
+        verify(projectionMapper).rebindRunProjections("tenant-a", "run-key", "WO-OTHER");
+        verify(taskMapper, never()).insert(any(InspectionTask.class));
+    }
+
+    @Test
+    void correctionRejectsFilesWithDownstreamNonconformities() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("with-ncr", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 3, 2, 1));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-key");
+        projection.setWorkOrderNo("WO-1");
+        when(projectionMapper.lockProjection("with-ncr")).thenReturn(projection);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-OTHER", "PART-1", LocalDate.now()));
+        when(projectionMapper.lockRun("run-key")).thenReturn(run());
+        when(projectionMapper.countRunNonconformities("tenant-a", "run-key")).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().bindManually("with-ncr", "WO-OTHER"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("处置");
+        verify(projectionMapper, never()).rebindRunTasks(any(), any(), any());
+    }
+
+    @Test
+    void correctionRejectsSettledFiles() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("settled", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 3, 3, 0));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-key");
+        projection.setWorkOrderNo("WO-1");
+        when(projectionMapper.lockProjection("settled")).thenReturn(projection);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-OTHER", "PART-1", LocalDate.now()));
+        when(projectionMapper.lockRun("run-key")).thenReturn(run());
+        when(projectionMapper.countRunSettlements("tenant-a", "run-key", "WO-1")).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().bindManually("settled", "WO-OTHER"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("结算");
+        verify(projectionMapper, never()).rebindRunTasks(any(), any(), any());
     }
 
     @Test
@@ -237,7 +299,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void manualBindingRejectsAnotherTenantsProjectionAndCompletedRecords() {
+    void manualBindingRejectsAnotherTenantsProjection() {
         TenantContext.set("tenant-a", "supervisor");
         var telemetry = event("other-tenant", LocalDateTime.now().minusHours(1),
             LocalDateTime.now().minusMinutes(1), 3, 3, 0);
@@ -245,10 +307,6 @@ class FlyingProbeInspectionProjectionServiceTest {
         projection.setTenantCode("tenant-b");
         when(projectionMapper.lockProjection("other-tenant")).thenReturn(projection);
 
-        assertThatThrownBy(() -> service().bindManually("other-tenant", "WO-1"))
-            .isInstanceOf(IllegalArgumentException.class);
-        projection.setTenantCode("tenant-a");
-        projection.setStatus("PROCESSED");
         assertThatThrownBy(() -> service().bindManually("other-tenant", "WO-1"))
             .isInstanceOf(IllegalArgumentException.class);
         verify(projectionMapper, never()).insertRunIfAbsent(any());
