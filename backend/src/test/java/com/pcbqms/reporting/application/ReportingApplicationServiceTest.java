@@ -2,6 +2,8 @@ package com.pcbqms.reporting.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.pcbqms.access.application.InspectionAccessScopeService;
@@ -243,6 +245,26 @@ class ReportingApplicationServiceTest {
             .containsExactlyInAnyOrder("FQC", "ELECTRICAL_TEST");
         assertThat(summary.defectRanking()).extracting(item -> item.defectSummary()).containsExactly("开路");
         assertThat(summary.dailyTrend()).extracting(item -> item.inspectionDate()).containsExactly("2026-09-01");
+    }
+
+    @Test
+    void qualitySummaryReadsOnlyNeededRecordsWithinTheRequestedDates() {
+        TenantContext.set("customer-a", "supervisor.a");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("supervisor.a", "SUPERVISOR", true, Set.of()));
+        when(inspectionRecordMapper.selectList(any())).thenReturn(List.of());
+        when(inspectionTaskMapper.selectList(any())).thenReturn(List.of());
+        ReportingApplicationService service = new ReportingApplicationService(
+            inspectionRecordMapper, inspectionTaskMapper, nonconformityMapper, productionBatchMapper, workOrderMapper,
+            inspectionAccessScopeService, standardBoardService);
+
+        service.qualitySummary(LocalDate.of(2026, 10, 20), LocalDate.of(2026, 11, 19), null, true);
+
+        verify(inspectionRecordMapper).selectList(argThat(query ->
+            String.valueOf(query.getSqlSelect()).contains("defect_summary")
+                && !String.valueOf(query.getSqlSelect()).contains("results_json")
+                && query.getSqlSegment().contains("inspected_at >=")
+                && query.getSqlSegment().contains("inspected_at <")));
     }
 
     @Test

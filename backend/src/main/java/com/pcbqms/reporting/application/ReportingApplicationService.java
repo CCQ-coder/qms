@@ -72,8 +72,14 @@ public class ReportingApplicationService {
         String normalizedProcessCode = StringUtils.hasText(processCode) ? processCode.trim() : null;
         String tenantCode = TenantContext.tenantCode();
         var access = inspectionAccessScopeService.currentAccess();
-        List<InspectionRecord> records = inspectionRecordMapper.selectList(Wrappers.lambdaQuery(InspectionRecord.class)
-            .eq(InspectionRecord::getTenantCode, tenantCode));
+        var recordQuery = Wrappers.<InspectionRecord>query()
+            .select("id", "task_id", "verdict", "defective_quantity", "defect_summary", "inspected_at")
+            .eq("tenant_code", tenantCode);
+        if (from != null) recordQuery.ge("inspected_at", from.atStartOfDay());
+        if (to != null && !LocalDate.MAX.equals(to)) {
+            recordQuery.lt("inspected_at", to.plusDays(1).atStartOfDay());
+        }
+        List<InspectionRecord> records = inspectionRecordMapper.selectList(recordQuery);
         Set<String> excludedRecordIds = standardBoardService.inspectionRecordIds();
         Map<String, InspectionTask> taskById = new LinkedHashMap<>();
         for (InspectionTask task : inspectionTaskMapper.selectList(Wrappers.lambdaQuery(InspectionTask.class)

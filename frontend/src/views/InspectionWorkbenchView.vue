@@ -32,6 +32,7 @@ const route = useRoute()
 const isSummaryRoute = computed(() => route.meta.finishedTestSummary === true)
 const activePanel = ref<'monitor' | 'records' | 'summary'>(isSummaryRoute.value ? 'summary' : route.query.panel === 'records' ? 'records' : 'monitor')
 const monitoringLoading = ref(false)
+const summaryLoading = ref(false)
 const equipment = ref<Equipment[]>([])
 const hostStatuses = ref<GatewayHostStatus[]>([])
 const hostOfflineAfterSeconds = ref(300)
@@ -348,21 +349,24 @@ async function pollHostStatuses() {
 
 async function loadMonitoringData() {
   monitoringLoading.value = true
+  summaryLoading.value = true
+  summaryError.value = ''
   monitoringVersion++
+  const summaryResult = qmsApi.getQualitySummary('2026-10-20', undefined, undefined, true)
+    .then((summary) => { qualitySummary.value = summary })
+    .catch(() => { summaryError.value = 'FQC 质量汇总读取失败，请重试。' })
+  let fastRequestsSucceeded = false
   try {
-    const [summaryResult, equipmentResult, hostStatusResult, snapshotsResult, offlineThresholdResult] = await Promise.allSettled([
-      qmsApi.getQualitySummary('2026-10-20', undefined, undefined, true),
+    const [equipmentResult, hostStatusResult, snapshotsResult, offlineThresholdResult] = await Promise.allSettled([
       qmsApi.listEquipment(),
       qmsApi.listGatewayHostStatuses(),
       qmsApi.listLatestFlyingProbeSnapshots(),
       qmsApi.getTenantParameter('equipment.monitor.offline-after-seconds')
     ])
-    backendReachable.value = [summaryResult, equipmentResult, hostStatusResult, snapshotsResult]
+    backendReachable.value = [equipmentResult, hostStatusResult, snapshotsResult]
       .some((result) => result.status === 'fulfilled')
-    summaryError.value = summaryResult.status === 'rejected' ? 'FQC 质量汇总读取失败，请重试。' : ''
     equipmentError.value = equipmentResult.status === 'rejected' ? '成品测试设备台账读取失败，请重试。' : ''
     hostStatusError.value = hostStatusResult.status === 'rejected' ? '设备电脑心跳读取失败，请重试。' : ''
-    if (summaryResult.status === 'fulfilled') qualitySummary.value = summaryResult.value
     if (equipmentResult.status === 'fulfilled') equipment.value = equipmentResult.value
     else equipment.value = []
     if (hostStatusResult.status === 'fulfilled') hostStatuses.value = hostStatusResult.value
@@ -376,16 +380,19 @@ async function loadMonitoringData() {
     probeFailedEquipmentIds.value = snapshotsResult.status === 'rejected'
       ? new Set(equipment.value.map((device) => device.id)) : new Set()
     probeSnapshotsError.value = snapshotsResult.status === 'rejected' ? '飞针计数快照读取失败，请刷新重试。' : ''
-    if ([summaryResult, equipmentResult, hostStatusResult, snapshotsResult].every((result) => result.status === 'fulfilled')) {
-      updatedAt.value = new Date()
-    }
+    fastRequestsSucceeded = [equipmentResult, hostStatusResult, snapshotsResult]
+      .every((result) => result.status === 'fulfilled')
   } finally {
     monitoringLoading.value = false
   }
+  await summaryResult
+  summaryLoading.value = false
+  if (!summaryError.value) backendReachable.value = true
+  if (fastRequestsSucceeded && !summaryError.value) updatedAt.value = new Date()
 }
 
 async function refreshWorkbench() {
-  if (monitoringLoading.value) return
+  if (monitoringLoading.value || summaryLoading.value) return
   await Promise.all([loadMonitoringData(), loadOfflineDrafts()])
   if (!monitorDevices.value.some((device) => device.assetNo === selectedDeviceId.value)) {
     selectedDeviceId.value = monitorDevices.value[0]?.assetNo ?? ''
@@ -688,7 +695,7 @@ onBeforeUnmount(() => {
       <div class="finished-test-hero-actions">
         <span class="workstation-connection" :class="workstationConnectionClass"><i></i>{{ workstationConnectionLabel }}</span>
         <span class="live-status"><i></i>数据更新 {{ updatedAtLabel }}</span>
-        <el-button plain @click="refreshWorkbench">刷新数据</el-button>
+        <el-button plain :loading="monitoringLoading || summaryLoading" @click="refreshWorkbench">刷新数据</el-button>
       </div>
     </section>
 
@@ -709,10 +716,10 @@ onBeforeUnmount(() => {
             <h3>成品测试多设备实时监控</h3>
           </div>
           <div v-if="!summaryError" class="shift-summary">
-            <span>检测 <strong>{{ fqcTotal }}</strong></span>
-            <span>合格 <strong class="good-text">{{ fqcPass }}</strong></span>
-            <span>不合格 <strong class="bad-text">{{ fqcFail }}</strong></span>
-            <span>一次合格率 <strong class="good-text">{{ fqcPassRate }}%</strong></span>
+            <span>检测 <strong>{{ summaryLoading && !updatedAt ? '—' : fqcTotal }}</strong></span>
+            <span>合格 <strong class="good-text">{{ summaryLoading && !updatedAt ? '—' : fqcPass }}</strong></span>
+            <span>不合格 <strong class="bad-text">{{ summaryLoading && !updatedAt ? '—' : fqcFail }}</strong></span>
+            <span>一次合格率 <strong class="good-text">{{ summaryLoading && !updatedAt ? '—' : `${fqcPassRate}%` }}</strong></span>
           </div>
         </div>
 
