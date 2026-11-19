@@ -54,7 +54,7 @@ const canBindFlyingProbe = computed(() => ['PLATFORM_ADMIN', 'TENANT_ADMIN', 'SU
 const retryableRecords = ref<FlyingProbeRetryableProjection[]>([])
 const retryableTotal = ref(0)
 const retryablePage = ref(1)
-const retryablePageSize = 50
+const retryablePageSize = ref(10)
 const retryableLoading = ref(false)
 const retryableLoaded = ref(false)
 const retryableError = ref('')
@@ -306,15 +306,16 @@ function changeFinishedRecordPage(page: number, size: number) {
   void loadCompletedFinishedRecords(page, size, false)
 }
 
-async function loadRetryableProjections(page = retryablePage.value) {
+async function loadRetryableProjections(page = retryablePage.value, pageSize = retryablePageSize.value) {
   if (retryableLoading.value) return
   retryableLoading.value = true
   retryableError.value = ''
   try {
-    const result = await qmsApi.listRetryableFlyingProbeProjections(page, retryablePageSize, appliedProbeSearch.value)
+    const result = await qmsApi.listRetryableFlyingProbeProjections(page, pageSize, appliedProbeSearch.value)
     retryableRecords.value = result.records
     retryableTotal.value = result.total
     retryablePage.value = result.page
+    retryablePageSize.value = result.pageSize
     retryableLoaded.value = true
     retryableUpdatedAt.value = new Date()
   } catch (error) {
@@ -809,7 +810,7 @@ onBeforeUnmount(() => {
         <el-alert v-if="retryableError" type="error" :closable="false" :title="retryableError" style="margin-top: 12px" />
         <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar"><span>共 {{ retryableTotal }} 份待匹配飞针文件</span></div>
         <div v-if="retryableLoaded || retryableLoading" class="finished-records-table-wrap finished-records-table-wrap--retryable">
-          <el-table v-loading="retryableLoading" :data="retryableRecords" size="small" empty-text="暂无待匹配飞针文件">
+          <paged-table v-loading="retryableLoading" :data="retryableRecords" :total="retryableTotal" :page="retryablePage" :page-size="retryablePageSize" size="small" empty-text="暂无待匹配飞针文件" @page-change="loadRetryableProjections">
             <el-table-column label="设备检测时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="125" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
@@ -821,10 +822,7 @@ onBeforeUnmount(() => {
             <el-table-column label="实时合格率" min-width="120" align="right"><template #default="{ row }">{{ flyingProbePassRateFromCounts(row.cumulativeTested, row.cumulativeGood) }}</template></el-table-column>
             <el-table-column label="待匹配原因" min-width="280" show-overflow-tooltip><template #default="{ row }">{{ row.reason || '—' }}</template></el-table-column>
             <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openBindingDialog(row)">{{ row.workOrderNo ? '更换绑定' : '手动绑定' }}</el-button></template></el-table-column>
-          </el-table>
-        </div>
-        <div v-if="retryableLoaded && retryableTotal > retryablePageSize" class="task-queue-toolbar">
-          <el-pagination :current-page="retryablePage" :page-size="retryablePageSize" :total="retryableTotal" background layout="prev, pager, next, jumper" @current-change="loadRetryableProjections" />
+          </paged-table>
         </div>
       </template>
       <template v-else>
