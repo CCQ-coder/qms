@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { flyingProbePassRate, useFlyingProbeHistory } from './useFlyingProbeHistory.ts'
+import { flyingProbePassRate, flyingProbePassRateFromCounts, useFlyingProbeHistory } from './useFlyingProbeHistory.ts'
 import type { EquipmentTelemetryRecord } from '../types/qms.ts'
 
 function record(id: string): EquipmentTelemetryRecord {
@@ -16,6 +16,8 @@ test('shows each flying-probe record pass rate from its own counters', () => {
   assert.equal(flyingProbePassRate({ ...record('a'), machiningCount: 17, goodBoardCount: 13 }), '76.47%')
   assert.equal(flyingProbePassRate({ ...record('b'), machiningCount: 0 }), '—')
   assert.equal(flyingProbePassRate({ ...record('c'), goodBoardCount: undefined }), '—')
+  assert.equal(flyingProbePassRateFromCounts(17, 13), '76.47%')
+  assert.equal(flyingProbePassRateFromCounts(null, 13), '—')
 })
 
 test('counts once, then requests only the selected page', async () => {
@@ -27,14 +29,14 @@ test('counts once, then requests only the selected page', async () => {
       : { items: [record('first')], pageSize: 10, total: 21 }
   })
 
-  await history.refresh({ workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' })
+  await history.refresh({ equipmentId: 'equipment-1', workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' })
   await history.changePage(2, 10)
 
   assert.deepEqual(queries, [
     { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 10, page: 1, includeTotal: true,
-      workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' },
+      equipmentId: 'equipment-1', workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' },
     { eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 10, page: 2, includeTotal: false,
-      workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' }
+      equipmentId: 'equipment-1', workOrderNo: 'WO-123', customerOrderNo: 'SO-456', internalProductNo: 'P2L018680B' }
   ])
   assert.deepEqual(history.records.value.map((item) => item.id), ['second'])
   assert.equal(history.total.value, 21)

@@ -34,17 +34,28 @@ public interface FlyingProbeProjectionMapper {
         SELECT p.telemetry_id AS id, e.asset_no AS equipment_code, p.machine_name, p.material_no,
                p.device_time, p.source_file, p.source_start_time, p.reason,
                COALESCE(r.work_order_no, p.work_order_no) AS work_order_no,
+               work_order.customer_order_no,
                p.cumulative_tested, p.cumulative_good, p.cumulative_bad
         FROM ranked p
         LEFT JOIN qms_equipment e ON e.id = p.equipment_id COLLATE utf8mb4_0900_ai_ci
             AND e.tenant_code = p.tenant_code COLLATE utf8mb4_0900_ai_ci
         LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
+        LEFT JOIN qms_work_order work_order
+            ON work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = p.tenant_code COLLATE utf8mb4_0900_ai_ci
+            AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci =
+                COALESCE(r.work_order_no, p.work_order_no) COLLATE utf8mb4_0900_ai_ci
         WHERE p.row_no = 1
+        <if test="equipmentId != null">
+            AND p.equipment_id = #{equipmentId}
+        </if>
         <if test="internalProductNo != null">
             AND p.material_no LIKE CONCAT('%', #{internalProductNo}, '%')
         </if>
         <if test="workOrderNo != null">
             AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
+        </if>
+        <if test="customerOrderNo != null">
+            AND work_order.customer_order_no LIKE CONCAT('%', #{customerOrderNo}, '%')
         </if>
         ORDER BY p.latest_device_time DESC, p.telemetry_id DESC
         LIMIT #{pageSize} OFFSET #{offset}
@@ -53,13 +64,14 @@ public interface FlyingProbeProjectionMapper {
     List<FlyingProbeRetryableRecordResponse> selectRetryableGroups(
         @Param("tenantCode") String tenantCode, @Param("dataStart") LocalDateTime dataStart,
         @Param("pageSize") int pageSize, @Param("offset") long offset,
-        @Param("workOrderNo") String workOrderNo, @Param("internalProductNo") String internalProductNo,
+        @Param("equipmentId") String equipmentId, @Param("workOrderNo") String workOrderNo,
+        @Param("customerOrderNo") String customerOrderNo, @Param("internalProductNo") String internalProductNo,
         @Param("excludedMaterialNos") List<String> excludedMaterialNos);
 
     @Select("""
         <script>
         WITH ranked AS (
-            SELECT tenant_code, telemetry_id, run_key, material_no, work_order_no,
+            SELECT tenant_code, telemetry_id, equipment_id, run_key, material_no, work_order_no,
                    ROW_NUMBER() OVER (PARTITION BY COALESCE(run_key, telemetry_id)
                        ORDER BY device_time, received_at, telemetry_id) AS row_no
             FROM qms_flying_probe_projection
@@ -72,18 +84,30 @@ public interface FlyingProbeProjectionMapper {
         )
         SELECT COUNT(*) FROM ranked p
         LEFT JOIN qms_flying_probe_run r ON r.run_key = p.run_key AND r.tenant_code = p.tenant_code
+        LEFT JOIN qms_work_order work_order
+            ON work_order.tenant_code COLLATE utf8mb4_0900_ai_ci = p.tenant_code COLLATE utf8mb4_0900_ai_ci
+            AND work_order.work_order_no COLLATE utf8mb4_0900_ai_ci =
+                COALESCE(r.work_order_no, p.work_order_no) COLLATE utf8mb4_0900_ai_ci
         WHERE p.row_no = 1
+        <if test="equipmentId != null">
+            AND p.equipment_id = #{equipmentId}
+        </if>
         <if test="internalProductNo != null">
             AND p.material_no LIKE CONCAT('%', #{internalProductNo}, '%')
         </if>
         <if test="workOrderNo != null">
             AND COALESCE(r.work_order_no, p.work_order_no) LIKE CONCAT('%', #{workOrderNo}, '%')
         </if>
+        <if test="customerOrderNo != null">
+            AND work_order.customer_order_no LIKE CONCAT('%', #{customerOrderNo}, '%')
+        </if>
         </script>
         """)
     long countRetryableGroups(@Param("tenantCode") String tenantCode,
                               @Param("dataStart") LocalDateTime dataStart,
+                              @Param("equipmentId") String equipmentId,
                               @Param("workOrderNo") String workOrderNo,
+                              @Param("customerOrderNo") String customerOrderNo,
                               @Param("internalProductNo") String internalProductNo,
                               @Param("excludedMaterialNos") List<String> excludedMaterialNos);
 

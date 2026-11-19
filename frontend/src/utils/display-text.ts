@@ -16,7 +16,7 @@ const statusLabels: Record<string, string> = {
   NORMAL: '正常',
   DUE_SOON: '即将到期',
   NOT_SET: '未设置',
-  IN_USE: '在用',
+  IN_USE: '启用',
   ALARM: '告警中',
   IDLE: '空闲',
   PROCESSING: '加工中',

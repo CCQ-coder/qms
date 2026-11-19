@@ -517,6 +517,10 @@ export type FlyingProbeRetryableProjection = {
   sourceFile?: string | null
   reason?: string | null
   workOrderNo?: string | null
+  customerOrderNo?: string | null
+  cumulativeTested?: number | null
+  cumulativeGood?: number | null
+  cumulativeBad?: number | null
 }
 
 export type FlyingProbeRetryableProjectionPage = {

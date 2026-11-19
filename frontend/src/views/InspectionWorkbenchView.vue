@@ -9,7 +9,7 @@ import { equipmentStatusTagType, formatDate, formatDateTime } from '@/utils/disp
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
-import { flyingProbePassRate, useFlyingProbeHistory } from './useFlyingProbeHistory'
+import { flyingProbePassRate, flyingProbePassRateFromCounts, useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
 const FinishedTestDeviceSummary = defineAsyncComponent(() => import('@/components/FinishedTestDeviceSummary.vue'))
@@ -59,9 +59,10 @@ const retryableLoaded = ref(false)
 const retryableError = ref('')
 const retryableUpdatedAt = ref<Date>()
 const probeWorkOrderNo = ref('')
+const probeEquipmentId = ref('')
 const probeCustomerOrderNo = ref('')
 const probeInternalProductNo = ref('')
-const appliedProbeSearch = ref<{ workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string }>({})
+const appliedProbeSearch = ref<{ equipmentId?: string; workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection>()
 const bindingKeyword = ref('')
@@ -301,7 +302,7 @@ async function loadCompletedFinishedRecords(page = 1, pageSize = finishedRecordP
     if (includeTotal) finishedRecordsUpdatedAt.value = new Date()
     return true
   } catch {
-    finishedRecordsError.value = '已提交 FQC 检验记录读取失败，请重试。'
+    finishedRecordsError.value = '已提交检验记录读取失败，请重试。'
     return false
   } finally {
     finishedRecordsLoading.value = false
@@ -417,10 +418,12 @@ function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
 
 function searchProbeRecords() {
   if (recordPanelLoading.value) return
+  const equipmentId = probeEquipmentId.value
   const workOrderNo = probeWorkOrderNo.value.trim()
   const customerOrderNo = probeCustomerOrderNo.value.trim()
   const internalProductNo = probeInternalProductNo.value.trim()
   appliedProbeSearch.value = {
+    ...(equipmentId ? { equipmentId } : {}),
     ...(workOrderNo ? { workOrderNo } : {}),
     ...(customerOrderNo ? { customerOrderNo } : {}),
     ...(internalProductNo ? { internalProductNo } : {})
@@ -707,7 +710,7 @@ onBeforeUnmount(() => {
             <h3>成品测试多设备实时监控</h3>
           </div>
           <div v-if="!summaryError" class="shift-summary">
-            <span>FQC <strong>{{ fqcTotal }}</strong></span>
+            <span>检测 <strong>{{ fqcTotal }}</strong></span>
             <span>合格 <strong class="good-text">{{ fqcPass }}</strong></span>
             <span>不合格 <strong class="bad-text">{{ fqcFail }}</strong></span>
             <span>一次合格率 <strong class="good-text">{{ fqcPassRate }}%</strong></span>
@@ -732,7 +735,7 @@ onBeforeUnmount(() => {
               <small>采集电脑{{ device.hostStatus ? ` · ${device.hostStatus.hostName}` : '' }}</small>
               <b>{{ deviceComputerStatusLabel(device) }}</b>
             </span>
-            <span class="device-card-footer"><span>飞针已测 {{ device.probeError ? '—' : (device.probe?.machiningCount ?? '—') }}</span><span>FQC 检验见记录列表</span></span>
+            <span class="device-card-footer"><span>飞针已测 {{ device.probeError ? '—' : (device.probe?.machiningCount ?? '—') }}</span><span>检验见记录列表</span></span>
           </button>
         </div>
         <div v-if="!equipmentError && monitorDevices.length" class="monitor-pagination">
@@ -763,15 +766,18 @@ onBeforeUnmount(() => {
       </template>
       <div class="task-queue-actions" role="group" aria-label="记录来源">
         <el-button :type="recordSource !== 'fqc' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
-        <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交 FQC 检验</el-button>
+        <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交检验</el-button>
       </div>
       <div v-if="recordSource !== 'fqc'" class="probe-record-filters">
         <div class="task-queue-actions" role="group" aria-label="匹配状态">
           <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('probe')">全部记录</el-button>
           <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('retryable')">未匹配</el-button>
         </div>
+        <el-select v-model="probeEquipmentId" clearable filterable placeholder="全部检测设备" aria-label="筛选检测设备">
+          <el-option v-for="device in monitorDevices" :key="device.id" :label="`${device.assetNo} · ${device.name}`" :value="device.id" />
+        </el-select>
         <el-input v-model="probeWorkOrderNo" clearable placeholder="搜索生产指令" aria-label="搜索生产指令" @keyup.enter="searchProbeRecords" />
-        <el-input v-if="recordSource === 'probe'" v-model="probeCustomerOrderNo" clearable placeholder="搜索订单编号" aria-label="搜索订单编号" @keyup.enter="searchProbeRecords" />
+        <el-input v-model="probeCustomerOrderNo" clearable placeholder="搜索订单编号" aria-label="搜索订单编号" @keyup.enter="searchProbeRecords" />
         <el-input v-model="probeInternalProductNo" clearable placeholder="搜索厂内编号" aria-label="搜索厂内编号" @keyup.enter="searchProbeRecords" />
         <el-button type="primary" :disabled="recordPanelLoading" @click="searchProbeRecords">查询</el-button>
       </div>
@@ -798,10 +804,15 @@ onBeforeUnmount(() => {
         <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar"><span>共 {{ retryableTotal }} 份待匹配飞针文件</span></div>
         <div v-if="retryableLoaded || retryableLoading" class="finished-records-table-wrap finished-records-table-wrap--retryable">
           <el-table v-loading="retryableLoading" :data="retryableRecords" size="small" empty-text="暂无待匹配飞针文件">
-            <el-table-column label="设备检测时间" width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
-            <el-table-column label="检测设备" width="135" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
-            <el-table-column label="生产指令" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
-            <el-table-column label="厂内编号" width="145" show-overflow-tooltip><template #default="{ row }">{{ row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="设备检测时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
+            <el-table-column label="检测设备" min-width="125" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
+            <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="销售订单号" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ row.customerOrderNo || '—' }}</template></el-table-column>
+            <el-table-column label="厂内编号" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.materialNo || '—' }}</template></el-table-column>
+            <el-table-column label="已测" min-width="100" align="right"><template #default="{ row }">{{ row.cumulativeTested ?? '—' }}</template></el-table-column>
+            <el-table-column label="好板" min-width="100" align="right"><template #default="{ row }"><span class="good-text">{{ row.cumulativeGood ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="坏板" min-width="100" align="right"><template #default="{ row }"><span class="bad-text">{{ row.cumulativeBad ?? '—' }}</span></template></el-table-column>
+            <el-table-column label="实时合格率" min-width="120" align="right"><template #default="{ row }">{{ flyingProbePassRateFromCounts(row.cumulativeTested, row.cumulativeGood) }}</template></el-table-column>
             <el-table-column label="待匹配原因" min-width="280" show-overflow-tooltip><template #default="{ row }">{{ row.reason || '—' }}</template></el-table-column>
             <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openBindingDialog(row)">{{ row.workOrderNo ? '更换绑定' : '手动绑定' }}</el-button></template></el-table-column>
           </el-table>
@@ -817,7 +828,7 @@ onBeforeUnmount(() => {
           <span>共 {{ finishedRecordTotal }} 条{{ recordKeyword.trim() ? `，当前页匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
-          <paged-table :data="filteredFinishedTestRecords" :total="finishedRecordTotal" :page="finishedRecordPage" :page-size="finishedRecordPageSize" size="small" empty-text="暂无已提交的 FQC 检验记录；飞针数据请查看“飞针机采集记录”" @page-change="changeFinishedRecordPage">
+          <paged-table :data="filteredFinishedTestRecords" :total="finishedRecordTotal" :page="finishedRecordPage" :page-size="finishedRecordPageSize" size="small" empty-text="暂无已提交的检验记录；飞针数据请查看“飞针机采集记录”" @page-change="changeFinishedRecordPage">
             <el-table-column label="检验时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
             <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />

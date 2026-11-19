@@ -274,11 +274,11 @@ class FlyingProbeInspectionProjectionServiceTest {
         var record = new FlyingProbeRetryableRecordResponse();
         record.setId("old-telemetry");
         record.setSourceFile("WTD-9/old.txt");
-        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START, null, null, List.of())).thenReturn(1L);
-        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L, null, null, List.of()))
+        when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START, null, null, null, null, List.of())).thenReturn(1L);
+        when(projectionMapper.selectRetryableGroups("tenant-a", FinishedTestDataWindow.START, 50, 0L, null, null, null, null, List.of()))
             .thenReturn(List.of(record));
 
-        var page = service().listRetryable(1, 50, null, null);
+        var page = service().listRetryable(1, 50, null, null, null, null);
 
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.records()).extracting(FlyingProbeRetryableRecordResponse::getId)
@@ -286,16 +286,16 @@ class FlyingProbeInspectionProjectionServiceTest {
     }
 
     @Test
-    void searchesRetryableFilesAcrossAllPagesUsingBothFields() {
+    void searchesRetryableFilesAcrossAllPagesUsingAllFields() {
         TenantContext.set("tenant-a", "supervisor");
         when(projectionMapper.countRetryableGroups("tenant-a", FinishedTestDataWindow.START,
-            "26100985", "P2L018680B", List.of())).thenReturn(1L);
+            "equipment-1", "26100985", "SO-456", "P2L018680B", List.of())).thenReturn(1L);
 
-        var page = service().listRetryable(1, 50, " 26100985 ", " P2L018680B ");
+        var page = service().listRetryable(1, 50, " equipment-1 ", " 26100985 ", " SO-456 ", " P2L018680B ");
 
         assertThat(page.total()).isEqualTo(1);
         verify(projectionMapper).selectRetryableGroups("tenant-a", FinishedTestDataWindow.START,
-            50, 0L, "26100985", "P2L018680B", List.of());
+            50, 0L, "equipment-1", "26100985", "SO-456", "P2L018680B", List.of());
     }
 
     @Test

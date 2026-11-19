@@ -83,22 +83,26 @@ public class FlyingProbeInspectionProjectionService {
     }
 
     public FlyingProbeRetryablePageResponse listRetryable(
-        Integer requestedPage, Integer requestedPageSize, String requestedWorkOrderNo, String requestedInternalProductNo
+        Integer requestedPage, Integer requestedPageSize, String requestedEquipmentId,
+        String requestedWorkOrderNo, String requestedCustomerOrderNo, String requestedInternalProductNo
     ) {
         accessScopeService.requireSupervisorOrAdministrator();
         long page = requestedPage == null ? 1 : Math.max(1, requestedPage);
         int pageSize = requestedPageSize == null ? 50 : Math.clamp(requestedPageSize, 10, 100);
         String tenantCode = TenantContext.tenantCode();
+        String equipmentId = StringUtils.hasText(requestedEquipmentId) ? requestedEquipmentId.trim() : null;
         String workOrderNo = StringUtils.hasText(requestedWorkOrderNo) ? requestedWorkOrderNo.trim() : null;
+        String customerOrderNo = StringUtils.hasText(requestedCustomerOrderNo) ? requestedCustomerOrderNo.trim() : null;
         String internalProductNo = StringUtils.hasText(requestedInternalProductNo) ? requestedInternalProductNo.trim() : null;
         List<String> excludedMaterialNos = List.copyOf(standardBoardService.materialNumbers());
         long total = projectionMapper.countRetryableGroups(
-            tenantCode, FinishedTestDataWindow.START, workOrderNo, internalProductNo, excludedMaterialNos);
+            tenantCode, FinishedTestDataWindow.START, equipmentId, workOrderNo, customerOrderNo,
+            internalProductNo, excludedMaterialNos);
         long offset = (page - 1) * pageSize;
         List<FlyingProbeRetryableRecordResponse> records = offset < total
             ? projectionMapper.selectRetryableGroups(
-                tenantCode, FinishedTestDataWindow.START, pageSize, offset, workOrderNo, internalProductNo,
-                excludedMaterialNos)
+                tenantCode, FinishedTestDataWindow.START, pageSize, offset, equipmentId, workOrderNo,
+                customerOrderNo, internalProductNo, excludedMaterialNos)
             : List.of();
         return new FlyingProbeRetryablePageResponse(records, total, page, pageSize);
     }

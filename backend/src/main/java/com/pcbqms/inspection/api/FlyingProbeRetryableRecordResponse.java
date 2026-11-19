@@ -14,6 +14,7 @@ public class FlyingProbeRetryableRecordResponse {
     private LocalDateTime sourceStartTime;
     private String reason;
     private String workOrderNo;
+    private String customerOrderNo;
     private Integer cumulativeTested;
     private Integer cumulativeGood;
     private Integer cumulativeBad;

@@ -1,10 +1,12 @@
 import { ref } from 'vue'
 import type { EquipmentTelemetryHistoryPage, EquipmentTelemetryHistoryQuery, EquipmentTelemetryRecord } from '../types/qms'
 
-export function flyingProbePassRate(record: EquipmentTelemetryRecord) {
-  const tested = record.machiningCount
-  const good = record.goodBoardCount
+export function flyingProbePassRateFromCounts(tested?: number | null, good?: number | null) {
   return tested != null && tested > 0 && good != null ? `${(good / tested * 100).toFixed(2)}%` : '—'
+}
+
+export function flyingProbePassRate(record: EquipmentTelemetryRecord) {
+  return flyingProbePassRateFromCounts(record.machiningCount, record.goodBoardCount)
 }
 
 export function useFlyingProbeHistory(
@@ -18,7 +20,7 @@ export function useFlyingProbeHistory(
   const loaded = ref(false)
   const error = ref('')
   const updatedAt = ref<Date>()
-  let search: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo'> = {}
+  let search: Pick<EquipmentTelemetryHistoryQuery, 'equipmentId' | 'workOrderNo' | 'customerOrderNo' | 'internalProductNo'> = {}
 
   async function load(selectedPage: number, selectedSize: number, includeTotal: boolean) {
     if (loading.value) return
@@ -42,7 +44,7 @@ export function useFlyingProbeHistory(
 
   return {
     records, page, pageSize, total, loading, loaded, error, updatedAt,
-    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'workOrderNo' | 'customerOrderNo' | 'internalProductNo'> = search) => {
+    refresh: (filters: Pick<EquipmentTelemetryHistoryQuery, 'equipmentId' | 'workOrderNo' | 'customerOrderNo' | 'internalProductNo'> = search) => {
       search = filters
       return load(1, pageSize.value, true)
     },
