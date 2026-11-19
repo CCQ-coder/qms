@@ -4,16 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
 
 class EquipmentTelemetryRecordMapperSqlTest {
     @Test
-    void flyingProbeHistoryOrdersAndPagesByDeviceTime() {
+    void flyingProbeHistoryOrdersAndPagesByServerReceiptTime() {
         String sql = historySql("FLYING_PROBE_TEST_COUNTERS");
 
-        assertThat(sql).contains("device_time < ?", "device_time = ?", "ORDER BY device_time DESC, id DESC");
+        assertThat(sql).contains("received_at < ?", "received_at = ?", "ORDER BY received_at DESC, id DESC")
+            .doesNotContain("AND (device_time < ?");
     }
 
     @Test
@@ -90,7 +92,25 @@ class EquipmentTelemetryRecordMapperSqlTest {
     }
 
     @Test
+    void latestFlyingProbeSnapshotsPickOnePerEquipmentWithoutAnArtificialReceiptCutoff() {
+        Configuration configuration = new Configuration();
+        configuration.addMapper(EquipmentTelemetryRecordMapper.class);
+        String sql = configuration.getMappedStatement(
+            EquipmentTelemetryRecordMapper.class.getName() + ".selectLatestFlyingProbeByEquipment")
+            .getBoundSql(Map.of("tenantCode", "customer-b", "equipmentIds", List.of("equipment-1", "equipment-2")))
+            .getSql().replaceAll("\\s+", " ");
+
+        assertThat(sql).contains("event_type = 'FLYING_PROBE_TEST_COUNTERS'",
+            "PARTITION BY equipment_id ORDER BY device_time DESC, received_at DESC, id DESC",
+            "device_time >= '2026-10-16'", "equipment_id IN ( ? , ? )", "row_no = 1")
+            .doesNotContain("received_at >= ?", "received_at <= ?");
+    }
+
+    @Test
     void finishedTestDateFilterUsesDeviceDetectionTimeWhileOtherTelemetryUsesReceiptTime() {
+        assertThat(historySql("FLYING_PROBE_TEST_COUNTERS", null, null, true))
+            .contains("received_at >= ?", "received_at <= ?")
+            .doesNotContain("device_time >= ?", "device_time <= ?");
         assertThat(historySql("FINISHED_TEST", null, null, true))
             .contains("device_time >= ?", "device_time <= ?")
             .doesNotContain("received_at >= ?", "received_at <= ?");

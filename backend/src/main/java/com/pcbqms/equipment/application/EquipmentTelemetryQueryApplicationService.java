@@ -58,6 +58,34 @@ public class EquipmentTelemetryQueryApplicationService {
             .toList();
     }
 
+    public List<EquipmentTelemetryRecordResponse> latestFlyingProbeSnapshots() {
+        var access = inspectionAccessScopeService.currentAccess();
+        String tenantCode = TenantContext.tenantCode();
+        Map<String, Equipment> accessibleEquipment = equipmentMapper.selectList(Wrappers.lambdaQuery(Equipment.class)
+                .eq(Equipment::getTenantCode, tenantCode)
+                .eq(Equipment::getEquipmentType, "成品测试设备"))
+            .stream()
+            .filter(equipment -> access.fullDataAccess() || (StringUtils.hasText(equipment.getProcessCode())
+                && access.canAccess(equipment.getProcessCode())))
+            .collect(Collectors.toMap(Equipment::getId, equipment -> equipment));
+        if (accessibleEquipment.isEmpty()) return List.of();
+
+        List<EquipmentTelemetryRecord> records = telemetryRecordMapper.selectLatestFlyingProbeByEquipment(
+            tenantCode, List.copyOf(accessibleEquipment.keySet()));
+        List<String> ids = records.stream().map(EquipmentTelemetryRecord::getId).toList();
+        Map<String, EquipmentTelemetryProjectionStatus> projections = ids.isEmpty() ? Map.of()
+            : telemetryRecordMapper.selectProjectionStatuses(tenantCode, ids).stream()
+                .collect(Collectors.toMap(EquipmentTelemetryProjectionStatus::getTelemetryId, item -> item));
+        Map<String, WorkOrder> workOrdersByNo = workOrdersByNo(tenantCode, records.stream()
+            .map(record -> projections.containsKey(record.getId()) && projections.get(record.getId()).getWorkOrderNo() != null
+                ? projections.get(record.getId()).getWorkOrderNo() : record.getWorkOrderNo()).toList());
+        return records.stream()
+            .map(record -> toResponse(record, accessibleEquipment.get(record.getEquipmentId()),
+                projections.get(record.getId()), workOrdersByNo))
+            .filter(Objects::nonNull)
+            .toList();
+    }
+
     public EquipmentTelemetryHistoryPageResponse pageHistory(EquipmentTelemetryHistoryQuery query) {
         var access = inspectionAccessScopeService.currentAccess();
         String tenantCode = TenantContext.tenantCode();
@@ -86,7 +114,7 @@ public class EquipmentTelemetryQueryApplicationService {
         if (fromTime != null && toTime != null && fromTime.isAfter(toTime)) {
             throw new IllegalArgumentException("遥测历史开始时间不能晚于结束时间");
         }
-        boolean sortByDeviceTime = "FLYING_PROBE_TEST_COUNTERS".equals(eventType) || "FINISHED_TEST".equals(eventType);
+        boolean sortByDeviceTime = "FINISHED_TEST".equals(eventType);
         if (StringUtils.hasText(query.sortOrder()) && !"asc".equalsIgnoreCase(query.sortOrder())
             && !"desc".equalsIgnoreCase(query.sortOrder())) {
             throw new IllegalArgumentException("检测时间排序方式无效");

@@ -367,6 +367,11 @@ export const qmsApi = {
     return data.data
   },
 
+  async listLatestFlyingProbeSnapshots() {
+    const { data } = await http.get<ApiResponse<EquipmentTelemetryRecord[]>>('/api/v1/equipment/telemetry/flying-probe/latest')
+    return data.data
+  },
+
   async listFinishedTestDeviceSummary() {
     const { data } = await http.get<ApiResponse<FinishedTestDeviceSummary[]>>('/api/v1/equipment/telemetry/finished-test-summary/by-device')
     return data.data

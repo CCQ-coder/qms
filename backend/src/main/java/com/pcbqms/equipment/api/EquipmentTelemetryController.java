@@ -133,6 +133,11 @@ public class EquipmentTelemetryController {
         return ApiResponse.of(telemetryQueryApplicationService.listRecent(limit));
     }
 
+    @GetMapping("/flying-probe/latest")
+    public ApiResponse<List<EquipmentTelemetryRecordResponse>> latestFlyingProbeSnapshots() {
+        return ApiResponse.of(telemetryQueryApplicationService.latestFlyingProbeSnapshots());
+    }
+
     @GetMapping("/history")
     public ApiResponse<EquipmentTelemetryHistoryPageResponse> pageHistory(
         @RequestParam(required = false) String equipmentId,

@@ -155,7 +155,7 @@ public interface EquipmentTelemetryRecordMapper {
         </if>
         <if test="fromTime != null">
             <choose>
-                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'ZHONGBO_TEST_REPORT' or eventType == 'FINISHED_TEST'">
+                <when test="eventType == 'ZHONGBO_TEST_REPORT' or eventType == 'FINISHED_TEST'">
                     AND device_time &gt;= #{fromTime}
                 </when>
                 <otherwise>
@@ -165,7 +165,7 @@ public interface EquipmentTelemetryRecordMapper {
         </if>
         <if test="toTime != null">
             <choose>
-                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'ZHONGBO_TEST_REPORT' or eventType == 'FINISHED_TEST'">
+                <when test="eventType == 'ZHONGBO_TEST_REPORT' or eventType == 'FINISHED_TEST'">
                     AND device_time &lt;= #{toTime}
                 </when>
                 <otherwise>
@@ -175,7 +175,7 @@ public interface EquipmentTelemetryRecordMapper {
         </if>
         <if test="cursorTime != null">
             <choose>
-                <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'FINISHED_TEST'">
+                <when test="eventType == 'FINISHED_TEST'">
                     AND (device_time &lt; #{cursorTime}
                          OR (device_time = #{cursorTime} AND id &lt; #{cursorId}))
                 </when>
@@ -189,7 +189,7 @@ public interface EquipmentTelemetryRecordMapper {
             <when test="eventType == 'FINISHED_TEST' and ascending">
                 ORDER BY device_time ASC, id ASC
             </when>
-            <when test="eventType == 'FLYING_PROBE_TEST_COUNTERS' or eventType == 'FINISHED_TEST'">
+            <when test="eventType == 'FINISHED_TEST'">
                 ORDER BY device_time DESC, id DESC
             </when>
             <otherwise>
@@ -221,6 +221,36 @@ public interface EquipmentTelemetryRecordMapper {
         @Param("includeTotal") boolean includeTotal,
         @Param("keyword") String keyword,
         @Param("ascending") boolean ascending
+    );
+
+    @Select("""
+        <script>
+        SELECT telemetry.id, telemetry.tenant_code, telemetry.equipment_id, telemetry.source_username,
+               telemetry.machine_name, telemetry.device_time, telemetry.received_at, telemetry.event_type,
+               telemetry.equipment_status, telemetry.program_no, telemetry.program_version, telemetry.material_no,
+               telemetry.work_order_no, telemetry.batch_no, telemetry.operator_name, telemetry.progress_percent,
+               telemetry.spindle_status, telemetry.alarm_code, telemetry.alarm_message, telemetry.machining_count,
+               telemetry.source_record_no, telemetry.deduplication_key, telemetry.raw_payload, telemetry.created_at
+        FROM qms_equipment_telemetry telemetry
+        JOIN (
+            SELECT id, ROW_NUMBER() OVER (
+                PARTITION BY equipment_id ORDER BY device_time DESC, received_at DESC, id DESC
+            ) AS row_no
+            FROM qms_equipment_telemetry
+            WHERE tenant_code = #{tenantCode}
+              AND event_type = 'FLYING_PROBE_TEST_COUNTERS'
+              AND (tenant_code &lt;&gt; 'customer-b' OR device_time >= '2026-10-16')
+              AND equipment_id IN
+              <foreach collection="equipmentIds" item="equipmentId" open="(" separator="," close=")">
+                  #{equipmentId}
+              </foreach>
+        ) latest ON telemetry.id = latest.id
+        WHERE telemetry.tenant_code = #{tenantCode} AND latest.row_no = 1
+        </script>
+        """)
+    List<EquipmentTelemetryRecord> selectLatestFlyingProbeByEquipment(
+        @Param("tenantCode") String tenantCode,
+        @Param("equipmentIds") List<String> equipmentIds
     );
 
     @Select("""

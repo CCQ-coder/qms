@@ -33,6 +33,23 @@ class EquipmentTelemetryControllerTest {
     void clearTenant() { TenantContext.clear(); }
 
     @Test
+    void returnsFlyingProbeSnapshotsFromTheBatchEndpoint() throws Exception {
+        var queryService = mock(EquipmentTelemetryQueryApplicationService.class);
+        when(queryService.latestFlyingProbeSnapshots()).thenReturn(List.of());
+        var controller = new EquipmentTelemetryController(
+            mock(GatewayIntegrationAuthentication.class), mock(EquipmentTelemetryApplicationService.class),
+            queryService, mock(FinishedTestDeviceSummaryService.class),
+            mock(FlyingProbeInspectionProjectionService.class), mock(InspectionAccessScopeService.class),
+            mock(JdbcTemplate.class));
+
+        MockMvcBuilders.standaloneSetup(controller).build()
+            .perform(get("/api/v1/equipment/telemetry/flying-probe/latest"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data").isArray());
+        verify(queryService).latestFlyingProbeSnapshots();
+    }
+
+    @Test
     void batchCancellationReportsEachSkippedRecord() {
         TenantContext.set("tenant-a", "supervisor");
         var summary = mock(FinishedTestDeviceSummaryService.class);
