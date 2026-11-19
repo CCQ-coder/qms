@@ -20,7 +20,29 @@ class InspectionRecordMapperSqlTest {
         assertThat(later).contains("LIMIT ? OFFSET ?").doesNotContain("COUNT(*) OVER()");
     }
 
+    @Test
+    void completedRecordsFilterByDeviceAndOrderFieldsBeforeCountingAndPaging() {
+        String filtered = sql(0L, true, "WTD-3", "26110533", "L2611110293", "P2H046615A");
+
+        assertThat(filtered).contains(
+            "record.equipment_asset_no = ?",
+            "work_order.work_order_no LIKE CONCAT('%', ?, '%')",
+            "work_order.customer_order_no LIKE CONCAT('%', ?, '%')",
+            "work_order.internal_product_no LIKE CONCAT('%', ?, '%')",
+            "COUNT(*) OVER() AS total_count",
+            "LIMIT ? OFFSET ?"
+        );
+        assertThat(filtered.indexOf("work_order.internal_product_no LIKE"))
+            .isLessThan(filtered.indexOf("LIMIT ? OFFSET ?"));
+        assertThat(sql(0L, true)).doesNotContain("work_order.work_order_no LIKE", "record.equipment_asset_no = ?");
+    }
+
     private String sql(Long offset, boolean includeTotal) {
+        return sql(offset, includeTotal, null, null, null, null);
+    }
+
+    private String sql(Long offset, boolean includeTotal, String equipmentAssetNo, String workOrderNo,
+                       String customerOrderNo, String internalProductNo) {
         Configuration configuration = new Configuration();
         configuration.addMapper(InspectionRecordMapper.class);
         Map<String, Object> parameters = new HashMap<>();
@@ -32,6 +54,10 @@ class InspectionRecordMapperSqlTest {
         parameters.put("limit", 10);
         parameters.put("offset", offset);
         parameters.put("includeTotal", includeTotal);
+        parameters.put("equipmentAssetNo", equipmentAssetNo);
+        parameters.put("workOrderNo", workOrderNo);
+        parameters.put("customerOrderNo", customerOrderNo);
+        parameters.put("internalProductNo", internalProductNo);
         return configuration.getMappedStatement(InspectionRecordMapper.class.getName() + ".selectFinishedPage")
             .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
     }

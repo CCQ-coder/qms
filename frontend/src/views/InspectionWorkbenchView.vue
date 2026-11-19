@@ -63,6 +63,7 @@ const probeEquipmentId = ref('')
 const probeCustomerOrderNo = ref('')
 const probeInternalProductNo = ref('')
 const appliedProbeSearch = ref<{ equipmentId?: string; workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string }>({})
+const appliedFinishedSearch = ref<{ equipmentAssetNo?: string; workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string }>({})
 const bindingDialog = ref(false)
 const bindingRecord = ref<FlyingProbeRetryableProjection>()
 const bindingKeyword = ref('')
@@ -96,7 +97,6 @@ watch([isSummaryRoute, () => route.query.panel], ([summaryRoute, panel], [wasSum
 const qualitySummary = ref<QualitySummary>({ totalRecords: 0, passRecords: 0, failRecords: 0, firstPassRate: 0, byProcess: [], defectRanking: [], dailyTrend: [] })
 const selectedDeviceId = ref('')
 const recordEquipmentAssetNo = ref('')
-const recordKeyword = ref('')
 const updatedAt = ref<Date>()
 const finishedTestEquipmentType = '成品测试设备'
 
@@ -152,14 +152,6 @@ const fqcTotal = computed(() => qualitySummary.value.totalRecords)
 const fqcPass = computed(() => qualitySummary.value.passRecords)
 const fqcFail = computed(() => qualitySummary.value.failRecords)
 const fqcPassRate = computed(() => qualitySummary.value.firstPassRate)
-const filteredFinishedTestRecords = computed(() => {
-  const keyword = recordKeyword.value.trim().toLowerCase()
-  if (!keyword) return finishedTestRecords.value
-  return finishedTestRecords.value.filter((record) => [
-    record.equipmentAssetNo, record.workOrderNo, record.customerOrderNo, record.internalProductNo,
-    record.productCode, record.taskNo, record.inspectedBy, record.defectSummary
-  ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
-})
 const updatedAtLabel = computed(() => updatedAt.value ? formatDateTime(updatedAt.value) : '尚未成功读取')
 const workstationConnectionLabel = computed(() => {
   if (!networkOnline.value) return '本机网络已断开'
@@ -294,7 +286,7 @@ async function loadCompletedFinishedRecords(page = 1, pageSize = finishedRecordP
   finishedRecordsLoading.value = true
   finishedRecordsError.value = ''
   try {
-    const result = await qmsApi.pageCompletedFinishedTestRecords(page, pageSize, includeTotal)
+    const result = await qmsApi.pageCompletedFinishedTestRecords(page, pageSize, includeTotal, appliedFinishedSearch.value)
     finishedTestRecords.value = result.items
     if (includeTotal) finishedRecordTotal.value = result.total ?? 0
     finishedRecordPage.value = page
@@ -413,7 +405,7 @@ function showRecordSource(source: 'probe' | 'retryable' | 'fqc') {
   recordSource.value = source
   if (source === 'probe') void refreshFlyingProbeRecords(appliedProbeSearch.value)
   if (source === 'retryable') void loadRetryableProjections(1)
-  if (source === 'fqc' && !finishedRecordsUpdatedAt.value) void loadCompletedFinishedRecords()
+  if (source === 'fqc') void loadCompletedFinishedRecords()
 }
 
 function searchProbeRecords() {
@@ -428,7 +420,14 @@ function searchProbeRecords() {
     ...(customerOrderNo ? { customerOrderNo } : {}),
     ...(internalProductNo ? { internalProductNo } : {})
   }
+  appliedFinishedSearch.value = {
+    ...(equipmentId ? { equipmentAssetNo: equipment.value.find((device) => device.id === equipmentId)?.assetNo } : {}),
+    ...(workOrderNo ? { workOrderNo } : {}),
+    ...(customerOrderNo ? { customerOrderNo } : {}),
+    ...(internalProductNo ? { internalProductNo } : {})
+  }
   if (recordSource.value === 'retryable') void loadRetryableProjections(1)
+  else if (recordSource.value === 'fqc') void loadCompletedFinishedRecords(1)
   else void refreshFlyingProbeRecords(appliedProbeSearch.value)
 }
 
@@ -768,8 +767,8 @@ onBeforeUnmount(() => {
         <el-button :type="recordSource !== 'fqc' ? 'primary' : 'default'" @click="showRecordSource('probe')">飞针机采集记录</el-button>
         <el-button :type="recordSource === 'fqc' ? 'primary' : 'default'" @click="showRecordSource('fqc')">已提交检验</el-button>
       </div>
-      <div v-if="recordSource !== 'fqc'" class="probe-record-filters">
-        <div class="task-queue-actions" role="group" aria-label="匹配状态">
+      <div class="probe-record-filters">
+        <div v-if="recordSource !== 'fqc'" class="task-queue-actions" role="group" aria-label="匹配状态">
           <el-button :type="recordSource === 'probe' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('probe')">全部记录</el-button>
           <el-button v-if="canBindFlyingProbe" :type="recordSource === 'retryable' ? 'primary' : 'default'" :disabled="recordPanelLoading" @click="showRecordSource('retryable')">未匹配</el-button>
         </div>
@@ -824,11 +823,10 @@ onBeforeUnmount(() => {
       <template v-else>
         <el-alert v-if="finishedRecordsError" type="error" :closable="false" :title="finishedRecordsError" style="margin-top: 12px" />
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="task-queue-toolbar">
-          <el-input v-model="recordKeyword" clearable placeholder="筛选当前页：设备、工单、销售订单号、料号、任务号或检验员" />
-          <span>共 {{ finishedRecordTotal }} 条{{ recordKeyword.trim() ? `，当前页匹配 ${filteredFinishedTestRecords.length} 条` : '' }}</span>
+          <span>共 {{ finishedRecordTotal }} 条已提交检验</span>
         </div>
         <div v-if="!finishedRecordsError || finishedTestRecords.length" class="finished-records-table-wrap">
-          <paged-table :data="filteredFinishedTestRecords" :total="finishedRecordTotal" :page="finishedRecordPage" :page-size="finishedRecordPageSize" size="small" empty-text="暂无已提交的检验记录；飞针数据请查看“飞针机采集记录”" @page-change="changeFinishedRecordPage">
+          <paged-table :data="finishedTestRecords" :total="finishedRecordTotal" :page="finishedRecordPage" :page-size="finishedRecordPageSize" size="small" empty-text="暂无已提交的检验记录；飞针数据请查看“飞针机采集记录”" @page-change="changeFinishedRecordPage">
             <el-table-column label="检验时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.inspectedAt) }}</template></el-table-column>
             <el-table-column label="检测设备" min-width="130"><template #default="scope"><el-tag :type="scope.row.equipmentAssetNo ? 'success' : 'info'">{{ scope.row.equipmentAssetNo || '未关联设备' }}</el-tag></template></el-table-column>
             <el-table-column prop="workOrderNo" label="生产指令" min-width="145" />

@@ -75,9 +75,10 @@ export const qmsApi = {
     return data.data
   },
 
-  async pageCompletedFinishedTestRecords(page: number, limit: number, includeTotal: boolean) {
+  async pageCompletedFinishedTestRecords(page: number, limit: number, includeTotal: boolean,
+    search: { equipmentAssetNo?: string; workOrderNo?: string; customerOrderNo?: string; internalProductNo?: string } = {}) {
     const { data } = await http.get<ApiResponse<{ items: FinishedTestInspectionRecord[], total?: number | null }>>(
-      '/api/v1/inspection-tasks/completed-finished-records', { params: { page, limit, includeTotal } }
+      '/api/v1/inspection-tasks/completed-finished-records', { params: { page, limit, includeTotal, ...search } }
     )
     return data.data
   },

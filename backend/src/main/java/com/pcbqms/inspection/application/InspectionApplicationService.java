@@ -125,6 +125,13 @@ public class InspectionApplicationService {
     }
 
     public FinishedTestRecordPage listCompletedFinishedRecords(int limit, String cursor, Integer page, Boolean includeTotalRequested) {
+        return listCompletedFinishedRecords(limit, cursor, page, includeTotalRequested, null, null, null, null);
+    }
+
+    public FinishedTestRecordPage listCompletedFinishedRecords(
+        int limit, String cursor, Integer page, Boolean includeTotalRequested,
+        String equipmentAssetNo, String workOrderNo, String customerOrderNo, String internalProductNo
+    ) {
         if (limit < 1 || limit > 200) {
             throw new IllegalArgumentException("每页记录数必须为 1 到 200");
         }
@@ -152,7 +159,12 @@ public class InspectionApplicationService {
         boolean includeTotal = offset != null && !Boolean.FALSE.equals(includeTotalRequested);
         List<InspectionRecord> fetched = inspectionRecordMapper.selectFinishedPage(
             tenantCode, FinishedTestDataWindow.START,
-            processCodes, cursorTime, cursorId, offset == null ? limit + 1 : limit, offset, includeTotal);
+            processCodes,
+            StringUtils.hasText(equipmentAssetNo) ? equipmentAssetNo.trim() : null,
+            StringUtils.hasText(workOrderNo) ? workOrderNo.trim() : null,
+            StringUtils.hasText(customerOrderNo) ? customerOrderNo.trim() : null,
+            StringUtils.hasText(internalProductNo) ? internalProductNo.trim() : null,
+            cursorTime, cursorId, offset == null ? limit + 1 : limit, offset, includeTotal);
         boolean hasMore = offset == null && fetched.size() > limit;
         List<InspectionRecord> records = hasMore ? fetched.subList(0, limit) : fetched;
         if (records.isEmpty()) {
