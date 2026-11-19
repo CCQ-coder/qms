@@ -18,7 +18,7 @@ public interface FlyingProbeProjectionMapper {
         <script>
         WITH ranked AS (
             SELECT telemetry_id, tenant_code, equipment_id, machine_name, material_no, device_time,
-                   source_file, source_start_time, reason, run_key, work_order_no,
+                   source_file, source_start_time, reason, run_key, work_order_no, raw_payload,
                    cumulative_tested, cumulative_good, cumulative_bad,
                    ROW_NUMBER() OVER (PARTITION BY COALESCE(run_key, telemetry_id)
                        ORDER BY device_time, received_at, telemetry_id) AS row_no,
@@ -33,6 +33,9 @@ public interface FlyingProbeProjectionMapper {
         )
         SELECT p.telemetry_id AS id, e.asset_no AS equipment_code, p.machine_name, p.material_no,
                p.device_time, p.source_file, p.source_start_time, p.reason,
+               CASE WHEN JSON_VALID(p.raw_payload)
+                   THEN JSON_UNQUOTE(JSON_EXTRACT(p.raw_payload, '$.attributes.correctedDeviceTime'))
+                   ELSE NULL END AS corrected_device_time,
                COALESCE(r.work_order_no, p.work_order_no) AS work_order_no,
                work_order.customer_order_no,
                p.cumulative_tested, p.cumulative_good, p.cumulative_bad

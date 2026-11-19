@@ -73,6 +73,18 @@ class ProductionSecurityConfigurationTest {
     }
 
     @Test
+    void gatewayServerTimeRequiresGatewayToken() throws Exception {
+        mvc.perform(get("/api/v1/gateway/server-time").header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/gateway/server-time")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/gateway/server-time").header("X-Gateway-Token", "wrong"))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/gateway/server-time")
+                .header("X-Gateway-Token", "gateway-secret").header("Authorization", "Basic invalid"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void invalidAuthorizationNeverFallsBackToGateway() throws Exception {
         mvc.perform(post("/api/v1/equipment/telemetry")
                 .header("X-Gateway-Token", "gateway-secret")
@@ -107,6 +119,11 @@ class ProductionSecurityConfigurationTest {
 
         @GetMapping("/api/v1/gateway/host-status")
         ResponseEntity<Void> listHostStatus() {
+            return ResponseEntity.noContent().build();
+        }
+
+        @GetMapping("/api/v1/gateway/server-time")
+        ResponseEntity<Void> serverTime() {
             return ResponseEntity.noContent().build();
         }
 

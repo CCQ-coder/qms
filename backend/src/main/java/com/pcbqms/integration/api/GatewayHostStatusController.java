@@ -4,6 +4,7 @@ import com.pcbqms.common.api.ApiResponse;
 import com.pcbqms.integration.application.GatewayHostStatusApplicationService;
 import com.pcbqms.integration.application.GatewayIntegrationAuthentication;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/gateway/host-status")
+@RequestMapping("/api/v1/gateway")
 public class GatewayHostStatusController {
     private final GatewayIntegrationAuthentication authentication;
     private final GatewayHostStatusApplicationService service;
@@ -25,7 +26,7 @@ public class GatewayHostStatusController {
         this.service = service;
     }
 
-    @PostMapping
+    @PostMapping("/host-status")
     public ResponseEntity<Void> record(@RequestHeader(value = "X-Gateway-Token", required = false) String token,
                                        @Valid @RequestBody GatewayHostStatusRequest request) {
         authentication.verify(token);
@@ -33,8 +34,16 @@ public class GatewayHostStatusController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping
+    @GetMapping("/host-status")
     public ApiResponse<List<GatewayHostStatusResponse>> listLatest() {
         return ApiResponse.of(service.listLatest());
     }
+
+    @GetMapping("/server-time")
+    public ServerTimeResponse serverTime(@RequestHeader(value = "X-Gateway-Token", required = false) String token) {
+        authentication.verify(token);
+        return new ServerTimeResponse(Instant.now().toString());
+    }
+
+    public record ServerTimeResponse(String serverTime) { }
 }

@@ -49,6 +49,7 @@ public class ProductionSecurityConfiguration {
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/equipment/telemetry").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/gateway/host-status").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/gateway/server-time").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
             .addFilterAfter(jwtTenantContextFilter, BearerTokenAuthenticationFilter.class)

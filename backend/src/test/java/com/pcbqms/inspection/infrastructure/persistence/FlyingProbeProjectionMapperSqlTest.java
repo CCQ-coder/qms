@@ -34,4 +34,20 @@ class FlyingProbeProjectionMapperSqlTest {
             assertThat(sql).contains("UPPER(TRIM(material_no)) NOT IN ( ? , ? )");
         }
     }
+
+    @Test
+    void retryableRowsCarryTheirPersistedClockCorrection() {
+        Configuration configuration = new Configuration();
+        configuration.addMapper(FlyingProbeProjectionMapper.class);
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("tenantCode", "tenant-a");
+        parameters.put("dataStart", LocalDateTime.of(2026, 10, 20, 0, 0));
+        parameters.put("pageSize", 50);
+        parameters.put("offset", 0L);
+        String sql = configuration.getMappedStatement(FlyingProbeProjectionMapper.class.getName() + ".selectRetryableGroups")
+            .getBoundSql(parameters).getSql().replaceAll("\\s+", " ");
+
+        assertThat(sql).contains("JSON_EXTRACT(p.raw_payload, '$.attributes.correctedDeviceTime')",
+            "AS corrected_device_time");
+    }
 }

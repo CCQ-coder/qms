@@ -9,6 +9,7 @@ import { equipmentStatusTagType, formatDate, formatDateTime } from '@/utils/disp
 import { clampPage, paginateRows } from '@/utils/pagination'
 import { createClientRequestId, listInspectionDrafts, removeInspectionDraft, saveInspectionDraft, type OfflineInspectionDraft, type OfflineInspectionPayload } from '@/offline/inspectionDraftStore'
 import { deriveInspectionMonitorStatus, monitorStatusLabel, sortInspectionMonitorDevices } from './inspectionMonitorStatus'
+import { flyingProbeDetectionTime } from './flyingProbeDetectionTime'
 import { flyingProbePassRate, flyingProbePassRateFromCounts, useFlyingProbeHistory } from './useFlyingProbeHistory'
 import type { Equipment, EquipmentTelemetryRecord, FlyingProbeRetryableProjection, GatewayHostStatus, FinishedTestInspectionRecord, InspectionTask, InspectionTemplate, QualitySummary, WorkOrder } from '@/types/qms'
 
@@ -514,7 +515,8 @@ function openBindingDialog(record: FlyingProbeRetryableProjection | EquipmentTel
   bindingSearchVersion++
   bindingRecord.value = {
     id: record.id, equipmentCode: record.equipmentCode, machineName: record.machineName,
-    materialNo: record.materialNo, deviceTime: record.deviceTime, workOrderNo: record.workOrderNo,
+    materialNo: record.materialNo, deviceTime: record.deviceTime, correctedDeviceTime: record.correctedDeviceTime,
+    workOrderNo: record.workOrderNo,
     sourceFile: 'sourceFile' in record ? record.sourceFile : undefined
   }
   bindingKeyword.value = record.workOrderNo || record.materialNo || ''
@@ -756,7 +758,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <div><span>最新料号</span><strong>{{ selectedProbeRecord?.materialNo || (selectedProbeRecord ? '未上报料号' : '暂无飞针采集') }}</strong></div>
             <div><span>已测 / 好板 / 坏板</span><strong>{{ selectedProbeRecord?.machiningCount ?? '—' }} / {{ selectedProbeRecord?.goodBoardCount ?? '—' }} / {{ selectedProbeRecord?.badBoardCount ?? '—' }}</strong></div>
-            <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
+            <div><span>飞针设备检测时间</span><strong>{{ flyingProbeDetectionTime(selectedProbeRecord).text }}<small v-if="flyingProbeDetectionTime(selectedProbeRecord).note">（未校时）</small></strong></div>
             <div><span>关联生产指令</span><strong>{{ selectedAssociation }}</strong></div>
           </template>
         </div>
@@ -793,7 +795,7 @@ onBeforeUnmount(() => {
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="task-queue-toolbar"><span>共 {{ flyingProbeTotal }} 条飞针机采集记录</span></div>
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
           <paged-table v-loading="flyingProbeLoading" :data="flyingProbeRecords" :total="flyingProbeTotal" :page="flyingProbePage" :page-size="flyingProbePageSize" size="small" empty-text="暂无飞针机采集记录" @page-change="changeFlyingProbePage">
-            <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column label="设备检测时间" min-width="190"><template #default="scope">{{ flyingProbeDetectionTime(scope.row).text }}<small v-if="flyingProbeDetectionTime(scope.row).note">（未校时）</small></template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="销售订单号" min-width="150" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>
@@ -811,7 +813,7 @@ onBeforeUnmount(() => {
         <div v-if="retryableLoaded || retryableLoading" class="task-queue-toolbar"><span>共 {{ retryableTotal }} 份待匹配飞针文件</span></div>
         <div v-if="retryableLoaded || retryableLoading" class="finished-records-table-wrap finished-records-table-wrap--retryable">
           <paged-table v-loading="retryableLoading" :data="retryableRecords" :total="retryableTotal" :page="retryablePage" :page-size="retryablePageSize" size="small" empty-text="暂无待匹配飞针文件" @page-change="loadRetryableProjections">
-            <el-table-column label="设备检测时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.deviceTime) }}</template></el-table-column>
+            <el-table-column label="设备检测时间" min-width="190"><template #default="{ row }">{{ flyingProbeDetectionTime(row).text }}<small v-if="flyingProbeDetectionTime(row).note">（未校时）</small></template></el-table-column>
             <el-table-column label="检测设备" min-width="125" show-overflow-tooltip><template #default="{ row }">{{ row.equipmentCode || row.machineName || '—' }}</template></el-table-column>
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="{ row }">{{ row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="销售订单号" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ row.customerOrderNo || '—' }}</template></el-table-column>
@@ -850,7 +852,7 @@ onBeforeUnmount(() => {
     <FinishedTestDeviceSummary v-if="activePanel === 'summary'" />
 
     <el-dialog v-model="bindingDialog" title="手动绑定飞针工单" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
-      <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
+      <p v-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ flyingProbeDetectionTime(bindingRecord).text }}<span v-if="flyingProbeDetectionTime(bindingRecord).note">（未校时）</span><span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
       <el-alert type="warning" :closable="false" title="更换绑定会同步同一飞针文件的历史 FQC；已有处置单或结算数据的文件不能更正。" />
       <el-alert v-if="bindingRecord?.workOrderNo" type="info" :closable="false" :title="`该文件当前绑定生产指令 ${bindingRecord.workOrderNo}。`" style="margin-top: 10px" />
       <div class="binding-order-search">

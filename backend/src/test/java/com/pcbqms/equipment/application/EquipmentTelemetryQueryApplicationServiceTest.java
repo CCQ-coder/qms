@@ -92,7 +92,8 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         record.setWorkOrderNo("WO-123");
         record.setBatchNo("B-456");
         record.setMachiningCount(6);
-        record.setRawPayload("{\"attributes\":{\"testedBoardCount\":6,\"goodBoardCount\":5,\"badBoardCount\":1}}");
+        record.setDeviceTime(LocalDateTime.of(2026, 11, 19, 9, 58));
+        record.setRawPayload("{\"attributes\":{\"testedBoardCount\":6,\"goodBoardCount\":5,\"badBoardCount\":1,\"correctedDeviceTime\":\"2026-11-19T09:48:00\"}}");
         Equipment equipment = new Equipment();
         equipment.setId("equipment-1");
         equipment.setTenantCode("customer-b");
@@ -114,6 +115,34 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         assertThat(json.path("batchNo").asText()).isEqualTo("B-456");
         assertThat(json.path("goodBoardCount").asInt()).isEqualTo(5);
         assertThat(json.path("badBoardCount").asInt()).isEqualTo(1);
+        assertThat(item.deviceTime()).isEqualTo(LocalDateTime.of(2026, 11, 19, 9, 58));
+        assertThat(json.path("correctedDeviceTime").asText()).isEqualTo("2026-11-19T09:48:00");
+    }
+
+    @Test
+    void rejectsInvalidClockCorrectionWithoutChangingRawTime() {
+        TenantContext.set("customer-b", "admin");
+        EquipmentTelemetryRecord record = new EquipmentTelemetryRecord();
+        record.setId("probe-invalid-clock");
+        record.setEquipmentId("equipment-1");
+        record.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        record.setDeviceTime(LocalDateTime.of(2026, 11, 19, 9, 58));
+        record.setRawPayload("{\"attributes\":{\"correctedDeviceTime\":\"not-a-time\"}}");
+        Equipment equipment = new Equipment();
+        equipment.setId("equipment-1");
+        equipment.setTenantCode("customer-b");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("admin", "ADMIN", true, Set.of()));
+        when(telemetryRecordMapper.selectRecentByTenant(eq("customer-b"), anyInt())).thenReturn(List.of(record));
+        when(equipmentMapper.selectById("equipment-1")).thenReturn(equipment);
+
+        var item = new EquipmentTelemetryQueryApplicationService(
+            telemetryRecordMapper, equipmentMapper, workOrderMapper, inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules()
+        ).listRecent(10).getFirst();
+        var json = new ObjectMapper().findAndRegisterModules().valueToTree(item);
+
+        assertThat(item.deviceTime()).isEqualTo(LocalDateTime.of(2026, 11, 19, 9, 58));
+        assertThat(json.path("correctedDeviceTime").isNull()).isTrue();
     }
 
     @Test

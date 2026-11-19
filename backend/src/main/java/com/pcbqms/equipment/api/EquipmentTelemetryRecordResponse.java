@@ -15,6 +15,7 @@ public record EquipmentTelemetryRecordResponse(
     String sourceUsername,
     String machineName,
     LocalDateTime deviceTime,
+    String correctedDeviceTime,
     LocalDateTime receivedAt,
     String eventType,
     String status,
@@ -55,12 +56,13 @@ public record EquipmentTelemetryRecordResponse(
         String screenText,
         Integer goodBoardCount,
         Integer badBoardCount,
+        String correctedDeviceTime,
         EquipmentTelemetryProjectionStatus projection,
         String customerOrderNo
     ) {
         return new EquipmentTelemetryRecordResponse(
             record.getId(), record.getEquipmentId(), equipment.getAssetNo(), equipment.getName(), record.getSourceUsername(),
-            record.getMachineName(), record.getDeviceTime(), record.getReceivedAt(), record.getEventType(), record.getEquipmentStatus(), record.getProgramNo(),
+            record.getMachineName(), record.getDeviceTime(), correctedDeviceTime, record.getReceivedAt(), record.getEventType(), record.getEquipmentStatus(), record.getProgramNo(),
             record.getOperatorName(), record.getProgressPercent(), record.getSpindleStatus(), record.getAlarmCode(),
             record.getAlarmMessage(), record.getMachiningCount()
             , legacyState, legacyId, legacyMachineType, runtimeSeconds, routeLength, screenText,
