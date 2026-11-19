@@ -377,24 +377,25 @@ async function loadTasks() {
   }
 }
 
-async function loadProbeSnapshots(devices: Equipment[]) {
-  const snapshots: Record<string, EquipmentTelemetryRecord> = {}
-  const failedIds = new Set<string>()
-  for (let index = 0; index < devices.length; index += 4) {
-    const batch = devices.slice(index, index + 4)
-    const results = await Promise.allSettled(batch.map((device) => qmsApi.listEquipmentTelemetryHistory({
-      equipmentId: device.id, eventType: 'FLYING_PROBE_TEST_COUNTERS', limit: 1
-    })))
-    results.forEach((result, offset) => {
-      const equipmentId = batch[offset].id
-      if (result.status === 'rejected') failedIds.add(equipmentId)
-      else if (result.value.items[0]) snapshots[equipmentId] = result.value.items[0]
-    })
+function applyProbeSnapshots(records: EquipmentTelemetryRecord[]) {
+  probeSnapshots.value = Object.fromEntries(records.map((record) => [record.equipmentId, record]))
+  probeFailedEquipmentIds.value = new Set()
+  probeSnapshotsError.value = ''
+}
+
+function reportProbeSnapshotFailure() {
+  probeFailedEquipmentIds.value = new Set(equipment.value.filter((item) => item.equipmentType === finishedTestEquipmentType).map((item) => item.id))
+  probeSnapshotsError.value = '飞针计数快照读取失败，请刷新重试。'
+}
+
+async function loadProbeSnapshots() {
+  try {
+    applyProbeSnapshots(await qmsApi.listLatestFlyingProbeSnapshots())
+    return true
+  } catch {
+    reportProbeSnapshotFailure()
+    return false
   }
-  probeSnapshots.value = snapshots
-  probeFailedEquipmentIds.value = failedIds
-  probeSnapshotsError.value = failedIds.size ? `${failedIds.size} 台设备的飞针计数快照读取失败，请刷新重试。` : ''
-  return failedIds.size === 0
 }
 
 function recordTimeFilter() {
@@ -458,14 +459,17 @@ async function pollRuntimeStatuses() {
   runtimePollInFlight = true
   const version = monitoringVersion
   try {
-    const [runtimeResult, hostResult] = await Promise.allSettled([
-      qmsApi.listEquipmentRuntimeStatuses(), qmsApi.listGatewayHostStatuses()
+    const [runtimeResult, hostResult, probeResult] = await Promise.allSettled([
+      qmsApi.listEquipmentRuntimeStatuses(), qmsApi.listGatewayHostStatuses(), qmsApi.listLatestFlyingProbeSnapshots()
     ])
     if (version !== monitoringVersion || !componentMounted) return
     runtimeStatuses.value = runtimeResult.status === 'fulfilled' ? runtimeResult.value : []
     runtimeError.value = runtimeResult.status === 'rejected' ? '设备实时状态读取失败，请重试。' : ''
     hostStatuses.value = hostResult.status === 'fulfilled' ? hostResult.value : []
     hostStatusError.value = hostResult.status === 'rejected' ? '电脑状态读取失败，请重试。' : ''
+    if (probeResult.status === 'fulfilled') applyProbeSnapshots(probeResult.value)
+    else reportProbeSnapshotFailure()
+    if ([runtimeResult, hostResult, probeResult].every((result) => result.status === 'fulfilled')) updatedAt.value = new Date()
   } finally {
     runtimePollInFlight = false
   }
@@ -505,7 +509,7 @@ async function loadMonitoringData() {
     else runtimeStatuses.value = []
     monitoringCoreLoading.value = false
     const probesLoaded = equipmentResult.status === 'fulfilled'
-      ? await loadProbeSnapshots(equipmentResult.value.filter((item) => item.equipmentType === finishedTestEquipmentType))
+      ? await loadProbeSnapshots()
       : false
     if (equipmentResult.status === 'rejected') {
       probeSnapshots.value = {}
@@ -1014,7 +1018,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <div><span>最新飞针料号</span><strong>{{ selectedProbeRecord?.materialNo || (selectedProbeRecord ? '未上报料号' : '暂无飞针采集') }}</strong></div>
             <div><span>飞针已测 / 好板 / 坏板</span><strong>{{ selectedProbeRecord?.machiningCount ?? '—' }} / {{ selectedProbeRecord?.goodBoardCount ?? '—' }} / {{ selectedProbeRecord?.badBoardCount ?? '—' }}</strong></div>
-            <div><span>飞针设备检测时间</span><strong>{{ formatDateTime(selectedProbeRecord?.deviceTime) }}</strong></div>
+            <div><span>QMS 接收时间</span><strong>{{ formatDateTime(selectedProbeRecord?.receivedAt) }}</strong></div>
             <div><span>关联生产指令 / 批次</span><strong>{{ selectedAssociation }}</strong></div>
           </template>
         </div>
@@ -1035,7 +1039,7 @@ onBeforeUnmount(() => {
         <el-button :type="recordSource === 'all' ? 'primary' : 'default'" @click="showRecordSource('all')">全部设备记录</el-button>
       </div>
       <div class="report-filter finished-record-date-filter">
-        <span>检测日期</span>
+        <span>{{ recordSource === 'probe' ? 'QMS 接收日期' : '检测日期' }}</span>
         <el-date-picker v-model="recordDateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" clearable />
         <el-button :disabled="recordPanelLoading" @click="resetRecordDateFilter">重置</el-button>
       </div>
@@ -1067,7 +1071,7 @@ onBeforeUnmount(() => {
         <div v-if="flyingProbeLoaded || flyingProbeLoading" class="finished-records-table-wrap finished-records-table-wrap--probe">
           <paged-table :key="flyingProbeUpdatedAt?.getTime()" v-loading="flyingProbeLoading" :data="flyingProbeRecords" :total="flyingProbeTotal" :page="flyingProbePage" :page-size="flyingProbePageSize" row-key="id" size="small" empty-text="暂无飞针机采集记录" @page-change="loadFlyingProbePage" @selection-change="selectedProbeRecords = $event">
             <el-table-column v-if="canBindFlyingProbe" type="selection" width="55" reserve-selection :selectable="canManageProbeRecord" />
-            <el-table-column label="设备检测时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.deviceTime) }}</template></el-table-column>
+            <el-table-column label="QMS 接收时间" min-width="170"><template #default="scope">{{ formatDateTime(scope.row.receivedAt) }}</template></el-table-column>
             <el-table-column prop="equipmentCode" label="检测设备" min-width="125" show-overflow-tooltip />
             <el-table-column label="生产指令" min-width="145" show-overflow-tooltip><template #default="scope">{{ scope.row.workOrderNo || '—' }}</template></el-table-column>
             <el-table-column label="订单编号" min-width="160" show-overflow-tooltip><template #default="scope">{{ scope.row.customerOrderNo || '—' }}</template></el-table-column>

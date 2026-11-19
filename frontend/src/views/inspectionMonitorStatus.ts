@@ -7,7 +7,7 @@ export function monitorStatusLabel(status: InspectionMonitorStatus | '状态不�
   return status === '未接入' ? statusText(equipmentStatus) : status
 }
 
-const ACTIVE_WINDOW_MS = 7 * 60 * 1000
+const ACTIVE_WINDOW_MS = 10 * 60 * 1000
 
 export function deriveInspectionMonitorStatus(
   runtimeOnline: boolean | undefined,

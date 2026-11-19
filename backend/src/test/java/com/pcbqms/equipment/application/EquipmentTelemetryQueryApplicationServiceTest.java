@@ -76,6 +76,62 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         assertThat(item.customerOrderNo()).isEqualTo("ORDER-1");
     }
 
+    @Test
+    void latestFlyingProbeSnapshotsKeepZeroCountersAndProjectedOrderWithinTheAccessScope() {
+        TenantContext.set("customer-b", "inspector");
+        Equipment visible = new Equipment();
+        visible.setId("visible");
+        visible.setTenantCode("customer-b");
+        visible.setAssetNo("WTD-7");
+        visible.setEquipmentType("成品测试设备");
+        visible.setProcessCode("FQC");
+        Equipment hidden = new Equipment();
+        hidden.setId("hidden");
+        hidden.setTenantCode("customer-b");
+        hidden.setEquipmentType("成品测试设备");
+        hidden.setProcessCode("ROUTING");
+        EquipmentTelemetryRecord record = new EquipmentTelemetryRecord();
+        record.setId("probe-zero");
+        record.setEquipmentId("visible");
+        record.setEventType("FLYING_PROBE_TEST_COUNTERS");
+        record.setMaterialNo("hp009708a");
+        record.setMachiningCount(0);
+        record.setReceivedAt(LocalDateTime.of(2026, 11, 19, 9, 0));
+        record.setRawPayload("{\"attributes\":{\"testedBoardCount\":0,\"goodBoardCount\":0,\"badBoardCount\":0}}");
+        EquipmentTelemetryProjectionStatus projection = new EquipmentTelemetryProjectionStatus();
+        projection.setTelemetryId("probe-zero");
+        projection.setWorkOrderNo("WO-7");
+        WorkOrder order = new WorkOrder();
+        order.setWorkOrderNo("WO-7");
+        order.setCustomerOrderNo("ORDER-7");
+        order.setInternalProductNo("IN-7");
+        when(inspectionAccessScopeService.currentAccess()).thenReturn(
+            new InspectionAccessScopeService.InspectionAccess("inspector", "INSPECTOR", false, Set.of("FQC")));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(visible, hidden));
+        when(telemetryRecordMapper.selectLatestFlyingProbeByEquipment("customer-b", List.of("visible")))
+            .thenReturn(List.of(record));
+        when(telemetryRecordMapper.selectProjectionStatuses("customer-b", List.of("probe-zero")))
+            .thenReturn(List.of(projection));
+        when(workOrderMapper.selectList(any())).thenReturn(List.of(order));
+
+        var result = new EquipmentTelemetryQueryApplicationService(telemetryRecordMapper, equipmentMapper,
+            inspectionAccessScopeService, new ObjectMapper().findAndRegisterModules(), workOrderMapper)
+            .latestFlyingProbeSnapshots();
+
+        assertThat(result).singleElement().satisfies(item -> {
+            assertThat(item.equipmentCode()).isEqualTo("WTD-7");
+            assertThat(item.materialNo()).isEqualTo("hp009708a");
+            assertThat(item.machiningCount()).isZero();
+            assertThat(item.goodBoardCount()).isZero();
+            assertThat(item.badBoardCount()).isZero();
+            assertThat(item.receivedAt()).isEqualTo(LocalDateTime.of(2026, 11, 19, 9, 0));
+            assertThat(item.workOrderNo()).isEqualTo("WO-7");
+            assertThat(item.customerOrderNo()).isEqualTo("ORDER-7");
+            assertThat(item.internalProductNo()).isEqualTo("IN-7");
+        });
+        verify(telemetryRecordMapper).selectLatestFlyingProbeByEquipment("customer-b", List.of("visible"));
+    }
+
     @AfterEach
     void clearTenantContext() {
         TenantContext.clear();
@@ -343,7 +399,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
     }
 
     @Test
-    void flyingProbeHistoryCursorUsesDeviceDetectionTime() {
+    void flyingProbeHistoryCursorUsesServerReceiptTime() {
         TenantContext.set("customer-b", "admin");
         Equipment equipment = new Equipment();
         equipment.setId("equipment-1");
@@ -373,7 +429,7 @@ class EquipmentTelemetryQueryApplicationServiceTest {
         ).pageHistory(new EquipmentTelemetryHistoryQuery(null, null, null, null, 1, "FLYING_PROBE_TEST_COUNTERS", null, null, null, null, null));
 
         String cursor = new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8);
-        assertThat(cursor).startsWith("2026-11-01T09:00");
+        assertThat(cursor).startsWith("2026-11-02T15:00");
     }
 
     @Test

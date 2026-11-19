@@ -23,16 +23,16 @@ test('online runtime without probe data is 空闲', () => {
   assert.equal(deriveInspectionMonitorStatus(true, undefined, NOW_MS), '空闲')
 })
 
-test('online runtime with probe data inside seven minutes is 测试中', () => {
-  assert.equal(deriveInspectionMonitorStatus(true, '2026-10-29T07:54:00.000Z', NOW_MS), '测试中')
+test('online runtime with probe data inside ten minutes is 测试中', () => {
+  assert.equal(deriveInspectionMonitorStatus(true, '2026-10-29T07:51:00.000Z', NOW_MS), '测试中')
 })
 
-test('online runtime with probe data exactly seven minutes old is 测试中', () => {
-  assert.equal(deriveInspectionMonitorStatus(true, '2026-10-29T07:53:00.000Z', NOW_MS), '测试中')
+test('online runtime with probe data exactly ten minutes old is 测试中', () => {
+  assert.equal(deriveInspectionMonitorStatus(true, '2026-10-29T07:50:00.000Z', NOW_MS), '测试中')
 })
 
-test('online runtime with probe data one millisecond older than seven minutes is 空闲', () => {
-  assert.equal(deriveInspectionMonitorStatus(true, '2026-10-29T07:52:59.999Z', NOW_MS), '空闲')
+test('online runtime with probe data one millisecond older than ten minutes is 空闲', () => {
+  assert.equal(deriveInspectionMonitorStatus(true, '2026-10-29T07:49:59.999Z', NOW_MS), '空闲')
 })
 
 test('online runtime with an invalid probe timestamp is 空闲', () => {
