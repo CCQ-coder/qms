@@ -19,8 +19,10 @@ import com.pcbqms.workorder.domain.WorkOrder;
 import com.pcbqms.workorder.infrastructure.persistence.WorkOrderMapper;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -207,6 +209,7 @@ public class EquipmentTelemetryQueryApplicationService {
                 ? textAttribute(attributes, "legacyScreenText") : record.getAlarmMessage(),
             integerAttribute(attributes, "goodBoardCount"),
             integerAttribute(attributes, "badBoardCount"),
+            correctedProbeTime(record, attributes),
             projection,
             zhongboTestReport(record, attributes),
             order == null ? null : order.getCustomerOrderNo(),
@@ -254,6 +257,19 @@ public class EquipmentTelemetryQueryApplicationService {
         if (attributes == null) return null;
         JsonNode value = attributes.path(name);
         return value.isValueNode() && !value.isNull() ? value.asText() : null;
+    }
+
+    private String correctedProbeTime(EquipmentTelemetryRecord record, JsonNode attributes) {
+        if (!"FLYING_PROBE_TEST_COUNTERS".equals(record.getEventType()) || record.getDeviceTime() == null) return null;
+        String value = textAttribute(attributes, "correctedDeviceTime");
+        if (!StringUtils.hasText(value)) return null;
+        try {
+            LocalDateTime corrected = LocalDateTime.parse(value);
+            if (Math.abs(Duration.between(record.getDeviceTime(), corrected).toSeconds()) > 7200) return null;
+            return corrected.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"));
+        } catch (DateTimeParseException exception) {
+            return null;
+        }
     }
 
     private BigDecimal decimalAttribute(JsonNode attributes, String name) {

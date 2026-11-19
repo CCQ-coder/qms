@@ -450,6 +450,7 @@ export type EquipmentTelemetryRecord = {
   sourceUsername?: string
   machineName?: string
   deviceTime: string
+  correctedDeviceTime?: string | null
   receivedAt: string
   eventType?: string
   status?: string
@@ -563,6 +564,7 @@ export type FlyingProbeRetryableProjection = {
   machineName?: string | null
   materialNo?: string | null
   deviceTime: string
+  correctedDeviceTime?: string | null
   sourceFile?: string | null
   reason?: string | null
   workOrderNo?: string | null

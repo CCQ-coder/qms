@@ -10,6 +10,7 @@ public class FlyingProbeRetryableRecordResponse {
     private String machineName;
     private String materialNo;
     private LocalDateTime deviceTime;
+    private String correctedDeviceTime;
     private String sourceFile;
     private LocalDateTime sourceStartTime;
     private String reason;

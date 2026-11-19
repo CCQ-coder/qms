@@ -68,4 +68,16 @@ class GatewayHostStatusControllerTest {
             .andExpect(jsonPath("$.data[0].equipmentCode").value("SCBGX"))
             .andExpect(jsonPath("$.data[0].memoryAvailableBytes").value(40));
     }
+
+    @Test
+    void returnsCurrentUtcServerTimeForGatewayClockCalibration() throws Exception {
+        Instant before = Instant.now();
+        String value = mvc().perform(get("/api/v1/gateway/server-time")
+                .header("X-Gateway-Token", "gateway-secret"))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        Instant serverTime = Instant.parse(new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(value).path("serverTime").asText());
+        org.assertj.core.api.Assertions.assertThat(serverTime).isBetween(before, Instant.now());
+    }
 }

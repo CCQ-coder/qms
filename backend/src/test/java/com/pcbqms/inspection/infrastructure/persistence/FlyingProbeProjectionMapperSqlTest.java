@@ -44,4 +44,16 @@ class FlyingProbeProjectionMapperSqlTest {
                 "p.device_time >= ?", "p.device_time <= ?");
         }
     }
+
+    @Test
+    void retryableRowsCarryTheirPersistedClockCorrection() {
+        Configuration configuration = new Configuration();
+        configuration.addMapper(FlyingProbeProjectionMapper.class);
+        String sql = configuration.getMappedStatement(FlyingProbeProjectionMapper.class.getName() + ".selectRetryableGroups")
+            .getBoundSql(Map.of("tenantCode", "customer-b", "pageSize", 50, "offset", 0))
+            .getSql().replaceAll("\\s+", " ");
+
+        assertThat(sql).contains("JSON_EXTRACT(p.raw_payload, '$.attributes.correctedDeviceTime')",
+            "AS corrected_device_time");
+    }
 }
