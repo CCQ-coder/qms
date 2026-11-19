@@ -15,14 +15,14 @@ function localTimestampMillis(value: string, allowFraction: boolean): number | u
   return parsed.getTime()
 }
 
-export function flyingProbeDetectionTime(record?: FlyingProbeTimeSource): { text: string; note: string } {
-  if (!record) return { text: '—', note: '' }
+export function flyingProbeDetectionTime(record?: FlyingProbeTimeSource): { text: string } {
+  if (!record) return { text: '—' }
   const corrected = record.correctedDeviceTime
   const rawMillis = localTimestampMillis(record.deviceTime, true)
   const correctedMillis = corrected ? localTimestampMillis(corrected, false) : undefined
   if (rawMillis !== undefined && correctedMillis !== undefined
       && Math.abs(correctedMillis - rawMillis) <= 2 * 60 * 60 * 1000) {
-    return { text: formatDateTime(corrected), note: '' }
+    return { text: formatDateTime(corrected) }
   }
-  return { text: formatDateTime(record.deviceTime), note: '未校时' }
+  return { text: formatDateTime(record.deviceTime) }
 }
