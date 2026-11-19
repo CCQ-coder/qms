@@ -9,8 +9,8 @@ test('missing computer heartbeat remains 未接入', () => {
   assert.equal(deriveInspectionMonitorStatus(undefined, '2026-10-29T07:59:00.000Z', NOW_MS), '未接入')
 })
 
-test('missing computer heartbeat displays equipment ledger status', () => {
-  assert.equal(monitorStatusLabel('未接入', 'IN_USE'), '启用')
+test('missing computer heartbeat does not claim in-use equipment is online', () => {
+  assert.equal(monitorStatusLabel('未接入', 'IN_USE'), '未确认')
   assert.equal(monitorStatusLabel('未接入', 'MAINTENANCE'), '维护中')
   assert.equal(monitorStatusLabel('离线', 'IN_USE'), '离线')
 })

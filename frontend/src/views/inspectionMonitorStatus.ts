@@ -4,7 +4,8 @@ import { statusText } from '../utils/display-text.ts'
 export type InspectionMonitorStatus = '未接入' | '离线' | '测试中' | '空闲'
 
 export function monitorStatusLabel(status: InspectionMonitorStatus | '状态不可用', equipmentStatus: string): string {
-  return status === '未接入' ? statusText(equipmentStatus) : status
+  if (status === '未接入') return equipmentStatus === 'IN_USE' ? '未确认' : statusText(equipmentStatus)
+  return status
 }
 
 const STATUS_PRIORITY = { 测试中: 0, 空闲: 1, 未接入: 2, 离线: 3, 状态不可用: 4 } as const

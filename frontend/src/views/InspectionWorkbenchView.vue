@@ -463,7 +463,7 @@ function deviceStatusLabel(device: MonitorDevice) {
 function deviceStatusTag(device: MonitorDevice): 'success' | 'warning' | 'info' | 'danger' {
   if (hostStatusError.value) return 'info'
   const status = deviceMonitorStatus(device)
-  if (status === '未接入') return equipmentStatusTagType(device.status)
+  if (status === '未接入') return device.status === 'IN_USE' ? 'info' : equipmentStatusTagType(device.status)
   if (status === '测试中') return 'success'
   return status === '空闲' ? 'warning' : 'info'
 }
