@@ -236,8 +236,18 @@ public interface FlyingProbeProjectionMapper {
           ON projection.inspection_record_id COLLATE utf8mb4_0900_ai_ci = ncr.inspection_record_id COLLATE utf8mb4_0900_ai_ci
          AND projection.tenant_code COLLATE utf8mb4_0900_ai_ci = ncr.tenant_code COLLATE utf8mb4_0900_ai_ci
         WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND (#{fromDeviceTime} IS NULL OR projection.device_time >= #{fromDeviceTime})
         """)
-    long countRunNonconformities(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey);
+    long countRunNonconformities(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                                  @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
+
+    @Select("""
+        SELECT COUNT(*) FROM qms_flying_probe_projection
+        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey}
+          AND work_order_no IS NOT NULL AND work_order_no <> #{workOrderNo}
+        """)
+    long countRunOtherWorkOrders(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
+                                  @Param("workOrderNo") String workOrderNo);
 
     @Select("""
         SELECT COUNT(*) FROM qms_flying_probe_projection
@@ -252,10 +262,12 @@ public interface FlyingProbeProjectionMapper {
           AND EXISTS (SELECT 1 FROM qms_flying_probe_projection projection
               WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
                 AND UPPER(TRIM(projection.material_no)) = settlement.material_key
+                AND (#{fromDeviceTime} IS NULL OR projection.device_time >= #{fromDeviceTime})
                 AND projection.device_time BETWEEN settlement.first_detection_at AND settlement.last_detection_at)
         """)
     long countRunSettlements(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
-                             @Param("workOrderNo") String workOrderNo);
+                             @Param("workOrderNo") String workOrderNo,
+                             @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
 
     @Update("""
         UPDATE qms_flying_probe_projection SET work_order_no = NULL, batch_no = NULL,
@@ -280,10 +292,12 @@ public interface FlyingProbeProjectionMapper {
           AND ncr.detection_date IN (
               SELECT DATE(device_time) FROM qms_flying_probe_projection
               WHERE tenant_code = #{tenantCode} AND run_key = #{runKey} AND delta_tested > 0
+                AND (#{fromDeviceTime} IS NULL OR device_time >= #{fromDeviceTime})
           )
         """)
     long countApprovedRunDates(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
-                               @Param("workOrderNo") String workOrderNo);
+                               @Param("workOrderNo") String workOrderNo,
+                               @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
 
     @Update("""
         UPDATE qms_inspection_task task
@@ -291,10 +305,12 @@ public interface FlyingProbeProjectionMapper {
           ON projection.inspection_task_id COLLATE utf8mb4_0900_ai_ci = task.id COLLATE utf8mb4_0900_ai_ci
         SET task.work_order_id = #{workOrderId}, task.batch_id = NULL
         WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND projection.device_time >= #{fromDeviceTime}
           AND task.tenant_code = #{tenantCode}
         """)
     int rebindRunTasks(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
-                       @Param("workOrderId") String workOrderId);
+                       @Param("workOrderId") String workOrderId,
+                       @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
 
     @Update("""
         UPDATE qms_equipment_telemetry telemetry
@@ -302,10 +318,12 @@ public interface FlyingProbeProjectionMapper {
           ON projection.telemetry_id COLLATE utf8mb4_0900_ai_ci = telemetry.id COLLATE utf8mb4_0900_ai_ci
         SET telemetry.work_order_no = #{workOrderNo}, telemetry.batch_no = NULL
         WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND (#{fromDeviceTime} IS NULL OR projection.device_time >= #{fromDeviceTime})
           AND telemetry.tenant_code = #{tenantCode}
         """)
     int rebindRunTelemetry(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
-                           @Param("workOrderNo") String workOrderNo);
+                           @Param("workOrderNo") String workOrderNo,
+                           @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
 
     @Update("""
         UPDATE qms_equipment_runtime_status runtime
@@ -316,17 +334,20 @@ public interface FlyingProbeProjectionMapper {
         SET runtime.work_order_no = #{workOrderNo}, runtime.batch_no = NULL,
             runtime.updated_at = CURRENT_TIMESTAMP
         WHERE projection.tenant_code = #{tenantCode} AND projection.run_key = #{runKey}
+          AND (#{fromDeviceTime} IS NULL OR projection.device_time >= #{fromDeviceTime})
           AND runtime.tenant_code = #{tenantCode}
         """)
     int rebindRunRuntime(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
-                         @Param("workOrderNo") String workOrderNo);
+                         @Param("workOrderNo") String workOrderNo,
+                         @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
 
     @Update("""
         UPDATE qms_flying_probe_projection SET work_order_no = #{workOrderNo}, batch_no = NULL
-        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey}
+        WHERE tenant_code = #{tenantCode} AND run_key = #{runKey} AND device_time >= #{fromDeviceTime}
         """)
     int rebindRunProjections(@Param("tenantCode") String tenantCode, @Param("runKey") String runKey,
-                             @Param("workOrderNo") String workOrderNo);
+                             @Param("workOrderNo") String workOrderNo,
+                             @Param("fromDeviceTime") LocalDateTime fromDeviceTime);
 
     @Update("""
         UPDATE qms_flying_probe_run SET work_order_no = #{workOrderNo}, last_device_time = #{lastDeviceTime},

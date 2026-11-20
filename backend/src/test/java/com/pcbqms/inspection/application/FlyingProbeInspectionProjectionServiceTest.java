@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
+import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
@@ -54,6 +55,7 @@ class FlyingProbeInspectionProjectionServiceTest {
     @Mock private InspectionTemplateApplicationService templateApplicationService;
     @Mock private InspectionAccessScopeService accessScopeService;
     @Mock private SystemParameterMapper systemParameterMapper;
+    @Mock private FinishedTestDeviceSummaryService finishedTestDeviceSummaryService;
 
     @AfterEach
     void clearTenant() {
@@ -162,14 +164,14 @@ class FlyingProbeInspectionProjectionServiceTest {
 
         assertThat(run.getWorkOrderNo()).isEqualTo("WO-OTHER");
         verify(projectionMapper).rebindRunTasks(org.mockito.ArgumentMatchers.eq("tenant-a"), any(),
-            org.mockito.ArgumentMatchers.eq("WO-OTHER"));
+            org.mockito.ArgumentMatchers.eq("WO-OTHER"), org.mockito.ArgumentMatchers.eq(projection.getDeviceTime()));
         verify(projectionMapper).rebindRunProjections(org.mockito.ArgumentMatchers.eq("tenant-a"), any(),
-            org.mockito.ArgumentMatchers.eq("WO-OTHER"));
+            org.mockito.ArgumentMatchers.eq("WO-OTHER"), org.mockito.ArgumentMatchers.eq(projection.getDeviceTime()));
         verify(projectionMapper, never()).insertRunIfAbsent(any());
     }
 
     @Test
-    void processedFileCorrectionMovesTheWholeRunAndItsInspectionTasks() {
+    void processedFileCorrectionMovesOnlySnapshotsFromTheSelectedTime() {
         TenantContext.set("tenant-a", "supervisor");
         var projection = projection(event("processed", LocalDateTime.now().minusHours(1),
             LocalDateTime.now().minusMinutes(1), 5, 4, 1));
@@ -184,13 +186,41 @@ class FlyingProbeInspectionProjectionServiceTest {
 
         assertThat(service().bindManually("processed", "WO-2")).isEqualTo("run-1");
 
-        verify(projectionMapper).rebindRunTasks("tenant-a", "run-1", "WO-2");
-        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-1", "WO-2");
-        verify(projectionMapper).rebindRunRuntime("tenant-a", "run-1", "WO-2");
-        verify(projectionMapper).rebindRunProjections("tenant-a", "run-1", "WO-2");
+        LocalDateTime from = projection.getDeviceTime();
+        verify(projectionMapper).countRunNonconformities("tenant-a", "run-1", from);
+        verify(projectionMapper).countApprovedRunDates("tenant-a", "run-1", "WO-1", from);
+        verify(projectionMapper).rebindRunTasks("tenant-a", "run-1", "WO-2", from);
+        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-1", "WO-2", from);
+        verify(projectionMapper).rebindRunRuntime("tenant-a", "run-1", "WO-2", from);
+        verify(projectionMapper).rebindRunProjections("tenant-a", "run-1", "WO-2", from);
         assertThat(run.getWorkOrderNo()).isEqualTo("WO-2");
         assertThat(run.getBoundBy()).isEqualTo("supervisor");
         verify(projectionMapper).updateRun(run);
+    }
+
+    @Test
+    void processedFileCorrectionRefreshesAnIdleSettlement() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("settled", LocalDateTime.now().minusDays(14),
+            LocalDateTime.now().minusDays(13), 59, 49, 10));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-1");
+        projection.setWorkOrderNo("WO-1");
+        FlyingProbeRun run = run();
+        run.setRunKey("run-1");
+        when(projectionMapper.lockProjection("settled")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run);
+        when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-2", "PART-1", LocalDate.now()));
+        LocalDateTime from = projection.getDeviceTime();
+        when(projectionMapper.countRunSettlements("tenant-a", "run-1", "WO-1", from)).thenReturn(1L, 0L);
+        when(projectionMapper.countRunSettlements("tenant-a", "run-1", "WO-2", from)).thenReturn(1L);
+
+        assertThat(service().bindManually("settled", "WO-2")).isEqualTo("run-1");
+
+        assertThat(run.getWorkOrderNo()).isEqualTo("WO-2");
+        verify(finishedTestDeviceSummaryService).settleIdleMaterials(any(LocalDateTime.class));
+        verify(projectionMapper, times(2)).countRunSettlements("tenant-a", "run-1", "WO-1", from);
+        verify(projectionMapper).countRunSettlements("tenant-a", "run-1", "WO-2", from);
     }
 
     @Test
@@ -205,11 +235,11 @@ class FlyingProbeInspectionProjectionServiceTest {
         when(projectionMapper.lockProjection("reviewed")).thenReturn(projection);
         when(projectionMapper.lockRun("run-1")).thenReturn(run);
         when(workOrderMapper.selectOne(any())).thenReturn(releasedOrder("WO-2", "PART-1", LocalDate.now()));
-        when(projectionMapper.countApprovedRunDates("tenant-a", "run-1", "WO-1")).thenReturn(1L);
+        when(projectionMapper.countApprovedRunDates("tenant-a", "run-1", "WO-1", projection.getDeviceTime())).thenReturn(1L);
 
         assertThatThrownBy(() -> service().bindManually("reviewed", "WO-2"))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("处置单");
-        verify(projectionMapper, never()).rebindRunTasks(any(), any(), any());
+        verify(projectionMapper, never()).rebindRunTasks(any(), any(), any(), any());
     }
 
     @Test
@@ -227,7 +257,7 @@ class FlyingProbeInspectionProjectionServiceTest {
 
         service().unbindManually("cancel");
 
-        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-1", null);
+        verify(projectionMapper).rebindRunTelemetry("tenant-a", "run-1", null, null);
         verify(projectionMapper).unbindRunProjections("tenant-a", "run-1");
         verify(projectionMapper).deleteRun("tenant-a", "run-1");
     }
@@ -248,6 +278,26 @@ class FlyingProbeInspectionProjectionServiceTest {
 
         assertThatThrownBy(() -> service().unbindManually("cancel"))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("检验");
+        verify(projectionMapper, never()).unbindRunProjections(any(), any());
+    }
+
+    @Test
+    void cancelBindingKeepsOlderSnapshotsWithAnotherWorkOrder() {
+        TenantContext.set("tenant-a", "supervisor");
+        var projection = projection(event("cancel", LocalDateTime.now().minusHours(1),
+            LocalDateTime.now().minusMinutes(1), 5, 4, 1));
+        projection.setStatus("PROCESSED");
+        projection.setRunKey("run-1");
+        projection.setWorkOrderNo("WO-2");
+        FlyingProbeRun run = run();
+        run.setRunKey("run-1");
+        run.setWorkOrderNo("WO-2");
+        when(projectionMapper.lockProjection("cancel")).thenReturn(projection);
+        when(projectionMapper.lockRun("run-1")).thenReturn(run);
+        when(projectionMapper.countRunOtherWorkOrders("tenant-a", "run-1", "WO-2")).thenReturn(1L);
+
+        assertThatThrownBy(() -> service().unbindManually("cancel"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不能取消关联");
         verify(projectionMapper, never()).unbindRunProjections(any(), any());
     }
 
@@ -773,7 +823,8 @@ class FlyingProbeInspectionProjectionServiceTest {
     private FlyingProbeInspectionProjectionService service() {
         return new FlyingProbeInspectionProjectionService(projectionMapper, equipmentMapper, workOrderMapper,
             productionBatchMapper, templateMapper, taskMapper, inspectionApplicationService,
-            templateApplicationService, accessScopeService, systemParameterMapper, new ObjectMapper());
+            templateApplicationService, accessScopeService, systemParameterMapper, finishedTestDeviceSummaryService,
+            new ObjectMapper());
     }
 
     private void configuredMaterialRule() {

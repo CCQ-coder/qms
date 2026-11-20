@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pcbqms.access.application.InspectionAccessScopeService;
 import com.pcbqms.common.tenancy.TenantContext;
+import com.pcbqms.equipment.application.FinishedTestDeviceSummaryService;
 import com.pcbqms.equipment.domain.Equipment;
 import com.pcbqms.equipment.domain.EquipmentTelemetryRecord;
 import com.pcbqms.equipment.infrastructure.persistence.EquipmentMapper;
@@ -62,6 +63,7 @@ public class FlyingProbeInspectionProjectionService {
     private final InspectionTemplateApplicationService templateApplicationService;
     private final InspectionAccessScopeService accessScopeService;
     private final SystemParameterMapper systemParameterMapper;
+    private final FinishedTestDeviceSummaryService finishedTestDeviceSummaryService;
     private final ObjectMapper objectMapper;
 
     @Value("${qms.equipment-telemetry.retention.raw-days:7}")
@@ -249,14 +251,15 @@ public class FlyingProbeInspectionProjectionService {
         if (run == null || !tenant.equals(run.getTenantCode()) || !"ACTIVE".equals(run.getStatus())) {
             throw new IllegalArgumentException("飞针文件状态已变化，请刷新后重试");
         }
-        if (projectionMapper.countRunInspectionDependencies(tenant, runKey) > 0
-            || projectionMapper.countRunNonconformities(tenant, runKey) > 0
-            || projectionMapper.countApprovedRunDates(tenant, runKey, run.getWorkOrderNo()) > 0
-            || projectionMapper.countRunSettlements(tenant, runKey, run.getWorkOrderNo()) > 0) {
+        if (projectionMapper.countRunOtherWorkOrders(tenant, runKey, run.getWorkOrderNo()) > 0
+            || projectionMapper.countRunInspectionDependencies(tenant, runKey) > 0
+            || projectionMapper.countRunNonconformities(tenant, runKey, null) > 0
+            || projectionMapper.countApprovedRunDates(tenant, runKey, run.getWorkOrderNo(), null) > 0
+            || projectionMapper.countRunSettlements(tenant, runKey, run.getWorkOrderNo(), null) > 0) {
             throw new IllegalArgumentException("同一飞针文件已有检验、处置或结算数据，不能取消关联");
         }
-        projectionMapper.rebindRunTelemetry(tenant, runKey, null);
-        projectionMapper.rebindRunRuntime(tenant, runKey, null);
+        projectionMapper.rebindRunTelemetry(tenant, runKey, null, null);
+        projectionMapper.rebindRunRuntime(tenant, runKey, null, null);
         projectionMapper.unbindRunProjections(tenant, runKey);
         projectionMapper.deleteRun(tenant, runKey);
     }
@@ -271,21 +274,30 @@ public class FlyingProbeInspectionProjectionService {
             throw new IllegalArgumentException("飞针文件状态已变化，无法更正关联");
         }
         if (target.getWorkOrderNo().equals(run.getWorkOrderNo())) return runKey;
-        if (projectionMapper.countRunNonconformities(tenant, runKey) > 0
-            || projectionMapper.countApprovedRunDates(tenant, runKey, run.getWorkOrderNo()) > 0
-            || projectionMapper.countRunSettlements(tenant, runKey, run.getWorkOrderNo()) > 0) {
-            throw new IllegalArgumentException("该飞针文件已有处置单或结算数据，不能更正关联");
+        LocalDateTime fromDeviceTime = projection.getDeviceTime();
+        if (projectionMapper.countRunNonconformities(tenant, runKey, fromDeviceTime) > 0
+            || projectionMapper.countApprovedRunDates(tenant, runKey, run.getWorkOrderNo(), fromDeviceTime) > 0) {
+            throw new IllegalArgumentException("该飞针文件已有处置单，不能更正关联");
         }
-        projectionMapper.rebindRunTasks(tenant, runKey, target.getId());
-        projectionMapper.rebindRunTelemetry(tenant, runKey, target.getWorkOrderNo());
-        projectionMapper.rebindRunRuntime(tenant, runKey, target.getWorkOrderNo());
-        projectionMapper.rebindRunProjections(tenant, runKey, target.getWorkOrderNo());
+        String previousWorkOrderNo = run.getWorkOrderNo();
+        long settledRounds = projectionMapper.countRunSettlements(tenant, runKey, previousWorkOrderNo, fromDeviceTime);
+        projectionMapper.rebindRunTasks(tenant, runKey, target.getId(), fromDeviceTime);
+        projectionMapper.rebindRunTelemetry(tenant, runKey, target.getWorkOrderNo(), fromDeviceTime);
+        projectionMapper.rebindRunRuntime(tenant, runKey, target.getWorkOrderNo(), fromDeviceTime);
+        projectionMapper.rebindRunProjections(tenant, runKey, target.getWorkOrderNo(), fromDeviceTime);
         run.setWorkOrderNo(target.getWorkOrderNo());
         run.setBindingSource("MANUAL");
         run.setBoundBy(TenantContext.actor());
         run.setBoundAt(LocalDateTime.now());
         run.setUpdatedAt(run.getBoundAt());
         projectionMapper.updateRun(run);
+        if (settledRounds > 0) {
+            finishedTestDeviceSummaryService.settleIdleMaterials(LocalDateTime.now());
+            if (projectionMapper.countRunSettlements(tenant, runKey, previousWorkOrderNo, fromDeviceTime) > 0
+                || projectionMapper.countRunSettlements(tenant, runKey, target.getWorkOrderNo(), fromDeviceTime) < settledRounds) {
+                throw new IllegalArgumentException("结算快照无法安全更新，关联未更正");
+            }
+        }
         return runKey;
     }
 
