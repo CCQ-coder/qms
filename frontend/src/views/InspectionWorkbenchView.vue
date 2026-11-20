@@ -1261,8 +1261,8 @@ onBeforeUnmount(() => {
     <el-dialog v-model="bindingDialog" :title="bindingBatchRecords.length ? '手动批量绑定生产指令' : '手动绑定生产指令'" width="min(760px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!bindingSaving" :show-close="!bindingSaving">
       <p v-if="bindingRecord && bindingBatchRecords.length">已选 {{ bindingBatchRecords.length }} 条设备记录 · 设备料号 {{ bindingRecord.materialNo }}</p>
       <p v-else-if="bindingRecord">{{ bindingRecord.equipmentCode || bindingRecord.machineName || '未关联设备' }} · 料号 {{ bindingRecord.materialNo || '未上报' }} · 检测时间 {{ formatDateTime(bindingRecord.deviceTime) }}<span v-if="bindingRecord.sourceFile"> · {{ bindingRecord.sourceFile }}</span></p>
-      <el-alert type="warning" :closable="false" :title="bindingRecord?.eventType === 'ZHONGBO_TEST_REPORT' ? '可更正未审核设备记录的生产指令；已审核处置单的来源关联不可更改。' : '同一飞针文件统一关联生产指令；已有已审核或逐条创建的处置单时不能更正。'" />
-      <el-alert v-if="bindingRecord?.workOrderNo && bindingRecord.eventType !== 'ZHONGBO_TEST_REPORT'" type="info" :closable="false" :title="`该文件当前绑定工单 ${bindingRecord.workOrderNo}；更正将调整同文件记录。`" style="margin-top: 10px" />
+      <el-alert type="warning" :closable="false" :title="bindingRecord?.eventType === 'ZHONGBO_TEST_REPORT' ? '可更正未审核设备记录的生产指令；已审核处置单的来源关联不可更改。' : '关联或更正将作用于所选检测时间及其后的同文件记录；已有处置单的记录不能更正。'" />
+      <el-alert v-if="bindingRecord?.workOrderNo && bindingRecord.eventType !== 'ZHONGBO_TEST_REPORT'" type="info" :closable="false" :title="`该文件当前绑定工单 ${bindingRecord.workOrderNo}；更正将调整所选检测时间及其后的同文件记录。`" style="margin-top: 10px" />
       <div class="binding-order-search">
         <el-input v-model="bindingKeyword" clearable placeholder="输入生产指令号或厂内编号，支持模糊查询" @keyup.enter="searchBindingWorkOrders" />
         <el-button :loading="bindingSearchLoading" @click="searchBindingWorkOrders">查询工单</el-button>
