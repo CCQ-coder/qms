@@ -20,7 +20,6 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -60,7 +59,7 @@ public class FinishedTestDeviceReportService {
             TenantContext.tenantCode());
     }
 
-    @Transactional
+    // Commit each settlement separately so the sweep cannot hold work-order locks against ERP sync.
     public void settleIdleMaterials(LocalDateTime now) {
         String tenant = TenantContext.tenantCode();
         // shortcut: scans processed projections each minute, add incremental settlement state if volume grows.
