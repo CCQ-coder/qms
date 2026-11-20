@@ -46,6 +46,7 @@ public class FlyingProbeInspectionProjectionService {
     static final String EVENT_TYPE = "FLYING_PROBE_TEST_COUNTERS";
     private static final String TEMPLATE_CODE = "FLYING_PROBE_ELECTRICAL_V1";
     private static final String ADMIN = "admin";
+    private static final String STANDARD_MATERIAL_KEY = "[A-Z][0-9][A-Z][0-9]{6}[A-Z]?";
     private final FlyingProbeProjectionMapper projectionMapper;
     private final EquipmentMapper equipmentMapper;
     private final WorkOrderMapper workOrderMapper;
@@ -302,8 +303,9 @@ public class FlyingProbeInspectionProjectionService {
             return;
         }
         String materialKey = normalizeMaterialKey(projection.getMaterialNo());
-        String baseMaterialKey = materialKey.replaceFirst("-\\d+$", "");
-        String majorKey = majorMaterialKey(materialKey);
+        String baseMaterialKey = materialKey.replaceFirst("-.+$", "");
+        String majorKey = majorMaterialKey(baseMaterialKey);
+        boolean standardMaterial = majorKey.matches(STANDARD_MATERIAL_KEY);
         String combinedPanelNo = materialKey.startsWith("HP") ? baseMaterialKey : null;
         FlyingProbeRun run = projectionMapper.lockRun(projection.getRunKey());
         boolean manuallyBound = run != null && "MANUAL".equals(run.getBindingSource());
@@ -312,25 +314,43 @@ public class FlyingProbeInspectionProjectionService {
         String versionLookupKey = null;
         WorkOrder workOrder;
         if (run == null) {
-            List<WorkOrder> candidates = findByInternalProductNo(projection.getTenantCode(), materialKey);
-            if (candidates.isEmpty() && combinedPanelNo != null) {
-                candidates = workOrderMapper.findByCombinedPanelNo(projection.getTenantCode(), combinedPanelNo);
-                combinedPanelMatch = true;
-            } else if (candidates.isEmpty() && !baseMaterialKey.equals(materialKey)) {
-                candidates = findByInternalProductNo(projection.getTenantCode(), baseMaterialKey);
-                versionMatch = true;
-                versionLookupKey = baseMaterialKey;
-            }
-            if (candidates.isEmpty() && combinedPanelNo == null && !majorKey.equals(materialKey)) {
+            List<WorkOrder> candidates = List.of();
+            if (standardMaterial) {
                 LocalDate fileDate = snapshot.startTime().toLocalDate();
-                candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
+                List<String> lookupKeys = majorKey.length() == 10
+                    ? List.of(majorKey, majorKey.substring(0, 9), majorKey.substring(3, 9))
+                    : List.of(majorKey, majorKey.substring(3, 9));
+                for (String lookupKey : lookupKeys) {
+                    String likePattern = lookupKey.length() == 6 ? "___" + lookupKey + "%" : lookupKey + "%";
+                    candidates = workOrderMapper.selectList(Wrappers.lambdaQuery(WorkOrder.class)
                         .eq(WorkOrder::getTenantCode, projection.getTenantCode())
-                        .apply("internal_product_no_match_key LIKE {0}", majorKey + "%")).stream()
-                    .filter(order -> majorKey.equals(majorMaterialKey(normalizeMaterialKey(order.getInternalProductNo()))))
-                    .filter(order -> order.getReleasedAt() != null && !order.getReleasedAt().isAfter(fileDate))
-                    .toList();
+                        .apply("internal_product_no_match_key LIKE {0}", likePattern)).stream()
+                        .filter(order -> {
+                            String orderKey = majorMaterialKey(normalizeMaterialKey(order.getInternalProductNo())
+                                .replaceFirst("-.+$", ""));
+                            return orderKey.matches(STANDARD_MATERIAL_KEY)
+                                && (lookupKey.length() == 6 ? orderKey.substring(3, 9).equals(lookupKey)
+                                    : orderKey.startsWith(lookupKey));
+                        })
+                        .filter(order -> baseMaterialKey.equals(normalizeMaterialKey(order.getInternalProductNo()))
+                            || (order.getReleasedAt() != null && !order.getReleasedAt().isAfter(fileDate)))
+                        .toList();
+                    versionLookupKey = lookupKey;
+                    if (!candidates.isEmpty()) {
+                        break;
+                    }
+                }
                 versionMatch = true;
-                versionLookupKey = majorKey;
+            } else {
+                candidates = findByInternalProductNo(projection.getTenantCode(), materialKey);
+                if (candidates.isEmpty() && combinedPanelNo != null) {
+                    candidates = workOrderMapper.findByCombinedPanelNo(projection.getTenantCode(), combinedPanelNo);
+                    combinedPanelMatch = true;
+                } else if (candidates.isEmpty() && !baseMaterialKey.equals(materialKey)) {
+                    candidates = findByInternalProductNo(projection.getTenantCode(), baseMaterialKey);
+                    versionMatch = true;
+                    versionLookupKey = baseMaterialKey;
+                }
             }
             if (candidates.size() > 1 && candidates.stream().allMatch(order -> order.getReleasedAt() != null)) {
                 // The file may outlive a newer order, so compare releases with its start date.
@@ -348,6 +368,9 @@ public class FlyingProbeInspectionProjectionService {
                 return;
             }
             workOrder = candidates.getFirst();
+            if (materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))) {
+                versionMatch = false;
+            }
         } else {
             if (!"ACTIVE".equals(run.getStatus())) {
                 skip(projection, "文件批次已因计数回退停止自动投影：" + run.getReason(), now);
@@ -362,11 +385,16 @@ public class FlyingProbeInspectionProjectionService {
             workOrder = workOrderMapper.selectOne(Wrappers.lambdaQuery(WorkOrder.class)
                 .eq(WorkOrder::getTenantCode, projection.getTenantCode())
                 .eq(WorkOrder::getWorkOrderNo, run.getWorkOrderNo()));
+            String orderMaterialKey = workOrder == null ? null : normalizeMaterialKey(workOrder.getInternalProductNo());
+            String orderMajorKey = orderMaterialKey == null ? null
+                : majorMaterialKey(orderMaterialKey.replaceFirst("-.+$", ""));
             if (workOrder == null || (!manuallyBound
-                && !materialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))
+                && !materialKey.equals(orderMaterialKey)
                 && !("AUTO_VERSION".equals(run.getBindingSource())
-                    && (baseMaterialKey.equals(normalizeMaterialKey(workOrder.getInternalProductNo()))
-                        || majorKey.equals(majorMaterialKey(normalizeMaterialKey(workOrder.getInternalProductNo())))))
+                    && (baseMaterialKey.equals(orderMaterialKey) || majorKey.equals(orderMajorKey)
+                        || (standardMaterial && orderMajorKey != null
+                            && orderMajorKey.matches(STANDARD_MATERIAL_KEY)
+                            && majorKey.substring(3, 9).equals(orderMajorKey.substring(3, 9)))))
                 && !("AUTO_COMBINED".equals(run.getBindingSource()) && combinedPanelNo != null
                     && workOrderMapper.findByCombinedPanelNo(projection.getTenantCode(), combinedPanelNo).stream()
                         .anyMatch(order -> order.getId().equals(workOrder.getId()))))) {
@@ -586,7 +614,7 @@ public class FlyingProbeInspectionProjectionService {
     }
 
     private String majorMaterialKey(String materialKey) {
-        return materialKey.replaceFirst("(?<=\\d[A-Z])-?\\d+$", "");
+        return materialKey.replaceFirst("(?<=\\d[A-Z])\\d$", "");
     }
 
     private String normalizeMaterialKey(String materialNo) {
